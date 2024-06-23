@@ -361,14 +361,14 @@ func (vl *VolumeLayout) ShouldGrowVolumes(option *VolumeGrowOption) bool {
 	stats.MasterVolumeLayout.WithLabelValues(option.Collection, option.ReplicaPlacement.String(), "active").Set(float64(active))
 	stats.MasterVolumeLayout.WithLabelValues(option.Collection, option.ReplicaPlacement.String(), "crowded").Set(float64(crowded))
 	//glog.V(0).Infof("active volume: %d, high usage volume: %d\n", active, high)
-	return active <= crowded
-	//return (float64(active) * VolumeGrowStrategy.CrowdedThreshold) <= float64(crowded)
+	//return active <= crowded
+	return (float64(active) * VolumeGrowStrategy.CrowdedThreshold) <= float64(crowded)
 }
 
 func (vl *VolumeLayout) GetActiveVolumeCount(option *VolumeGrowOption) (total, active, crowded int) {
 	vl.accessLock.RLock()
 	defer vl.accessLock.RUnlock()
-	glog.V(0).Infof("%s, active volume: writables: %d, crowded: %d", option.DataCenter, vl.writables, vl.crowded)
+	//glog.V(0).Infof("%s, active volume: writables: %d, crowded: %d", option.DataCenter, vl.writables, vl.crowded)
 	if option.DataCenter == "" {
 		return len(vl.writables), len(vl.writables), len(vl.crowded)
 	}
