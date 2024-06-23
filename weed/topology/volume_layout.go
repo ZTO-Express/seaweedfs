@@ -305,7 +305,7 @@ func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (vi
 			info, _ := dn.GetVolumesById(vid)
 			if float64(info.Size) > float64(vl.volumeSizeLimit)*VolumeGrowStrategy.Threshold {
 				shouldGrow = true
-				vl.SetVolumeCrowded(vid)
+				vl.setVolumeCrowded(vid)
 			}
 			return vid, count, locationList.Copy(), shouldGrow, nil
 		}
