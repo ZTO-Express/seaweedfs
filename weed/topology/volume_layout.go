@@ -367,6 +367,7 @@ func (vl *VolumeLayout) ShouldGrowVolumes(option *VolumeGrowOption) bool {
 func (vl *VolumeLayout) GetActiveVolumeCount(option *VolumeGrowOption) (total, active, crowded int) {
 	vl.accessLock.RLock()
 	defer vl.accessLock.RUnlock()
+	glog.V(0).Infof("%s, active volume: writables: %d, crowded: %d", option.DataCenter, vl.writables, vl.crowded)
 	if option.DataCenter == "" {
 		return len(vl.writables), len(vl.writables), len(vl.crowded)
 	}
