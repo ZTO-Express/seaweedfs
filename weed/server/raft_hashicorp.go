@@ -150,7 +150,7 @@ func NewHashicorpRaftServer(option *RaftServerOption) (*RaftServer, error) {
 		return nil, fmt.Errorf(`raft.NewFileSnapshotStore(%q, ...): %v`, baseDir, err)
 	}
 
-	s.TransportManager = transport.New(raft.ServerAddress(s.serverAddr), []grpc.DialOption{option.GrpcDialOption})
+	s.TransportManager = transport.New(raft.ServerAddress(s.serverAddr), []grpc.DialOption{option.GrpcDialOption, grpc.WithBlock(), grpc.WithTimeout(option.DialTimeout) /*阻塞直到连接成功或超时*/})
 
 	stateMachine := StateMachine{topo: option.Topo}
 	s.RaftHashicorp, err = raft.NewRaft(c, &stateMachine, ldb, sdb, fss, s.TransportManager.Transport())

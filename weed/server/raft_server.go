@@ -28,6 +28,7 @@ type RaftServerOption struct {
 	Topo              *topology.Topology
 	RaftResumeState   bool
 	HeartbeatInterval time.Duration
+	DialTimeout       time.Duration
 	ElectionTimeout   time.Duration
 	RaftBootstrap     bool
 }
