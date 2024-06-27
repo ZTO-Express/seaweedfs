@@ -358,3 +358,10 @@ func (v *Volume) IsReadOnly() bool {
 	defer v.noWriteLock.RUnlock()
 	return v.noWriteOrDelete || v.noWriteCanDelete || v.location.isDiskSpaceLow
 }
+
+func (v *Volume) TtlMillis() uint64 {
+	if v.Ttl == nil {
+		return 0
+	}
+	return v.Ttl.Millis()
+}

@@ -3,6 +3,7 @@ package erasure_coding
 import (
 	"errors"
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"math"
 	"os"
 	"sync"
@@ -72,6 +73,7 @@ func NewEcVolume(diskType types.DiskType, dir string, dirIdx string, collection 
 	if volumeInfo, _, found, _ := volume_info.MaybeLoadVolumeInfo(dataBaseFileName + ".vif"); found {
 		ev.Version = needle.Version(volumeInfo.Version)
 	} else {
+		// if vif file not exist then create it
 		volume_info.SaveVolumeInfo(dataBaseFileName+".vif", &volume_server_pb.VolumeInfo{Version: uint32(ev.Version)})
 	}
 
@@ -298,9 +300,19 @@ func SearchNeedleFromSortedIndex(ecxFile *os.File, ecxFileSize int64, needleId t
 	return
 }
 
-func (ev *EcVolume) IsExpire() bool {
+func (ev *EcVolume) IsFdExpire() bool {
 	if ev.ecxFile != nil && time.Now().After(ev.lastReadAt.Add(time.Minute*time.Duration(ev.expireTime))) {
 		return true
 	}
 	return false
+}
+
+func (ev *EcVolume) IsEcVolumeExpire() bool {
+	if volumeInfo, _, found, _ := volume_info.MaybeLoadVolumeInfo(ev.FileName(".vif")); found {
+		expireTs := int64(volumeInfo.ExpireTime)
+		return expireTs > 0 && time.Now().After(time.Unix(expireTs, 0))
+	} else {
+		glog.V(3).Infof(" volume %d not found .vif file, skip expire check", ev.VolumeId)
+		return false
+	}
 }

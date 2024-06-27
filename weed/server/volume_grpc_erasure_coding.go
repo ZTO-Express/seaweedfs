@@ -3,12 +3,6 @@ package weed_server
 import (
 	"context"
 	"fmt"
-	"io"
-	"math"
-	"os"
-	"path"
-	"strings"
-
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -19,6 +13,12 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"github.com/seaweedfs/seaweedfs/weed/storage/volume_info"
 	"github.com/seaweedfs/seaweedfs/weed/util"
+	"io"
+	"math"
+	"os"
+	"path"
+	"strings"
+	"time"
 )
 
 /*
@@ -70,8 +70,17 @@ func (vs *VolumeServer) VolumeEcShardsGenerate(ctx context.Context, req *volume_
 		return nil, fmt.Errorf("WriteSortedFileFromIdx %s: %v", v.IndexFileName(), err)
 	}
 
+	// write expireTime ts to .vif file
+	// the ExpireTime property is used to store the expiry timestamp of the volume
+	// expireTime is zero where v.Ttl is empty, it presents the volume never expires
+	expireTime := uint64(0)
+	if v.TtlMillis() != 0 {
+		expireTime = uint64(time.Now().UnixMilli()) + v.TtlMillis()
+	}
+	ecVolumeInfo := &volume_server_pb.VolumeInfo{Version: uint32(v.Version()),
+		ExpireTime: expireTime}
 	// write .vif files
-	if err := volume_info.SaveVolumeInfo(baseFileName+".vif", &volume_server_pb.VolumeInfo{Version: uint32(v.Version())}); err != nil {
+	if err := volume_info.SaveVolumeInfo(baseFileName+".vif", ecVolumeInfo); err != nil {
 		return nil, fmt.Errorf("SaveVolumeInfo %s: %v", baseFileName, err)
 	}
 

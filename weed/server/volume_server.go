@@ -74,6 +74,7 @@ func NewVolumeServer(adminMux, publicMux *http.ServeMux, ip string,
 	password string,
 	ecVolumeExpireClose int64,
 	ecVolumeLoopTime int64,
+	ecVolumeTtlCheckInterval int64,
 ) *VolumeServer {
 
 	v := util.GetViper()
@@ -111,7 +112,7 @@ func NewVolumeServer(adminMux, publicMux *http.ServeMux, ip string,
 
 	vs.checkWithMaster()
 
-	vs.store = storage.NewStore(vs.grpcDialOption, ip, port, grpcPort, publicUrl, folders, maxCounts, minFreeSpaces, idxFolder, vs.needleMapKind, diskTypes, ldbTimeout, ecVolumeExpireClose, ecVolumeLoopTime)
+	vs.store = storage.NewStore(vs.grpcDialOption, ip, port, grpcPort, publicUrl, folders, maxCounts, minFreeSpaces, idxFolder, vs.needleMapKind, diskTypes, ldbTimeout, ecVolumeExpireClose, ecVolumeLoopTime, ecVolumeTtlCheckInterval)
 	vs.guard = security.NewGuard(whiteList, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec, username, password)
 
 	handleStaticResources(adminMux)

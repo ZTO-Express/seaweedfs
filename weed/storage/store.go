@@ -81,7 +81,8 @@ func (s *Store) String() (str string) {
 }
 
 func NewStore(grpcDialOption grpc.DialOption, ip string, port int, grpcPort int, publicUrl string, dirnames []string, maxVolumeCounts []int32,
-	minFreeSpaces []util.MinFreeSpace, idxFolder string, needleMapKind NeedleMapKind, diskTypes []DiskType, ldbTimeout int64, ecVolumeExpireClose int64, ecVolumeLoopTime int64) (s *Store) {
+	minFreeSpaces []util.MinFreeSpace, idxFolder string, needleMapKind NeedleMapKind, diskTypes []DiskType, ldbTimeout int64, ecVolumeExpireClose int64, ecVolumeLoopTime int64,
+	ecVolumeTtlCheckInterval int64) (s *Store) {
 	s = &Store{grpcDialOption: grpcDialOption, Port: port, Ip: ip, GrpcPort: grpcPort, PublicUrl: publicUrl, NeedleMapKind: needleMapKind}
 	s.Locations = make([]*DiskLocation, 0)
 
@@ -111,6 +112,15 @@ func NewStore(grpcDialOption grpc.DialOption, ip string, port int, grpcPort int,
 			time.Sleep(time.Duration(ecVolumeLoopTime) * time.Minute)
 			for _, location := range s.Locations {
 				location.releaseEcFd()
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			time.Sleep(time.Duration(ecVolumeTtlCheckInterval) * time.Minute)
+			for _, location := range s.Locations {
+				location.deleteExpiredEcVolume()
 			}
 		}
 	}()

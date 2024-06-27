@@ -141,6 +141,26 @@ func (t TTL) Minutes() uint32 {
 	return 0
 }
 
+func (t TTL) Millis() uint64 {
+	switch t.Unit {
+	case Empty:
+		return 0
+	case Minute:
+		return uint64(t.Count) * 60 * 1000
+	case Hour:
+		return uint64(t.Count) * 60 * 60 * 1000
+	case Day:
+		return uint64(t.Count) * 60 * 24 * 60 * 1000
+	case Week:
+		return uint64(t.Count) * 60 * 24 * 7 * 60 * 1000
+	case Month:
+		return uint64(t.Count) * 60 * 24 * 30 * 60 * 1000
+	case Year:
+		return uint64(t.Count) * 60 * 24 * 365 * 60 * 1000
+	}
+	return 0
+}
+
 func SecondsToTTL(seconds int32) string {
 	if seconds == 0 {
 		return ""

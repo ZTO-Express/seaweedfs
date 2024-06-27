@@ -203,10 +203,14 @@ func (l *DiskLocation) closeEcVolumeById(vid needle.VolumeId) {
 }
 
 func (l *DiskLocation) deleteEcVolumeById(vid needle.VolumeId) (e error) {
+	l.ecVolumesLock.Lock()
+	defer l.ecVolumesLock.Unlock()
 	ecVolume, ok := l.ecVolumes[vid]
 	if !ok {
 		return
 	}
+	// must Close first before Destroy, otherwise the file descriptor will be leaked
+	ecVolume.Close()
 	ecVolume.Destroy()
 	delete(l.ecVolumes, vid)
 	return
@@ -241,7 +245,7 @@ func (l *DiskLocation) releaseEcFd() {
 	expireEcVolumes := l.obtainExpiresEcVolumes()
 	if expireEcVolumes != nil && len(expireEcVolumes) > 0 {
 		for _, ecVolume := range expireEcVolumes {
-			if ecVolume.IsExpire() {
+			if ecVolume.IsFdExpire() {
 				glog.V(0).Infof("Close EC Volume %v Collection %s ", ecVolume.VolumeId, ecVolume.Collection)
 				ecVolume.Close()
 			}
@@ -262,9 +266,25 @@ func (l *DiskLocation) obtainExpiresEcVolumes() []*erasure_coding.EcVolume {
 
 	expireEcVolumes := make([]*erasure_coding.EcVolume, 0)
 	for _, ecVolume := range l.ecVolumes {
-		if ecVolume.IsExpire() {
+		if ecVolume.IsFdExpire() {
 			expireEcVolumes = append(expireEcVolumes, ecVolume)
 		}
 	}
 	return expireEcVolumes
+}
+
+func (l *DiskLocation) deleteExpiredEcVolume() {
+	l.ecVolumesLock.RLock()
+	ecVolumes := l.ecVolumes
+	l.ecVolumesLock.RUnlock()
+	for _, ecVolume := range ecVolumes {
+		if ecVolume.IsEcVolumeExpire() {
+			glog.V(3).Infof("start delete expired ec volume %v", ecVolume.VolumeId)
+			err := l.deleteEcVolumeById(ecVolume.VolumeId)
+			if err != nil {
+				glog.V(3).Infof("delete expired ec volume %v error: %v", ecVolume.VolumeId, err)
+				continue
+			}
+		}
+	}
 }
