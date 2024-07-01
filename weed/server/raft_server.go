@@ -146,7 +146,7 @@ func NewRaftServer(option *RaftServerOption) (*RaftServer, error) {
 	}
 
 	for name, peer := range s.peers {
-		if err := s.raftServer.AddPeer(name, peer.ToGrpcAddress()); err != nil {
+		if err := s.raftServer.AddPeer(name, peer.ToRaftAddress()); err != nil {
 			return nil, err
 		}
 	}
@@ -191,7 +191,7 @@ func (s *RaftServer) DoJoinCommand() {
 
 	if _, err := s.raftServer.Do(&raft.DefaultJoinCommand{
 		Name:             s.raftServer.Name(),
-		ConnectionString: s.serverAddr.ToGrpcAddress(),
+		ConnectionString: s.serverAddr.ToRaftAddress(),
 	}); err != nil {
 		glog.Errorf("fail to send join command: %v", err)
 	}

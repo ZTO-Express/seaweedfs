@@ -197,7 +197,7 @@ func runServer(cmd *Command, args []string) bool {
 	}
 
 	if *isStartingMasterServer {
-		_, peerList := checkPeers(*serverIp, *masterOptions.port, *masterOptions.portGrpc, *masterOptions.peers)
+		_, peerList := checkPeers(*serverIp, *masterOptions.port, *masterOptions.portGrpc, *masterOptions.portRaftGrpc, *masterOptions.peers)
 		peers := strings.Join(pb.ToAddressStrings(peerList), ",")
 		masterOptions.peers = &peers
 	}

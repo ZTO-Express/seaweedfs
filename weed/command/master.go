@@ -37,6 +37,7 @@ var (
 type MasterOptions struct {
 	port              *int
 	portGrpc          *int
+	portRaftGrpc      *int
 	ip                *string
 	ipBind            *string
 	metaFolder        *string
@@ -65,6 +66,7 @@ func init() {
 	cmdMaster.Run = runMaster // break init cycle
 	m.port = cmdMaster.Flag.Int("port", 9333, "http listen port")
 	m.portGrpc = cmdMaster.Flag.Int("port.grpc", 0, "grpc listen port")
+	m.portRaftGrpc = cmdMaster.Flag.Int("port.raft.grpc", 0, "raft grpc listen port")
 	m.ip = cmdMaster.Flag.String("ip", util.DetectedHostAddress(), "master <ip>|<server> address, also used as identifier")
 	m.ipBind = cmdMaster.Flag.String("ip.bind", "", "ip address to bind to. If empty, default to same as -ip option.")
 	m.metaFolder = cmdMaster.Flag.String("mdir", os.TempDir(), "data directory to store meta data")
@@ -139,11 +141,16 @@ func startMaster(masterOption MasterOptions, masterWhiteList []string) {
 	if *masterOption.portGrpc == 0 {
 		*masterOption.portGrpc = 10000 + *masterOption.port
 	}
+
+	if *masterOption.portRaftGrpc == 0 {
+		*masterOption.portRaftGrpc = 20000 + *masterOption.port
+	}
+
 	if *masterOption.ipBind == "" {
 		*masterOption.ipBind = *masterOption.ip
 	}
 
-	myMasterAddress, peers := checkPeers(*masterOption.ip, *masterOption.port, *masterOption.portGrpc, *masterOption.peers)
+	myMasterAddress, peers := checkPeers(*masterOption.ip, *masterOption.port, *masterOption.portGrpc, *masterOption.portRaftGrpc, *masterOption.peers)
 
 	masterPeers := make(map[string]pb.ServerAddress)
 	for _, peer := range peers {
@@ -192,6 +199,7 @@ func startMaster(masterOption MasterOptions, masterWhiteList []string) {
 	if *masterOption.raftHashicorp {
 		r.HandleFunc("/raft/stats", raftServer.StatsRaftHandler).Methods("GET")
 	}
+
 	// starting grpc server
 	grpcPort := *masterOption.portGrpc
 	grpcL, grpcLocalL, err := util.NewIpAndLocalListeners(*masterOption.ipBind, grpcPort, 0)
@@ -200,17 +208,34 @@ func startMaster(masterOption MasterOptions, masterWhiteList []string) {
 	}
 	grpcS := pb.NewGrpcServer(security.LoadServerTLS(util.GetViper(), "grpc.master"))
 	master_pb.RegisterSeaweedServer(grpcS, ms)
-	if *masterOption.raftHashicorp {
-		raftServer.TransportManager.Register(grpcS)
-	} else {
-		protobuf.RegisterRaftServer(grpcS, raftServer)
-	}
+
 	reflection.Register(grpcS)
 	glog.V(0).Infof("Start Seaweed Master %s grpc server at %s:%d", util.Version(), *masterOption.ipBind, grpcPort)
 	if grpcLocalL != nil {
 		go grpcS.Serve(grpcLocalL)
 	}
 	go grpcS.Serve(grpcL)
+
+	// starting raft grpc server
+	raftGrpcPort := *masterOption.portRaftGrpc
+	raftGrpcL, raftGrpcLocalL, err := util.NewIpAndLocalListeners(*masterOption.ipBind, raftGrpcPort, 0)
+	if err != nil {
+		glog.Fatalf("master failed to listen on raft grpc port %d: %v", raftGrpcPort, err)
+	}
+	raftGrpcS := pb.NewGrpcServer(security.LoadServerTLS(util.GetViper(), "grpc.master"))
+
+	if *masterOption.raftHashicorp {
+		raftServer.TransportManager.Register(raftGrpcS)
+	} else {
+		protobuf.RegisterRaftServer(raftGrpcS, raftServer)
+	}
+
+	reflection.Register(raftGrpcS)
+	glog.V(0).Infof("Start Seaweed Master %s raft grpc server at %s:%d", util.Version(), *masterOption.ipBind, raftGrpcPort)
+	if raftGrpcLocalL != nil {
+		go raftGrpcS.Serve(raftGrpcLocalL)
+	}
+	go raftGrpcS.Serve(raftGrpcL)
 
 	timeSleep := 1500 * time.Millisecond
 	if !*masterOption.raftHashicorp {
@@ -273,9 +298,9 @@ func startMaster(masterOption MasterOptions, masterWhiteList []string) {
 	select {}
 }
 
-func checkPeers(masterIp string, masterPort int, masterGrpcPort int, peers string) (masterAddress pb.ServerAddress, cleanedPeers []pb.ServerAddress) {
-	glog.V(0).Infof("current: %s:%d peers:%s", masterIp, masterPort, peers)
-	masterAddress = pb.NewServerAddress(masterIp, masterPort, masterGrpcPort)
+func checkPeers(masterIp string, masterPort int, masterGrpcPort int, masterRaftPort int, peers string) (masterAddress pb.ServerAddress, cleanedPeers []pb.ServerAddress) {
+	glog.V(0).Infof("current: %s:%d:%d:%d peers:%s", masterIp, masterPort, masterGrpcPort, masterRaftPort, peers)
+	masterAddress = pb.NewServerAddressWithRaft(masterIp, masterPort, masterGrpcPort, masterRaftPort)
 	cleanedPeers = pb.ServerAddresses(peers).ToAddresses()
 
 	hasSelf := false
@@ -306,7 +331,7 @@ func isTheFirstOne(self pb.ServerAddress, peers []pb.ServerAddress) bool {
 }
 
 func (m *MasterOptions) toMasterOption(whiteList []string) *weed_server.MasterOption {
-	masterAddress := pb.NewServerAddress(*m.ip, *m.port, *m.portGrpc)
+	masterAddress := pb.NewServerAddressWithRaft(*m.ip, *m.port, *m.portGrpc, *m.portRaftGrpc)
 	return &weed_server.MasterOption{
 		Master:            masterAddress,
 		MetaFolder:        *m.metaFolder,

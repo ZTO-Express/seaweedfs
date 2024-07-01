@@ -198,6 +198,18 @@ func ServerToGrpcAddress(server string) (serverGrpcAddress string) {
 	return util.JoinHostPort(host, grpcPort)
 }
 
+func ServerToRaftAddress(server string) (serverGrpcAddress string) {
+
+	host, port, parseErr := hostAndPort(server)
+	if parseErr != nil {
+		glog.Fatalf("server address %s parse error: %v", server, parseErr)
+	}
+
+	raftPort := int(port) + 20000
+
+	return util.JoinHostPort(host, raftPort)
+}
+
 func GrpcAddressToServerAddress(grpcAddress string) (serverAddress string) {
 	host, grpcPort, parseErr := hostAndPort(grpcAddress)
 	if parseErr != nil {

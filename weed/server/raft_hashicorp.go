@@ -50,7 +50,7 @@ func (s *RaftServer) AddPeersConfiguration() (cfg raft.Configuration) {
 		cfg.Servers = append(cfg.Servers, raft.Server{
 			Suffrage: raft.Voter,
 			ID:       raft.ServerID(peer),
-			Address:  raft.ServerAddress(peer.ToGrpcAddress()),
+			Address:  raft.ServerAddress(peer.ToRaftAddress()),
 		})
 	}
 	return cfg
@@ -76,7 +76,7 @@ func (s *RaftServer) UpdatePeers() {
 					}
 					glog.V(0).Infof("adding new peer: %s", peerName)
 					s.RaftHashicorp.AddVoter(
-						raft.ServerID(peerName), raft.ServerAddress(peer.ToGrpcAddress()), 0, 0)
+						raft.ServerID(peerName), raft.ServerAddress(peer.ToRaftAddress()), 0, 0)
 				}
 				for peer := range existsPeerName {
 					if _, found := s.peers[peer]; !found {

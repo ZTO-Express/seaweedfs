@@ -20,6 +20,22 @@ func NewServerAddress(host string, port int, grpcPort int) ServerAddress {
 	return ServerAddress(util.JoinHostPort(host, port) + "." + strconv.Itoa(grpcPort))
 }
 
+func NewServerAddressWithRaft(host string, port int, grpcPort int, raftPort int) ServerAddress {
+	if (grpcPort == 0 || grpcPort == port+10000) && (raftPort == 0 || raftPort == port+20000) {
+		return ServerAddress(util.JoinHostPort(host, port))
+	}
+
+	if grpcPort == 0 {
+		grpcPort = 10000 + port
+	}
+
+	if raftPort == 0 {
+		raftPort = 20000 + port
+	}
+
+	return ServerAddress(util.JoinHostPort(host, port) + "." + strconv.Itoa(grpcPort) + "." + strconv.Itoa(raftPort))
+}
+
 func NewServerAddressWithGrpcPort(address string, grpcPort int) ServerAddress {
 	if grpcPort == 0 {
 		return ServerAddress(address)
@@ -52,12 +68,14 @@ func (sa ServerAddress) ToHttpAddress() string {
 		return string(sa)
 	}
 	ports := string(sa[portsSepIndex+1:])
-	sepIndex := strings.LastIndex(string(ports), ".")
-	if sepIndex >= 0 {
+	portArr := strings.Split(ports, ".")
+	if len(portArr) >= 0 {
 		host := string(sa[0:portsSepIndex])
-		return net.JoinHostPort(host, ports[0:sepIndex])
+		return net.JoinHostPort(host, portArr[0])
 	}
+
 	return string(sa)
+
 }
 
 func (sa ServerAddress) ToGrpcAddress() string {
@@ -69,12 +87,42 @@ func (sa ServerAddress) ToGrpcAddress() string {
 		return string(sa)
 	}
 	ports := string(sa[portsSepIndex+1:])
-	sepIndex := strings.LastIndex(ports, ".")
-	if sepIndex >= 0 {
+	portArr := strings.Split(ports, ".")
+	if len(portArr) >= 2 {
 		host := string(sa[0:portsSepIndex])
-		return net.JoinHostPort(host, ports[sepIndex+1:])
+		return net.JoinHostPort(host, portArr[1])
 	}
 	return ServerToGrpcAddress(string(sa))
+}
+
+/**
+ * 方法基于 Http Port为基础，转换为 raft address
+ * parmas:
+ *（1）127.0.0.1:9333(其中9333为http端口)
+ *（2）127.0.0.1:httpPort.GrpcPort.RaftGrpcPort
+ * 返回：raft address
+ */
+func (sa ServerAddress) ToRaftAddress() string {
+	portsSepIndex := strings.LastIndex(string(sa), ":")
+	if portsSepIndex < 0 {
+		return string(sa)
+	}
+	if portsSepIndex+1 >= len(sa) {
+		return string(sa)
+	}
+
+	host := string(sa[0:portsSepIndex])
+	ports := string(sa[portsSepIndex+1:])
+	portArr := strings.Split(ports, ".")
+	if len(portArr) >= 3 {
+		return net.JoinHostPort(host, portArr[2])
+	} else if len(portArr) >= 1 { // 如果只有一个端口后，默认认为是Http Port
+		return ServerToRaftAddress(net.JoinHostPort(host, portArr[0]))
+	} else {
+		//该分支不会进入，因为如果没有端口号，会满足portsSepIndex < 0 而直接返回 元地址，但此时程序其实无法正常工作 @todo
+		return string(sa)
+	}
+
 }
 
 // LookUp may return an error for some records along with successful lookups - make sure you do not

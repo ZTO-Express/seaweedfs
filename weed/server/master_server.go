@@ -385,7 +385,7 @@ func (ms *MasterServer) OnPeerUpdate(update *master_pb.ClusterNodeUpdate, startF
 			glog.V(0).Infof("adding new raft server: %s", peerName)
 			ms.Topo.HashicorpRaft.AddVoter(
 				hashicorpRaft.ServerID(peerName),
-				hashicorpRaft.ServerAddress(peerAddress.ToGrpcAddress()), 0, 0)
+				hashicorpRaft.ServerAddress(peerAddress.ToRaftAddress()), 0, 0)
 		}
 	} else {
 		pb.WithMasterClient(false, peerAddress, ms.grpcDialOption, true, func(client master_pb.SeaweedClient) error {
