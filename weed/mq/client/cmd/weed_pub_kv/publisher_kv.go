@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/mq/client/pub_client"
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 	"log"
 	"strings"
 	"sync"
@@ -45,6 +46,7 @@ func doPublish(publisher *pub_client.TopicPublisher, id int) {
 
 func main() {
 	flag.Parse()
+	util_http.InitGlobalHttpClient()
 
 	config := &pub_client.PublisherConfiguration{
 		Topic:          topic.NewTopic(*namespace, *t),

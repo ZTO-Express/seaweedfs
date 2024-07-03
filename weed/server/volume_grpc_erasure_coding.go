@@ -76,7 +76,7 @@ func (vs *VolumeServer) VolumeEcShardsGenerate(ctx context.Context, req *volume_
 	if v.Ttl != nil {
 		ttlMills := v.Ttl.ToSeconds()
 		if ttlMills > 0 {
-			destroyTime = uint64(time.Now().Unix()) + v.Ttl.ToSeconds() //生成ec文件开始计算失效时间
+			destroyTime = uint64(time.Now().Unix()) + v.Ttl.ToSeconds() //calculated destroy time from the ec volume was created
 		}
 	}
 	volumeInfo := &volume_server_pb.VolumeInfo{Version: uint32(v.Version())}
@@ -85,6 +85,8 @@ func (vs *VolumeServer) VolumeEcShardsGenerate(ctx context.Context, req *volume_
 	} else {
 		volumeInfo.DestroyTime = destroyTime
 	}
+	datSize, _, _ := v.FileStat()
+	volumeInfo.DatFileSize = int64(datSize)
 	if err := volume_info.SaveVolumeInfo(baseFileName+".vif", volumeInfo); err != nil {
 		return nil, fmt.Errorf("SaveVolumeInfo %s: %v", baseFileName, err)
 	}

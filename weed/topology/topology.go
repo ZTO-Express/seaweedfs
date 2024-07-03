@@ -52,8 +52,11 @@ type Topology struct {
 	RaftServerAccessLock          sync.RWMutex
 	HashicorpRaft                 *hashicorpRaft.Raft
 	HashicorpRaftTransportManager *transport.Manager
-	UuidAccessLock                sync.RWMutex
-	UuidMap                       map[string][]string
+	barrierLock                   sync.Mutex
+	barrierDone                   bool
+
+	UuidAccessLock sync.RWMutex
+	UuidMap        map[string][]string
 }
 
 func NewTopology(id string, seq sequence.Sequencer, volumeSizeLimit uint64, pulse int, replicationAsMin bool) *Topology {
@@ -122,6 +125,42 @@ func (t *Topology) IsLeader() bool {
 	return false
 }
 
+func (t *Topology) IsLeaderAndCanRead() bool {
+	if t.RaftServer != nil {
+		return t.IsLeader()
+	} else if t.HashicorpRaft != nil {
+		return t.IsLeader() && t.DoBarrier()
+	} else {
+		return false
+	}
+}
+
+func (t *Topology) DoBarrier() bool {
+	t.barrierLock.Lock()
+	defer t.barrierLock.Unlock()
+	if t.barrierDone {
+		return true
+	}
+
+	glog.V(0).Infof("raft do barrier")
+	barrier := t.HashicorpRaft.Barrier(2 * time.Minute)
+	if err := barrier.Error(); err != nil {
+		glog.Errorf("failed to wait for barrier, error %s", err)
+		return false
+
+	}
+
+	t.barrierDone = true
+	glog.V(0).Infof("raft do barrier success")
+	return true
+}
+
+func (t *Topology) BarrierReset() {
+	t.barrierLock.Lock()
+	defer t.barrierLock.Unlock()
+	t.barrierDone = false
+}
+
 func (t *Topology) Leader() (l pb.ServerAddress, err error) {
 	exponentialBackoff := backoff.NewExponentialBackOff()
 	exponentialBackoff.InitialInterval = 100 * time.Millisecond
@@ -182,6 +221,10 @@ func (t *Topology) Lookup(collection string, vid needle.VolumeId) (dataNodes []*
 }
 
 func (t *Topology) NextVolumeId() (needle.VolumeId, error) {
+	if !t.IsLeaderAndCanRead() {
+		return 0, fmt.Errorf("as leader can not read yet")
+
+	}
 	vid := t.GetMaxVolumeId()
 	next := vid.Next()
 
@@ -210,8 +253,8 @@ func (t *Topology) PickForWrite(requestedCount uint64, option *VolumeGrowOption,
 	if err != nil {
 		return "", 0, nil, shouldGrow, fmt.Errorf("failed to find writable volumes for collection:%s replication:%s ttl:%s error: %v", option.Collection, option.ReplicaPlacement.String(), option.Ttl.String(), err)
 	}
-	if volumeLocationList.Length() == 0 {
-		return "", 0, nil, shouldGrow, fmt.Errorf("no writable volumes available for collection:%s replication:%s ttl:%s", option.Collection, option.ReplicaPlacement.String(), option.Ttl.String())
+	if volumeLocationList == nil || volumeLocationList.Length() == 0 {
+		return "", 0, nil, shouldGrow, fmt.Errorf("%s available for collection:%s replication:%s ttl:%s", noWritableVolumes, option.Collection, option.ReplicaPlacement.String(), option.Ttl.String())
 	}
 	nextFileId := t.Sequence.NextFileId(requestedCount)
 	fileId = needle.NewFileId(vid, nextFileId, rand.Uint32()).String()

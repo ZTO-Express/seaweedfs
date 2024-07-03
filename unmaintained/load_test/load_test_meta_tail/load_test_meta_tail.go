@@ -7,6 +7,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"strconv"
@@ -23,8 +24,8 @@ var (
 )
 
 func main() {
-
 	flag.Parse()
+	util_http.InitGlobalHttpClient()
 
 	if *isWrite {
 		startGenerateMetadata()

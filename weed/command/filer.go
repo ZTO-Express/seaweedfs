@@ -138,6 +138,7 @@ func init() {
 	filerWebDavOptions.tlsCertificate = cmdFiler.Flag.String("webdav.cert.file", "", "path to the TLS certificate file")
 	filerWebDavOptions.cacheDir = cmdFiler.Flag.String("webdav.cacheDir", os.TempDir(), "local cache directory for file chunks")
 	filerWebDavOptions.cacheSizeMB = cmdFiler.Flag.Int64("webdav.cacheCapacityMB", 0, "local cache capacity in MB")
+	filerWebDavOptions.maxMB = cmdFiler.Flag.Int("webdav.maxMB", 4, "split files larger than the limit")
 	filerWebDavOptions.filerRootPath = cmdFiler.Flag.String("webdav.filer.path", "/", "use this remote path from filer server")
 
 	// start iam on filer
@@ -186,7 +187,7 @@ func runFiler(cmd *Command, args []string) bool {
 		go http.ListenAndServe(fmt.Sprintf(":%d", *f.debugPort), nil)
 	}
 
-	util.LoadConfiguration("security", false)
+	util.LoadSecurityConfiguration()
 
 	switch {
 	case *f.metricsHttpIp != "":
@@ -247,6 +248,9 @@ func runFiler(cmd *Command, args []string) bool {
 // GetCertificateWithUpdate Auto refreshing TSL certificate
 func (fo *FilerOptions) GetCertificateWithUpdate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 	certs, err := fo.certProvider.KeyMaterial(context.Background())
+	if certs == nil {
+		return nil, err
+	}
 	return &certs.Certs[0], err
 }
 

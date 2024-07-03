@@ -28,9 +28,10 @@ const (
 type volumeState string
 
 const (
-	readOnlyState  volumeState = "ReadOnly"
-	oversizedState             = "Oversized"
-	crowdedState               = "Crowded"
+	readOnlyState     volumeState = "ReadOnly"
+	oversizedState                = "Oversized"
+	crowdedState                  = "Crowded"
+	noWritableVolumes             = "No writable volumes"
 )
 
 type stateIndicator func(copyState) bool
@@ -106,7 +107,8 @@ func (v *volumesBinaryState) copyState(list *VolumeLocationList) copyState {
 
 // mapping from volume to its locations, inverted from server to volume
 type VolumeLayout struct {
-	growRequestCount  int32
+	growRequest       atomic.Bool
+	lastGrowCount     atomic.Uint32
 	rp                *super_block.ReplicaPlacement
 	ttl               *needle.TTL
 	diskType          types.DiskType
@@ -293,9 +295,7 @@ func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (vi
 
 	lenWriters := len(vl.writables)
 	if lenWriters <= 0 {
-		//glog.V(0).Infoln("No more writable volumes!")
-		shouldGrow = true
-		return 0, 0, nil, shouldGrow, errors.New("No more writable volumes!")
+		return 0, 0, nil, true, fmt.Errorf("%s in volume layout", noWritableVolumes)
 	}
 	if option.DataCenter == "" && option.Rack == "" && option.DataNode == "" {
 		vid := vl.writables[rand.Intn(lenWriters)]
@@ -343,17 +343,27 @@ func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (vi
 			return
 		}
 	}
-	return vid, count, locationList, true, fmt.Errorf("No writable volumes in DataCenter:%v Rack:%v DataNode:%v", option.DataCenter, option.Rack, option.DataNode)
+	return vid, count, locationList, true, fmt.Errorf("%s in DataCenter:%v Rack:%v DataNode:%v", noWritableVolumes, option.DataCenter, option.Rack, option.DataNode)
 }
 
 func (vl *VolumeLayout) HasGrowRequest() bool {
-	return atomic.LoadInt32(&vl.growRequestCount) > 0
+	return vl.growRequest.Load()
 }
 func (vl *VolumeLayout) AddGrowRequest() {
-	atomic.AddInt32(&vl.growRequestCount, 1)
+	vl.growRequest.Store(true)
 }
 func (vl *VolumeLayout) DoneGrowRequest() {
-	atomic.AddInt32(&vl.growRequestCount, -1)
+	vl.growRequest.Store(false)
+}
+
+func (vl *VolumeLayout) SetLastGrowCount(count uint32) {
+	if vl.lastGrowCount.Load() != count {
+		vl.lastGrowCount.Store(count)
+	}
+}
+
+func (vl *VolumeLayout) GetLastGrowCount() uint32 {
+	return vl.lastGrowCount.Load()
 }
 
 func (vl *VolumeLayout) ShouldGrowVolumes(option *VolumeGrowOption) bool {
@@ -548,6 +558,14 @@ func (vl *VolumeLayout) ToInfo() (info VolumeLayoutInfo) {
 	info.Writables = vl.writables
 	info.DiskType = vl.diskType.ReadableString()
 	//m["locations"] = vl.vid2location
+	return
+}
+
+func (vl *VolumeLayout) ToGrowOption() (option *VolumeGrowOption) {
+	option = &VolumeGrowOption{}
+	option.ReplicaPlacement = vl.rp
+	option.Ttl = vl.ttl
+	option.DiskType = vl.diskType
 	return
 }
 

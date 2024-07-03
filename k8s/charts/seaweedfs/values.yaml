@@ -305,6 +305,11 @@ volume:
    #   size: "800Gi"
    #   maxVolumes: 0
 
+  # This will automatically create a job for patching Kubernetes resources if the dataDirs type is 'persistentVolumeClaim' and the size has changed.
+  resizeHook:
+    enabled: true
+    image: bitnami/kubectl
+
   # idx can be defined by:
   #
   # idx:
@@ -867,10 +872,36 @@ s3:
     annotations: {}
     tls: []
 
+# Deploy Kubernetes COSI Driver for SeaweedFS
+# Requires COSI CRDs and controller to be installed in the cluster
+# For more information, visit: https://container-object-storage-interface.github.io/docs/deployment-guide
+cosi:
+  enabled: false
+  image: "ghcr.io/seaweedfs/seaweedfs-cosi-driver:v0.1.1"
+  driverName: "seaweedfs.objectstorage.k8s.io"
+  bucketClassName: "seaweedfs"
+  endpoint: ""
+  region: ""
+
+  sidecar:
+    image: gcr.io/k8s-staging-sig-storage/objectstorage-sidecar/objectstorage-sidecar:v20230130-v0.1.0-24-gc0cf995
+
+  # enable user & permission to s3 (need to inject to all services)
+  enableAuth: false
+  # set to the name of an existing kubernetes Secret with the s3 json config file
+  # should have a secret key called seaweedfs_s3_config with an inline json configure
+  existingConfigSecret: null
+
+  podSecurityContext: {}
+  containerSecurityContext: {}
+
+  extraVolumes: ""
+  extraVolumeMounts: ""
+
 certificates:
   commonName: "SeaweedFS CA"
   ipAddresses: []
-  keyAlgorithm: rsa
+  keyAlgorithm: RSA
   keySize: 2048
   duration: 2160h  # 90d
   renewBefore: 360h  # 15d

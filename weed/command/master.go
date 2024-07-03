@@ -109,7 +109,7 @@ var (
 
 func runMaster(cmd *Command, args []string) bool {
 
-	util.LoadConfiguration("security", false)
+	util.LoadSecurityConfiguration()
 	util.LoadConfiguration("master", false)
 
 	grace.SetupProfiling(*masterCpuProfile, *masterMemProfile)

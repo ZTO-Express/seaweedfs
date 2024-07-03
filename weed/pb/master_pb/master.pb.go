@@ -548,7 +548,7 @@ type VolumeEcShardInformationMessage struct {
 	Collection  string `protobuf:"bytes,2,opt,name=collection,proto3" json:"collection,omitempty"`
 	EcIndexBits uint32 `protobuf:"varint,3,opt,name=ec_index_bits,json=ecIndexBits,proto3" json:"ec_index_bits,omitempty"`
 	DiskType    string `protobuf:"bytes,4,opt,name=disk_type,json=diskType,proto3" json:"disk_type,omitempty"`
-	DestroyTime uint64 `protobuf:"varint,5,opt,name=destroy_time,json=destroyTime,proto3" json:"destroy_time,omitempty"`
+	DestroyTime uint64 `protobuf:"varint,5,opt,name=destroy_time,json=destroyTime,proto3" json:"destroy_time,omitempty"` // used to record the destruction time of ec volume
 }
 
 func (x *VolumeEcShardInformationMessage) Reset() {

@@ -13,7 +13,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3bucket"
-	"github.com/seaweedfs/seaweedfs/weed/util"
 
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
@@ -26,6 +25,7 @@ import (
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 )
 
 func (s3a *S3ApiServer) ListBucketsHandler(w http.ResponseWriter, r *http.Request) {
@@ -455,7 +455,11 @@ func (s3a *S3ApiServer) DeleteBucketLifecycleHandler(w http.ResponseWriter, r *h
 	for prefix, ttl := range collectionTtls {
 		bucketPrefix := fmt.Sprintf("%s/%s/", s3a.option.BucketsPath, bucket)
 		if strings.HasPrefix(prefix, bucketPrefix) && strings.HasSuffix(ttl, "d") {
-			fc.DeleteLocationConf(prefix)
+			pathConf, found := fc.GetLocationConf(prefix)
+			if found {
+				pathConf.Ttl = ""
+				fc.SetLocationConf(pathConf)
+			}
 			changed = true
 		}
 	}
@@ -507,7 +511,7 @@ func (s3a *S3ApiServer) PutBucketOwnershipControls(w http.ResponseWriter, r *htt
 	}
 
 	var v s3.OwnershipControls
-	defer util.CloseRequest(r)
+	defer util_http.CloseRequest(r)
 
 	err := xmlutil.UnmarshalXML(&v, xml.NewDecoder(r.Body), "")
 	if err != nil {

@@ -95,11 +95,9 @@ func TestEnsureAssignmentsToActiveBrokersX(t *testing.T) {
 				followerCount: 1,
 				assignments: []*mq_pb.BrokerPartitionAssignment{
 					{
-						LeaderBroker: "",
-						Partition:    &mq_pb.Partition{},
-						FollowerBrokers: []string{
-							"localhost:2",
-						},
+						LeaderBroker:   "",
+						Partition:      &mq_pb.Partition{},
+						FollowerBroker: "localhost:2",
 					},
 				},
 			},
@@ -112,11 +110,9 @@ func TestEnsureAssignmentsToActiveBrokersX(t *testing.T) {
 				followerCount: 1,
 				assignments: []*mq_pb.BrokerPartitionAssignment{
 					{
-						LeaderBroker: "localhost:1",
-						Partition:    &mq_pb.Partition{},
-						FollowerBrokers: []string{
-							"",
-						},
+						LeaderBroker:   "localhost:1",
+						Partition:      &mq_pb.Partition{},
+						FollowerBroker: "",
 					},
 				},
 			},
@@ -129,11 +125,9 @@ func TestEnsureAssignmentsToActiveBrokersX(t *testing.T) {
 				followerCount: 1,
 				assignments: []*mq_pb.BrokerPartitionAssignment{
 					{
-						LeaderBroker: "localhost:1",
-						Partition:    &mq_pb.Partition{},
-						FollowerBrokers: []string{
-							"localhost:200",
-						},
+						LeaderBroker:   "localhost:1",
+						Partition:      &mq_pb.Partition{},
+						FollowerBroker: "localhost:200",
 					},
 				},
 			},
@@ -146,45 +140,9 @@ func TestEnsureAssignmentsToActiveBrokersX(t *testing.T) {
 				followerCount: 1,
 				assignments: []*mq_pb.BrokerPartitionAssignment{
 					{
-						LeaderBroker: "localhost:100",
-						Partition:    &mq_pb.Partition{},
-						FollowerBrokers: []string{
-							"localhost:200",
-						},
-					},
-				},
-			},
-			hasChanges: true,
-		},
-		{
-			name: "test missing two followers",
-			args: args{
-				activeBrokers: activeBrokers,
-				followerCount: 3,
-				assignments: []*mq_pb.BrokerPartitionAssignment{
-					{
-						LeaderBroker: "localhost:1",
-						Partition:    &mq_pb.Partition{},
-						FollowerBrokers: []string{
-							"localhost:2",
-						},
-					},
-				},
-			},
-			hasChanges: true,
-		},
-		{
-			name: "test missing some followers",
-			args: args{
-				activeBrokers: activeBrokers,
-				followerCount: 10,
-				assignments: []*mq_pb.BrokerPartitionAssignment{
-					{
-						LeaderBroker: "localhost:1",
-						Partition:    &mq_pb.Partition{},
-						FollowerBrokers: []string{
-							"localhost:2",
-						},
+						LeaderBroker:   "localhost:100",
+						Partition:      &mq_pb.Partition{},
+						FollowerBroker: "localhost:200",
 					},
 				},
 			},
@@ -197,11 +155,9 @@ func TestEnsureAssignmentsToActiveBrokersX(t *testing.T) {
 				followerCount: 3,
 				assignments: []*mq_pb.BrokerPartitionAssignment{
 					{
-						LeaderBroker: "localhost:1",
-						Partition:    &mq_pb.Partition{},
-						FollowerBrokers: []string{
-							"localhost:2",
-						},
+						LeaderBroker:   "localhost:1",
+						Partition:      &mq_pb.Partition{},
+						FollowerBroker: "localhost:2",
 					},
 				},
 			},
@@ -228,11 +184,9 @@ func TestEnsureAssignmentsToActiveBrokersX(t *testing.T) {
 				followerCount: 3,
 				assignments: []*mq_pb.BrokerPartitionAssignment{
 					{
-						LeaderBroker: "localhost:1",
-						Partition:    &mq_pb.Partition{},
-						FollowerBrokers: []string{
-							"localhost:2",
-						},
+						LeaderBroker:   "localhost:1",
+						Partition:      &mq_pb.Partition{},
+						FollowerBroker: "localhost:2",
 					},
 				},
 			},

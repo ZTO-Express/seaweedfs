@@ -19,6 +19,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"github.com/seaweedfs/seaweedfs/weed/util"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 	"google.golang.org/grpc"
 )
 
@@ -30,18 +31,19 @@ var (
 )
 
 /*
-	Diff the volume's files across multiple volume servers.
-	diff_volume_servers -volumeServers 127.0.0.1:8080,127.0.0.1:8081 -volumeId 5
+Diff the volume's files across multiple volume servers.
+diff_volume_servers -volumeServers 127.0.0.1:8080,127.0.0.1:8081 -volumeId 5
 
-	Example Output:
-	reference 127.0.0.1:8081
-	fileId volumeServer message
-	5,01617c3f61 127.0.0.1:8080 wrongSize
+Example Output:
+reference 127.0.0.1:8081
+fileId volumeServer message
+5,01617c3f61 127.0.0.1:8080 wrongSize
 */
 func main() {
 	flag.Parse()
+	util_http.InitGlobalHttpClient()
 
-	util.LoadConfiguration("security", false)
+	util.LoadSecurityConfiguration()
 	grpcDialOption = security.LoadClientTLS(util.GetViper(), "grpc.client")
 
 	vid := uint32(*volumeId)

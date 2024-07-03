@@ -8,6 +8,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
 	"google.golang.org/protobuf/proto"
 	"math"
@@ -49,8 +50,7 @@ func (b *MessageQueueBroker) genLogFlushFunc(t topic.Topic, partition *mq_pb.Par
 			localPartition.NotifyLogFlushed(logBuffer.LastFlushTsNs)
 		}
 
-		println("flushing at", logBuffer.LastFlushTsNs, "to", targetFile, "size", len(buf))
-
+		glog.V(0).Infof("flushing at %d to %s size %d", logBuffer.LastFlushTsNs, targetFile, len(buf))
 	}
 }
 
@@ -104,7 +104,7 @@ func (b *MessageQueueBroker) genLogOnDiskReadFunc(t topic.Topic, partition *mq_p
 
 	eachFileFn := func(entry *filer_pb.Entry, eachLogEntryFn log_buffer.EachLogEntryFuncType, starTsNs, stopTsNs int64) (processedTsNs int64, err error) {
 		if len(entry.Content) > 0 {
-			glog.Warningf("this should not happen. unexpected content in %s/%s", partitionDir, entry.Name)
+			// skip .offset files
 			return
 		}
 		var urlStrings []string
@@ -131,7 +131,7 @@ func (b *MessageQueueBroker) genLogOnDiskReadFunc(t topic.Topic, partition *mq_p
 			for _, urlString := range urlStrings {
 				// TODO optimization opportunity: reuse the buffer
 				var data []byte
-				if data, _, err = util.Get(urlString); err == nil {
+				if data, _, err = util_http.Get(urlString); err == nil {
 					processed = true
 					if processedTsNs, err = eachChunkFn(data, eachLogEntryFn, starTsNs, stopTsNs); err != nil {
 						return

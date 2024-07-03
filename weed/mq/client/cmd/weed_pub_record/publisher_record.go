@@ -7,6 +7,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/mq/schema"
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 	"log"
 	"strings"
 	"sync"
@@ -86,6 +87,7 @@ func (r *MyRecord) ToRecordValue() *schema_pb.RecordValue {
 
 func main() {
 	flag.Parse()
+	util_http.InitGlobalHttpClient()
 
 	recordType := schema.RecordTypeBegin().
 		WithField("key", schema.TypeBytes).

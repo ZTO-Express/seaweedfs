@@ -182,7 +182,12 @@ func submitForClientHandler(w http.ResponseWriter, r *http.Request, masterFn ope
 		Jwt:               assignResult.Auth,
 	}
 	uploadOption.FillRemoteAuthHeader(r)
-	uploadResult, err := operation.UploadData(pu.Data, uploadOption)
+	uploader, err := operation.NewUploader()
+	if err != nil {
+		writeJsonError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	uploadResult, err := uploader.UploadData(pu.Data, uploadOption)
 	if err != nil {
 		writeJsonError(w, r, http.StatusInternalServerError, err)
 		return
