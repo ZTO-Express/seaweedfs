@@ -28,10 +28,14 @@ func (ms *MasterServer) ProcessGrowRequest() {
 			}
 			glog.V(3).Infoln("enter automatic volume grow: ", req)
 
+			option := req.Option
+			vl := ms.Topo.GetVolumeLayout(option.Collection, option.ReplicaPlacement, option.Ttl, option.DiskType)
+
 			if !ms.Topo.IsLeader() {
 				glog.V(3).Infoln("current ip is not leader, skip request: ", req)
 				//discard buffered requests
 				time.Sleep(time.Second * 1)
+				vl.DoneGrowRequest()
 				continue
 			}
 
@@ -43,9 +47,6 @@ func (ms *MasterServer) ProcessGrowRequest() {
 				}
 				return !found
 			})
-
-			option := req.Option
-			vl := ms.Topo.GetVolumeLayout(option.Collection, option.ReplicaPlacement, option.Ttl, option.DiskType)
 
 			// not atomic but it's okay
 			if !found && vl.ShouldGrowVolumes(option) {
