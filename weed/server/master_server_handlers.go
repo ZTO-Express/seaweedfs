@@ -141,6 +141,9 @@ func (ms *MasterServer) dirAssignHandler(w http.ResponseWriter, r *http.Request)
 				Count:  writableVolumeCount,
 			}
 		}
+		if vl.HasGrowRequest() {
+			glog.V(0).Infof("has grow request: ", vl.GetGrowRequest())
+		}
 		if err != nil {
 			// glog.Warningf("PickForWrite %+v: %v", req, err)
 			lastErr = err
