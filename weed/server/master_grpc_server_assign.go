@@ -90,6 +90,9 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 				Count:  int(req.WritableVolumeCount),
 			}
 		}
+		if vl.HasGrowRequest() {
+			glog.V(0).Infof("has grow request: ", vl.GetGrowRequest())
+		}
 		if err != nil {
 			// glog.Warningf("PickForWrite %+v: %v", req, err)
 			lastErr = err

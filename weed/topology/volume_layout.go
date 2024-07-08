@@ -356,6 +356,10 @@ func (vl *VolumeLayout) DoneGrowRequest() {
 	atomic.AddInt32(&vl.growRequestCount, -1)
 }
 
+func (vl *VolumeLayout) GetGrowRequest() int32 {
+	atomic.LoadInt32(&vl.growRequestCount)
+}
+
 func (vl *VolumeLayout) ShouldGrowVolumes(option *VolumeGrowOption) bool {
 	total, active, crowded := vl.GetActiveVolumeCount(option)
 	stats.MasterVolumeLayout.WithLabelValues(option.Collection, option.ReplicaPlacement.String(), "total").Set(float64(total))
