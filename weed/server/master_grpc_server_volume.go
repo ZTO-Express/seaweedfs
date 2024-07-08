@@ -52,6 +52,7 @@ func (ms *MasterServer) ProcessGrowRequest() {
 				filter.Store(req, nil)
 				// we have lock called inside vg
 				go func() {
+					defer vl.DoneGrowRequest()
 					glog.V(1).Infoln("starting automatic volume grow")
 					start := time.Now()
 					newVidLocations, err := ms.vg.AutomaticGrowByType(req.Option, ms.grpcDialOption, ms.Topo, req.Count)
@@ -61,7 +62,6 @@ func (ms *MasterServer) ProcessGrowRequest() {
 							ms.broadcastToClients(&master_pb.KeepConnectedResponse{VolumeLocation: newVidLocation})
 						}
 					}
-					vl.DoneGrowRequest()
 
 					filter.Delete(req)
 				}()
