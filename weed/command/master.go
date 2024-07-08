@@ -88,6 +88,7 @@ func init() {
 	m.raftBootstrap = cmdMaster.Flag.Bool("raftBootstrap", false, "Whether to bootstrap the Raft cluster")
 	m.username = cmdMaster.Flag.String("username", "", "username for authentication")
 	m.password = cmdMaster.Flag.String("password", "", "password for authentication")
+	m.pprof = cmdMaster.Flag.Bool("pprof", false, "enable pprof")
 }
 
 var cmdMaster = &Command{
