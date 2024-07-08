@@ -193,6 +193,11 @@ func startMaster(masterOption MasterOptions, masterWhiteList []string) {
 
 	if *masterOption.pprof {
 		r.HandleFunc("/debug/pprof/", httppprof.Index)
+		r.HandleFunc("/debug/pprof/goroutine", httppprof.Index)
+		r.HandleFunc("/debug/pprof/block", httppprof.Index)
+		r.HandleFunc("/debug/pprof/allocs", httppprof.Index)
+		r.HandleFunc("/debug/pprof/heap", httppprof.Index)
+		r.HandleFunc("/debug/pprof/mutex", httppprof.Index)
 		r.HandleFunc("/debug/pprof/cmdline", httppprof.Cmdline)
 		r.HandleFunc("/debug/pprof/profile", httppprof.Profile)
 		r.HandleFunc("/debug/pprof/symbol", httppprof.Symbol)
