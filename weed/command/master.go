@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	httppprof "net/http/pprof"
 	"os"
 	"path"
 	"strings"
@@ -59,6 +60,7 @@ type MasterOptions struct {
 	raftBootstrap      *bool
 	username           *string
 	password           *string
+	pprof              *bool
 }
 
 func init() {
@@ -187,6 +189,14 @@ func startMaster(masterOption MasterOptions, masterWhiteList []string) {
 	ms.SetRaftServer(raftServer)
 	r.HandleFunc("/cluster/status", raftServer.StatusHandler).Methods("GET")
 	r.HandleFunc("/cluster/healthz", raftServer.HealthzHandler).Methods("GET", "HEAD")
+	if *masterOption.pprof {
+		r.HandleFunc("/debug/pprof/", httppprof.Index)
+		r.HandleFunc("/debug/pprof/cmdline", httppprof.Cmdline)
+		r.HandleFunc("/debug/pprof/profile", httppprof.Profile)
+		r.HandleFunc("/debug/pprof/symbol", httppprof.Symbol)
+		r.HandleFunc("/debug/pprof/trace", httppprof.Trace)
+	}
+
 	if *masterOption.raftHashicorp {
 		r.HandleFunc("/raft/stats", raftServer.StatsRaftHandler).Methods("GET")
 	}

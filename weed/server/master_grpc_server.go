@@ -337,7 +337,8 @@ func (ms *MasterServer) KeepConnected(stream master_pb.Seaweed_KeepConnectedServ
 
 func (ms *MasterServer) broadcastToClients(message *master_pb.KeepConnectedResponse) {
 	ms.clientChansLock.RLock()
-	for _, ch := range ms.clientChans {
+	for channelName, ch := range ms.clientChans {
+		glog.V(3).Infof("%s channel size: %d", channelName, len(ch))
 		ch <- message
 	}
 	ms.clientChansLock.RUnlock()
