@@ -357,7 +357,7 @@ func (vl *VolumeLayout) DoneGrowRequest() {
 }
 
 func (vl *VolumeLayout) GetGrowRequest() int32 {
-	atomic.LoadInt32(&vl.growRequestCount)
+	return atomic.LoadInt32(&vl.growRequestCount)
 }
 
 func (vl *VolumeLayout) ShouldGrowVolumes(option *VolumeGrowOption) bool {
