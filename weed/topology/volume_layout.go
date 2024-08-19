@@ -28,10 +28,9 @@ const (
 type volumeState string
 
 const (
-	readOnlyState     volumeState = "ReadOnly"
-	oversizedState                = "Oversized"
-	crowdedState                  = "Crowded"
-	noWritableVolumes             = "No writable volumes"
+	readOnlyState  volumeState = "ReadOnly"
+	oversizedState             = "Oversized"
+	crowdedState               = "Crowded"
 )
 
 type stateIndicator func(copyState) bool
@@ -295,7 +294,9 @@ func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (vi
 
 	lenWriters := len(vl.writables)
 	if lenWriters <= 0 {
-		return 0, 0, nil, true, fmt.Errorf("%s in volume layout", noWritableVolumes)
+		//glog.V(0).Infoln("No more writable volumes!")
+		shouldGrow = true
+		return 0, 0, nil, shouldGrow, errors.New("No more writable volumes!")
 	}
 	if option.DataCenter == "" && option.Rack == "" && option.DataNode == "" {
 		vid := vl.writables[rand.Intn(lenWriters)]
@@ -343,7 +344,7 @@ func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (vi
 			return
 		}
 	}
-	return vid, count, locationList, true, fmt.Errorf("%s in DataCenter:%v Rack:%v DataNode:%v", noWritableVolumes, option.DataCenter, option.Rack, option.DataNode)
+	return vid, count, locationList, true, fmt.Errorf("No writable volumes in DataCenter:%v Rack:%v DataNode:%v", option.DataCenter, option.Rack, option.DataNode)
 }
 
 func (vl *VolumeLayout) HasGrowRequest() bool {
