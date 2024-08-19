@@ -357,16 +357,6 @@ func (vl *VolumeLayout) DoneGrowRequest() {
 	vl.growRequest.Store(false)
 }
 
-func (vl *VolumeLayout) SetLastGrowCount(count uint32) {
-	if vl.lastGrowCount.Load() != count {
-		vl.lastGrowCount.Store(count)
-	}
-}
-
-func (vl *VolumeLayout) GetLastGrowCount() uint32 {
-	return vl.lastGrowCount.Load()
-}
-
 func (vl *VolumeLayout) ShouldGrowVolumes(option *VolumeGrowOption) bool {
 	total, active, crowded := vl.GetActiveVolumeCount(option)
 	stats.MasterVolumeLayout.WithLabelValues(option.Collection, option.DataCenter, "total").Set(float64(total))

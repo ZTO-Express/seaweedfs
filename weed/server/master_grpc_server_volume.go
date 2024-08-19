@@ -3,13 +3,10 @@ package weed_server
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/seaweedfs/seaweedfs/weed/topology"
 
 	"github.com/seaweedfs/raft"
 
@@ -21,38 +18,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 )
 
-func (ms *MasterServer) DoAutomaticVolumeGrow(req *topology.VolumeGrowRequest) {
-	glog.V(1).Infoln("starting automatic volume grow")
-	start := time.Now()
-	newVidLocations, err := ms.vg.AutomaticGrowByType(req.Option, ms.grpcDialOption, ms.Topo, req.Count)
-	glog.V(1).Infoln("finished automatic volume grow, cost ", time.Now().Sub(start))
-	if err != nil {
-		glog.V(1).Infof("automatic volume grow failed: %+v", err)
-		return
-	}
-	for _, newVidLocation := range newVidLocations {
-		ms.broadcastToClients(&master_pb.KeepConnectedResponse{VolumeLocation: newVidLocation})
-	}
-}
-
 func (ms *MasterServer) ProcessGrowRequest() {
-	go func() {
-		for {
-			time.Sleep(14*time.Minute + time.Duration(120*rand.Float32())*time.Second)
-			if !ms.Topo.IsLeader() {
-				continue
-			}
-			for _, vl := range ms.Topo.ListVolumeLyauts() {
-				if !vl.HasGrowRequest() && vl.ShouldGrowVolumes(&topology.VolumeGrowOption{}) {
-					vl.AddGrowRequest()
-					ms.volumeGrowthRequestChan <- &topology.VolumeGrowRequest{
-						Option: vl.ToGrowOption(),
-						Count:  vl.GetLastGrowCount(),
-					}
-				}
-			}
-		}
-	}()
 	go func() {
 		filter := sync.Map{}
 		for {

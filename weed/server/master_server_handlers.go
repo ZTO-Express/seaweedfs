@@ -114,7 +114,7 @@ func (ms *MasterServer) dirAssignHandler(w http.ResponseWriter, r *http.Request)
 		requestedCount = 1
 	}
 
-	writableVolumeCount, e := strconv.ParseUint(r.FormValue("writableVolumeCount"), 10, 32)
+	writableVolumeCount, e := strconv.Atoi(r.FormValue("writableVolumeCount"))
 	if e != nil {
 		writableVolumeCount = 0
 	}
@@ -152,7 +152,7 @@ func (ms *MasterServer) dirAssignHandler(w http.ResponseWriter, r *http.Request)
 			vl.AddGrowRequest()
 			ms.volumeGrowthRequestChan <- &topology.VolumeGrowRequest{
 				Option: option,
-				Count:  uint32(writableVolumeCount),
+				Count:  writableVolumeCount,
 			}
 		}
 		if err != nil {
