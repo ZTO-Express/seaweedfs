@@ -106,7 +106,7 @@ func (v *volumesBinaryState) copyState(list *VolumeLocationList) copyState {
 
 // mapping from volume to its locations, inverted from server to volume
 type VolumeLayout struct {
-	growRequest       atomic.Bool
+	growRequestCount  int32
 	lastGrowCount     atomic.Uint32
 	rp                *super_block.ReplicaPlacement
 	ttl               *needle.TTL
@@ -348,13 +348,13 @@ func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (vi
 }
 
 func (vl *VolumeLayout) HasGrowRequest() bool {
-	return vl.growRequest.Load()
+	return atomic.LoadInt32(&vl.growRequestCount) > 0
 }
 func (vl *VolumeLayout) AddGrowRequest() {
-	vl.growRequest.Store(true)
+	atomic.AddInt32(&vl.growRequestCount, 1)
 }
 func (vl *VolumeLayout) DoneGrowRequest() {
-	vl.growRequest.Store(false)
+	atomic.AddInt32(&vl.growRequestCount, -1)
 }
 
 func (vl *VolumeLayout) ShouldGrowVolumes(option *VolumeGrowOption) bool {
