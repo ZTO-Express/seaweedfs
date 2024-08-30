@@ -203,6 +203,8 @@ func (l *DiskLocation) closeEcVolumeById(vid needle.VolumeId) {
 }
 
 func (l *DiskLocation) deleteEcVolumeById(vid needle.VolumeId) (e error) {
+	l.ecVolumesLock.Lock()
+	defer l.ecVolumesLock.Unlock()
 	ecVolume, ok := l.ecVolumes[vid]
 	if !ok {
 		return
