@@ -347,7 +347,11 @@ func (s *Store) CollectHeartbeat() *master_pb.Heartbeat {
 	}
 
 	// delete expired ec volumes
-	ecVolumeMessages, deletedEcVolumes := s.deleteExpiredEcVolumes()
+	var ecVolumeMessages, deletedEcVolumes []*master_pb.VolumeEcShardInformationMessage
+	for _, location := range s.Locations {
+		s.deleteExpiredEcVolumesInLocation(location, ecVolumeMessages, deletedEcVolumes)
+	}
+	//ecVolumeMessages, deletedEcVolumes := s.deleteExpiredEcVolumes()
 
 	var uuidList []string
 	for _, loc := range s.Locations {
@@ -386,17 +390,8 @@ func (s *Store) CollectHeartbeat() *master_pb.Heartbeat {
 
 }
 
-func (s *Store) deleteExpiredEcVolumes() (ecShards, deleted []*master_pb.VolumeEcShardInformationMessage) {
-	for _, location := range s.Locations {
-		s.deleteExpiredEcVolumesInLocation(location, ecShards, deleted)
-	}
-	return
-}
-
 func (s *Store) deleteExpiredEcVolumesInLocation(location *DiskLocation, ecShards, deleted []*master_pb.VolumeEcShardInformationMessage) {
-	location.ecVolumesLock.RLock()
-	ecVolumes := location.ecVolumes
-	location.ecVolumesLock.RUnlock()
+	ecVolumes := location.GetVolumesWithRLock()
 	for _, ev := range ecVolumes {
 		messages := ev.ToVolumeEcShardInformationMessage()
 		if ev.IsTimeToDestroy() {
