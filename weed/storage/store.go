@@ -347,11 +347,7 @@ func (s *Store) CollectHeartbeat() *master_pb.Heartbeat {
 	}
 
 	// delete expired ec volumes
-	var ecVolumeMessages, deletedEcVolumes []*master_pb.VolumeEcShardInformationMessage
-	for _, location := range s.Locations {
-		s.deleteExpiredEcVolumesInLocation(location, ecVolumeMessages, deletedEcVolumes)
-	}
-	//ecVolumeMessages, deletedEcVolumes := s.deleteExpiredEcVolumes()
+	ecVolumeMessages, deletedEcVolumes := s.deleteExpiredEcVolumes()
 
 	var uuidList []string
 	for _, loc := range s.Locations {
@@ -390,22 +386,35 @@ func (s *Store) CollectHeartbeat() *master_pb.Heartbeat {
 
 }
 
-func (s *Store) deleteExpiredEcVolumesInLocation(location *DiskLocation, ecShards, deleted []*master_pb.VolumeEcShardInformationMessage) {
-	ecVolumes := location.GetVolumesWithRLock()
-	for _, ev := range ecVolumes {
-		messages := ev.ToVolumeEcShardInformationMessage()
-		if ev.IsTimeToDestroy() {
+func (s *Store) deleteExpiredEcVolumes() (ecShards, deleted []*master_pb.VolumeEcShardInformationMessage) {
+	for _, location := range s.Locations {
+		toDeleteEcVolume := s.prepareDeleteExpiredEcVolumesInLocation(location, ecShards)
+		for _, ev := range toDeleteEcVolume {
 			err := location.deleteEcVolumeById(ev.VolumeId)
 			if err != nil {
-				ecShards = append(ecShards, messages...)
+				ecShards = append(ecShards, ev.ToVolumeEcShardInformationMessage()...)
 				glog.Errorf("delete EcVolume err %d: %v", ev.VolumeId, err)
 				continue
 			}
-			deleted = append(deleted, messages...)
-		} else {
-			ecShards = append(ecShards, messages...)
+			deleted = append(deleted, ev.ToVolumeEcShardInformationMessage()...)
 		}
 	}
+	return
+}
+
+// prepareDeleteExpiredEcVolumesInLocation 计算ec volume是否达到删除时间，然后返回需要删除的ec volume列表，不需要删除的添加到ecShards中
+func (s *Store) prepareDeleteExpiredEcVolumesInLocation(location *DiskLocation, ecShards []*master_pb.VolumeEcShardInformationMessage) []*erasure_coding.EcVolume {
+	var toDeleteEcVolume []*erasure_coding.EcVolume
+	location.ecVolumesLock.RLock()
+	defer location.ecVolumesLock.RUnlock()
+	for _, ev := range location.ecVolumes {
+		if ev.IsTimeToDestroy() {
+			toDeleteEcVolume = append(toDeleteEcVolume, ev)
+		} else {
+			ecShards = append(ecShards, ev.ToVolumeEcShardInformationMessage()...)
+		}
+	}
+	return toDeleteEcVolume
 }
 
 func (s *Store) SetStopping() {

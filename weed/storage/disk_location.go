@@ -466,9 +466,3 @@ func (l *DiskLocation) CheckDiskSpace() {
 		glog.V(logLevel).Infof("dir %s %s", dir, desc)
 	}
 }
-
-func (l *DiskLocation) GetVolumesWithRLock() map[needle.VolumeId]*erasure_coding.EcVolume {
-	l.ecVolumesLock.RLock()
-	defer l.ecVolumesLock.RUnlock()
-	return l.ecVolumes
-}
