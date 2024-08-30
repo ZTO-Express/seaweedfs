@@ -394,9 +394,10 @@ func (s *Store) deleteExpiredEcVolumes() (ecShards, deleted []*master_pb.VolumeE
 }
 
 func (s *Store) deleteExpiredEcVolumesInLocation(location *DiskLocation, ecShards, deleted []*master_pb.VolumeEcShardInformationMessage) {
-	location.ecVolumesLock.Lock()
-	defer location.ecVolumesLock.Unlock()
-	for _, ev := range location.ecVolumes {
+	location.ecVolumesLock.RLock()
+	ecVolumes := location.ecVolumes
+	location.ecVolumesLock.RUnlock()
+	for _, ev := range ecVolumes {
 		messages := ev.ToVolumeEcShardInformationMessage()
 		if ev.IsTimeToDestroy() {
 			err := location.deleteEcVolumeById(ev.VolumeId)
