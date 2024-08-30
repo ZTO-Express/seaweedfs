@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -28,11 +29,11 @@ type DiskLocation struct {
 	OriginalMaxVolumeCount int32
 	MinFreeSpace           util.MinFreeSpace
 	volumes                map[needle.VolumeId]*Volume
-	volumesLock            sync.RWMutex
+	volumesLock            deadlock.RWMutex
 
 	// erasure coding
 	ecVolumes     map[needle.VolumeId]*erasure_coding.EcVolume
-	ecVolumesLock sync.RWMutex
+	ecVolumesLock deadlock.RWMutex
 
 	isDiskSpaceLow bool
 	closeCh        chan struct{}

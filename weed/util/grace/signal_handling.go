@@ -4,20 +4,20 @@
 package grace
 
 import (
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"os"
 	"os/signal"
 	"reflect"
 	"runtime"
-	"sync"
 	"syscall"
 )
 
 var signalChan chan os.Signal
 var interruptHooks = make([]func(), 0)
-var interruptHookLock sync.RWMutex
+var interruptHookLock deadlock.RWMutex
 var reloadHooks = make([]func(), 0)
-var reloadHookLock sync.RWMutex
+var reloadHookLock deadlock.RWMutex
 
 func GetFunctionName(i interface{}) string {
 	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()

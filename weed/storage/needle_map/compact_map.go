@@ -1,10 +1,9 @@
 package needle_map
 
 import (
-	"sort"
-	"sync"
-
+	"github.com/sasha-s/go-deadlock"
 	. "github.com/seaweedfs/seaweedfs/weed/storage/types"
+	"sort"
 )
 
 const (
@@ -26,7 +25,7 @@ type SectionalNeedleValueExtra struct {
 }
 
 type CompactSection struct {
-	sync.RWMutex
+	deadlock.RWMutex
 	values        []SectionalNeedleValue
 	valuesExtra   []SectionalNeedleValueExtra
 	overflow      Overflow

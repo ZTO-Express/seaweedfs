@@ -5,16 +5,15 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
-	"io"
-	"os"
-	"strings"
-	"sync"
-
+	"github.com/sasha-s/go-deadlock"
 	"github.com/syndtr/goleveldb/leveldb"
 	leveldb_errors "github.com/syndtr/goleveldb/leveldb/errors"
 	"github.com/syndtr/goleveldb/leveldb/filter"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	leveldb_util "github.com/syndtr/goleveldb/leveldb/util"
+	"io"
+	"os"
+	"strings"
 
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -33,7 +32,7 @@ func init() {
 type LevelDB3Store struct {
 	dir      string
 	dbs      map[string]*leveldb.DB
-	dbsLock  sync.RWMutex
+	dbsLock  deadlock.RWMutex
 	ReadOnly bool
 }
 

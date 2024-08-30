@@ -2,8 +2,7 @@ package chunk_cache
 
 import (
 	"errors"
-	"sync"
-
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 )
@@ -19,7 +18,7 @@ type ChunkCache interface {
 type TieredChunkCache struct {
 	memCache   *ChunkCacheInMemory
 	diskCaches []*OnDiskCacheLayer
-	sync.RWMutex
+	deadlock.RWMutex
 	onDiskCacheSizeLimit0 uint64
 	onDiskCacheSizeLimit1 uint64
 	onDiskCacheSizeLimit2 uint64

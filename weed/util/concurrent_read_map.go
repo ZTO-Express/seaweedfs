@@ -1,13 +1,13 @@
 package util
 
 import (
-	"sync"
+	"github.com/sasha-s/go-deadlock"
 )
 
 // A mostly for read map, which can thread-safely
 // initialize the map entries.
 type ConcurrentReadMap struct {
-	sync.RWMutex
+	deadlock.RWMutex
 
 	items map[string]interface{}
 }

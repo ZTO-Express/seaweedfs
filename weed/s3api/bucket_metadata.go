@@ -3,13 +3,13 @@ package s3api
 import (
 	"encoding/json"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"math"
-	"sync"
 )
 
 var loadBucketMetadataFromFiler = func(r *BucketRegistry, bucketName string) (*BucketMetaData, error) {
@@ -42,10 +42,10 @@ type BucketMetaData struct {
 
 type BucketRegistry struct {
 	metadataCache     map[string]*BucketMetaData
-	metadataCacheLock sync.RWMutex
+	metadataCacheLock deadlock.RWMutex
 
 	notFound     map[string]struct{}
-	notFoundLock sync.RWMutex
+	notFoundLock deadlock.RWMutex
 	s3a          *S3ApiServer
 }
 

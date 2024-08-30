@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"net/http"
 	"os"
 	"strings"
@@ -23,7 +24,7 @@ type Iam interface {
 }
 
 type IdentityAccessManagement struct {
-	m sync.RWMutex
+	m deadlock.RWMutex
 
 	identities        []*Identity
 	accessKeyIdent    map[string]*Identity
@@ -32,7 +33,7 @@ type IdentityAccessManagement struct {
 	hashes            map[string]*sync.Pool
 	hashCounters      map[string]*int32
 	identityAnonymous *Identity
-	hashMu            sync.RWMutex
+	hashMu            deadlock.RWMutex
 	domain            string
 	isAuthEnabled     bool
 }

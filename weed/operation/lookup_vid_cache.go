@@ -2,8 +2,8 @@ package operation
 
 import (
 	"errors"
+	"github.com/sasha-s/go-deadlock"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -16,7 +16,7 @@ type VidInfo struct {
 	NextRefreshTime time.Time
 }
 type VidCache struct {
-	sync.RWMutex
+	deadlock.RWMutex
 	cache []VidInfo
 }
 

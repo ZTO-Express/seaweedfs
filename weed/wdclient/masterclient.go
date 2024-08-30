@@ -3,8 +3,8 @@ package wdclient
 import (
 	"context"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/stats"
@@ -23,14 +23,14 @@ type MasterClient struct {
 	clientHost        pb.ServerAddress
 	rack              string
 	currentMaster     pb.ServerAddress
-	currentMasterLock sync.RWMutex
+	currentMasterLock deadlock.RWMutex
 	masters           pb.ServerDiscovery
 	grpcDialOption    grpc.DialOption
 
 	*vidMap
 	vidMapCacheSize  int
 	OnPeerUpdate     func(update *master_pb.ClusterNodeUpdate, startFrom time.Time)
-	OnPeerUpdateLock sync.RWMutex
+	OnPeerUpdateLock deadlock.RWMutex
 }
 
 func NewMasterClient(grpcDialOption grpc.DialOption, filerGroup string, clientType string, clientHost pb.ServerAddress, clientDataCenter string, rack string, masters pb.ServerDiscovery) *MasterClient {

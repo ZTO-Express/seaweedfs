@@ -3,9 +3,9 @@ package weed_server
 import (
 	"context"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/seaweedfs/raft"
@@ -74,7 +74,7 @@ type AdminLock struct {
 
 type AdminLocks struct {
 	locks map[string]*AdminLock
-	sync.RWMutex
+	deadlock.RWMutex
 }
 
 func NewAdminLocks() *AdminLocks {

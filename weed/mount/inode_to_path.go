@@ -2,14 +2,14 @@ package mount
 
 import (
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"sync"
 	"time"
 )
 
 type InodeToPath struct {
-	sync.RWMutex
+	deadlock.RWMutex
 	nextInodeId uint64
 	inode2path  map[uint64]*InodeEntry
 	path2inode  map[util.FullPath]uint64

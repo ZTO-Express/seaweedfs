@@ -2,20 +2,19 @@ package s3_backend
 
 import (
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/seaweedfs/seaweedfs/weed/util"
-	"sync"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"github.com/sasha-s/go-deadlock"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 var (
 	s3Sessions   = make(map[string]s3iface.S3API)
-	sessionsLock sync.RWMutex
+	sessionsLock deadlock.RWMutex
 )
 
 func getSession(region string) (s3iface.S3API, bool) {

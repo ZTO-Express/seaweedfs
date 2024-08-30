@@ -1,10 +1,10 @@
 package util
 
 import (
-	"sync"
+	"github.com/sasha-s/go-deadlock"
 )
 
-type node[T any]struct {
+type node[T any] struct {
 	data T
 	next *node[T]
 }
@@ -13,7 +13,7 @@ type Queue[T any] struct {
 	head  *node[T]
 	tail  *node[T]
 	count int
-	sync.RWMutex
+	deadlock.RWMutex
 }
 
 func NewQueue[T any]() *Queue[T] {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -36,7 +37,7 @@ type commandFsVerify struct {
 	modifyTimeAgoAtSec int64
 	writer             io.Writer
 	waitChan           map[string]chan struct{}
-	waitChanLock       sync.RWMutex
+	waitChanLock       deadlock.RWMutex
 }
 
 func (c *commandFsVerify) Name() string {

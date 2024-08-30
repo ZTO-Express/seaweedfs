@@ -2,6 +2,7 @@ package log_buffer
 
 import (
 	"bytes"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"sync"
 	"sync/atomic"
@@ -47,7 +48,7 @@ type LogBuffer struct {
 	isAllFlushed      bool
 	flushChan         chan *dataToFlush
 	LastTsNs          int64
-	sync.RWMutex
+	deadlock.RWMutex
 }
 
 func NewLogBuffer(name string, flushInterval time.Duration, flushFn LogFlushFuncType,

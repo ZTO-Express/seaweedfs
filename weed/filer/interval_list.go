@@ -1,8 +1,8 @@
 package filer
 
 import (
+	"github.com/sasha-s/go-deadlock"
 	"math"
-	"sync"
 )
 
 type IntervalValue interface {
@@ -27,7 +27,7 @@ func (interval *Interval[T]) Size() int64 {
 type IntervalList[T IntervalValue] struct {
 	head *Interval[T]
 	tail *Interval[T]
-	Lock sync.RWMutex
+	Lock deadlock.RWMutex
 }
 
 func NewIntervalList[T IntervalValue]() *IntervalList[T] {

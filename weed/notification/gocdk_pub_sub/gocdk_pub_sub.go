@@ -27,7 +27,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"net/url"
 	"path"
-	"sync"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -52,7 +51,7 @@ func getPath(rawUrl string) string {
 type GoCDKPubSub struct {
 	topicURL  string
 	topic     *pubsub.Topic
-	topicLock sync.RWMutex
+	topicLock deadlock.RWMutex
 }
 
 func (k *GoCDKPubSub) GetName() string {

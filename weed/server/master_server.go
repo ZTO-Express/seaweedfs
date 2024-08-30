@@ -3,13 +3,13 @@ package weed_server
 import (
 	"context"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/stats"
@@ -68,7 +68,7 @@ type MasterServer struct {
 	boundedLeaderChan chan int
 
 	// notifying clients
-	clientChansLock sync.RWMutex
+	clientChansLock deadlock.RWMutex
 	clientChans     map[string]chan *master_pb.KeepConnectedResponse
 
 	grpcDialOption grpc.DialOption

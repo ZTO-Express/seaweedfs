@@ -3,8 +3,8 @@ package lock_manager
 import (
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
-	"sync"
 	"time"
 )
 
@@ -17,7 +17,7 @@ var LockNotFound = fmt.Errorf("lock not found")
 // LockManager local lock manager, used by distributed lock manager
 type LockManager struct {
 	locks      map[string]*Lock
-	accessLock sync.RWMutex
+	accessLock deadlock.RWMutex
 }
 type Lock struct {
 	Token       string

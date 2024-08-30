@@ -2,9 +2,9 @@ package topology
 
 import (
 	"errors"
+	"github.com/sasha-s/go-deadlock"
 	"math/rand"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -42,12 +42,12 @@ type Node interface {
 }
 
 type NodeImpl struct {
-	diskUsages   *DiskUsages
-	id           NodeId
-	parent       Node
-	sync.RWMutex // lock children
-	children     map[NodeId]Node
-	maxVolumeId  needle.VolumeId
+	diskUsages       *DiskUsages
+	id               NodeId
+	parent           Node
+	deadlock.RWMutex // lock children
+	children         map[NodeId]Node
+	maxVolumeId      needle.VolumeId
 
 	//for rack, data center, topology
 	nodeType string

@@ -2,10 +2,10 @@ package storage
 
 import (
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/syndtr/goleveldb/leveldb/errors"
@@ -31,7 +31,7 @@ type LevelDbNeedleMap struct {
 	dbFileName    string
 	db            *leveldb.DB
 	ldbOpts       *opt.Options
-	ldbAccessLock sync.RWMutex
+	ldbAccessLock deadlock.RWMutex
 	exitChan      chan bool
 	// no need to use atomic
 	accessFlag  int64

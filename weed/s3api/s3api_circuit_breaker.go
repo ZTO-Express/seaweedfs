@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -12,12 +13,11 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 	"net/http"
-	"sync"
 	"sync/atomic"
 )
 
 type CircuitBreaker struct {
-	sync.RWMutex
+	deadlock.RWMutex
 	Enabled     bool
 	counters    map[string]*int64
 	limitations map[string]int64

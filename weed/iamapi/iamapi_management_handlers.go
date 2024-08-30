@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -40,7 +40,7 @@ var (
 	seededRand *rand.Rand = rand.New(
 		rand.NewSource(time.Now().UnixNano()))
 	policyDocuments = map[string]*PolicyDocument{}
-	policyLock      = sync.RWMutex{}
+	policyLock      = deadlock.RWMutex{}
 )
 
 func MapToStatementAction(action string) string {

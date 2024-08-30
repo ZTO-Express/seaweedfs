@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	transport "github.com/Jille/raft-grpc-transport"
+	"github.com/sasha-s/go-deadlock"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -33,7 +33,7 @@ type Topology struct {
 
 	collectionMap  *util.ConcurrentReadMap
 	ecShardMap     map[needle.VolumeId]*EcShardLocations
-	ecShardMapLock sync.RWMutex
+	ecShardMapLock deadlock.RWMutex
 
 	pulse int64
 
@@ -49,10 +49,10 @@ type Topology struct {
 	Configuration *Configuration
 
 	RaftServer                    raft.Server
-	RaftServerAccessLock          sync.RWMutex
+	RaftServerAccessLock          deadlock.RWMutex
 	HashicorpRaft                 *hashicorpRaft.Raft
 	HashicorpRaftTransportManager *transport.Manager
-	UuidAccessLock                sync.RWMutex
+	UuidAccessLock                deadlock.RWMutex
 	UuidMap                       map[string][]string
 }
 

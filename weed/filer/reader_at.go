@@ -3,14 +3,13 @@ package filer
 import (
 	"context"
 	"fmt"
-	"io"
-	"math/rand"
-	"sync"
-
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
+	"io"
+	"math/rand"
 )
 
 type ChunkReadAt struct {
@@ -28,7 +27,7 @@ var _ = io.Closer(&ChunkReadAt{})
 func LookupFn(filerClient filer_pb.FilerClient) wdclient.LookupFileIdFunctionType {
 
 	vidCache := make(map[string]*filer_pb.Locations)
-	var vicCacheLock sync.RWMutex
+	var vicCacheLock deadlock.RWMutex
 	return func(fileId string) (targetUrls []string, err error) {
 		vid := VolumeId(fileId)
 		vicCacheLock.RLock()

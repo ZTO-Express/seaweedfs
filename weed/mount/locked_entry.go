@@ -1,13 +1,13 @@
 package mount
 
 import (
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
-	"sync"
 )
 
 type LockedEntry struct {
 	*filer_pb.Entry
-	sync.RWMutex
+	deadlock.RWMutex
 }
 
 func (le *LockedEntry) GetEntry() *filer_pb.Entry {

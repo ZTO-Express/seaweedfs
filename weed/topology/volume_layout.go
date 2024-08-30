@@ -3,9 +3,9 @@ package topology
 import (
 	"errors"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"math/rand"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -113,13 +113,13 @@ type VolumeLayout struct {
 	vid2location      map[needle.VolumeId]*VolumeLocationList
 	writables         []needle.VolumeId // transient array of writable volume id
 	crowded           map[needle.VolumeId]struct{}
-	crowdedAccessLock sync.RWMutex
+	crowdedAccessLock deadlock.RWMutex
 	readonlyVolumes   *volumesBinaryState // readonly volumes
 	oversizedVolumes  *volumesBinaryState // oversized volumes
 	vacuumedVolumes   map[needle.VolumeId]time.Time
 	volumeSizeLimit   uint64
 	replicationAsMin  bool
-	accessLock        sync.RWMutex
+	accessLock        deadlock.RWMutex
 }
 
 type VolumeLayoutStats struct {

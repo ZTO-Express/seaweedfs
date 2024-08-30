@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/arangodb/go-driver"
@@ -34,7 +34,7 @@ type ArangodbStore struct {
 	kvCollection driver.Collection
 
 	buckets map[string]driver.Collection
-	mu      sync.RWMutex
+	mu      deadlock.RWMutex
 
 	databaseName string
 }

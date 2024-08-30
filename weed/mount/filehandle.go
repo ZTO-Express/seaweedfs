@@ -1,12 +1,12 @@
 package mount
 
 import (
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"os"
-	"sync"
 )
 
 type FileHandleId uint64
@@ -17,7 +17,7 @@ type FileHandle struct {
 	fh              FileHandleId
 	counter         int64
 	entry           *LockedEntry
-	entryLock       sync.RWMutex
+	entryLock       deadlock.RWMutex
 	entryChunkGroup *filer.ChunkGroup
 	inode           uint64
 	wfs             *WFS

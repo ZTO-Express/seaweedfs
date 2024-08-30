@@ -2,6 +2,7 @@ package erasure_coding
 
 import (
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
@@ -9,7 +10,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 type ShardId uint8
@@ -20,7 +20,7 @@ type EcVolumeShard struct {
 	Collection        string
 	dir               string
 	ecdFile           *os.File
-	ecdFileAccessLock sync.RWMutex
+	ecdFileAccessLock deadlock.RWMutex
 	ecdFileSize       int64
 	DiskType          types.DiskType
 }

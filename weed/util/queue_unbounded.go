@@ -1,12 +1,14 @@
 package util
 
-import "sync"
+import (
+	"github.com/sasha-s/go-deadlock"
+)
 
 type UnboundedQueue struct {
 	outbound     []string
-	outboundLock sync.RWMutex
+	outboundLock deadlock.RWMutex
 	inbound      []string
-	inboundLock  sync.RWMutex
+	inboundLock  deadlock.RWMutex
 }
 
 func NewUnboundedQueue() *UnboundedQueue {

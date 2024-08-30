@@ -2,9 +2,9 @@ package topology
 
 import (
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"sync"
 	"sync/atomic"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
@@ -18,7 +18,7 @@ type Disk struct {
 	NodeImpl
 	volumes      map[needle.VolumeId]storage.VolumeInfo
 	ecShards     map[needle.VolumeId]*erasure_coding.EcVolumeInfo
-	ecShardsLock sync.RWMutex
+	ecShardsLock deadlock.RWMutex
 }
 
 func NewDisk(diskType string) *Disk {
@@ -33,7 +33,7 @@ func NewDisk(diskType string) *Disk {
 }
 
 type DiskUsages struct {
-	sync.RWMutex
+	deadlock.RWMutex
 	usages map[types.DiskType]*DiskUsageCounts
 }
 

@@ -1,10 +1,9 @@
 package resource_pool
 
 import (
-	"fmt"
-	"sync"
-
 	"errors"
+	"fmt"
+	"github.com/sasha-s/go-deadlock"
 )
 
 // A resource pool implementation that manages multiple resource location
@@ -16,7 +15,7 @@ type multiResourcePool struct {
 
 	createPool func(Options) ResourcePool
 
-	rwMutex    sync.RWMutex
+	rwMutex    deadlock.RWMutex
 	isLameDuck bool // guarded by rwMutex
 	// NOTE: the locationPools is guarded by rwMutex, but the pool entries
 	// are not.
@@ -39,7 +38,7 @@ func NewMultiResourcePool(
 	return &multiResourcePool{
 		options:       options,
 		createPool:    createPool,
-		rwMutex:       sync.RWMutex{},
+		rwMutex:       deadlock.RWMutex{},
 		isLameDuck:    false,
 		locationPools: make(map[string]ResourcePool),
 	}

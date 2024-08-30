@@ -3,6 +3,7 @@ package erasure_coding
 import (
 	"errors"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"math"
 	"os"
@@ -31,13 +32,13 @@ type EcVolume struct {
 	dir                       string
 	dirIdx                    string
 	ecxFile                   *os.File
-	ecxFileAccessLock         sync.RWMutex
+	ecxFileAccessLock         deadlock.RWMutex
 	ecxFileSize               int64
 	ecxCreatedAt              time.Time
 	Shards                    []*EcVolumeShard
 	ShardLocations            map[ShardId][]pb.ServerAddress
 	ShardLocationsRefreshTime time.Time
-	ShardLocationsLock        sync.RWMutex
+	ShardLocationsLock        deadlock.RWMutex
 	Version                   needle.Version
 	ecjFile                   *os.File
 	ecjFileAccessLock         sync.Mutex

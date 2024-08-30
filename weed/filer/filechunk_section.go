@@ -1,8 +1,8 @@
 package filer
 
 import (
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
-	"sync"
 )
 
 const SectionSize = 2 * 1024 * 1024 * 32 // 64MiB
@@ -13,7 +13,7 @@ type FileChunkSection struct {
 	visibleIntervals *IntervalList[*VisibleInterval]
 	chunkViews       *IntervalList[*ChunkView]
 	reader           *ChunkReadAt
-	lock             sync.RWMutex
+	lock             deadlock.RWMutex
 	isPrepared       bool
 }
 

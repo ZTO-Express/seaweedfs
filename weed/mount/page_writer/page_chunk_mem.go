@@ -1,7 +1,7 @@
 package page_writer
 
 import (
-	"sync"
+	"github.com/sasha-s/go-deadlock"
 	"sync/atomic"
 
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -15,7 +15,7 @@ var (
 )
 
 type MemChunk struct {
-	sync.RWMutex
+	deadlock.RWMutex
 	buf             []byte
 	usage           *ChunkWrittenIntervalList
 	chunkSize       int64

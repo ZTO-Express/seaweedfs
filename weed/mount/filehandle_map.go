@@ -1,13 +1,12 @@
 package mount
 
 import (
-	"sync"
-
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 )
 
 type FileHandleToInode struct {
-	sync.RWMutex
+	deadlock.RWMutex
 	nextFh   FileHandleId
 	inode2fh map[uint64]*FileHandle
 	fh2inode map[FileHandleId]uint64

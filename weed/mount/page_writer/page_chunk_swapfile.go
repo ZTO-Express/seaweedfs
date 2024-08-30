@@ -1,6 +1,7 @@
 package page_writer
 
 import (
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/util/mem"
@@ -24,7 +25,7 @@ type SwapFile struct {
 }
 
 type SwapFileChunk struct {
-	sync.RWMutex
+	deadlock.RWMutex
 	swapfile         *SwapFile
 	usage            *ChunkWrittenIntervalList
 	logicChunkIndex  LogicChunkIndex

@@ -1,10 +1,12 @@
 package topic
 
-import "sync"
+import (
+	"github.com/sasha-s/go-deadlock"
+)
 
 type LocalPartitionSubscribers struct {
 	Subscribers     map[string]*LocalSubscriber
-	SubscribersLock sync.RWMutex
+	SubscribersLock deadlock.RWMutex
 }
 type LocalSubscriber struct {
 	stopCh chan struct{}

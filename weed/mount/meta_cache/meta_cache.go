@@ -2,14 +2,13 @@ package meta_cache
 
 import (
 	"context"
-	"os"
-	"sync"
-
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/filer/leveldb"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
+	"os"
 )
 
 // need to have logic similar to FilerStoreWrapper
@@ -18,7 +17,7 @@ import (
 type MetaCache struct {
 	root       util.FullPath
 	localStore filer.VirtualFilerStore
-	sync.RWMutex
+	deadlock.RWMutex
 	uidGidMapper   *UidGidMapper
 	markCachedFn   func(fullpath util.FullPath)
 	isCachedFn     func(fullpath util.FullPath) bool

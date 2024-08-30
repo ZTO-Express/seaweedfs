@@ -1,10 +1,12 @@
 package topic
 
-import "sync"
+import (
+	"github.com/sasha-s/go-deadlock"
+)
 
 type LocalPartitionPublishers struct {
 	publishers     map[string]*LocalPublisher
-	publishersLock sync.RWMutex
+	publishersLock deadlock.RWMutex
 }
 type LocalPublisher struct {
 }

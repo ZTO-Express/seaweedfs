@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"path"
 	"strconv"
 	"sync"
@@ -29,13 +30,13 @@ type Volume struct {
 	needleMapKind      NeedleMapKind
 	noWriteOrDelete    bool // if readonly, either noWriteOrDelete or noWriteCanDelete
 	noWriteCanDelete   bool // if readonly, either noWriteOrDelete or noWriteCanDelete
-	noWriteLock        sync.RWMutex
+	noWriteLock        deadlock.RWMutex
 	hasRemoteFile      bool // if the volume has a remote file
 	MemoryMapMaxSizeMb uint32
 
 	super_block.SuperBlock
 
-	dataFileAccessLock    sync.RWMutex
+	dataFileAccessLock    deadlock.RWMutex
 	superBlockAccessLock  sync.Mutex
 	asyncRequestsChan     chan *needle.AsyncRequest
 	lastModifiedTsSeconds uint64 // unix time in seconds

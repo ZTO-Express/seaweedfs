@@ -1,9 +1,9 @@
 package cluster
 
 import (
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
-	"sync"
 	"time"
 )
 
@@ -29,7 +29,7 @@ type ClusterNode struct {
 
 type ClusterNodeGroups struct {
 	groupMembers map[FilerGroupName]*GroupMembers
-	sync.RWMutex
+	deadlock.RWMutex
 }
 type Cluster struct {
 	filerGroups  *ClusterNodeGroups

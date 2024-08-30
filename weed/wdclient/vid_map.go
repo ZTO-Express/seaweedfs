@@ -3,11 +3,11 @@ package wdclient
 import (
 	"errors"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"math/rand"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -35,7 +35,7 @@ func (l Location) ServerAddress() pb.ServerAddress {
 }
 
 type vidMap struct {
-	sync.RWMutex
+	deadlock.RWMutex
 	vid2Locations   map[uint32][]Location
 	ecVid2Locations map[uint32][]Location
 	DataCenter      string
