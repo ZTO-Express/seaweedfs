@@ -99,11 +99,23 @@ func (vs *VolumeServer) VolumeUnmount(ctx context.Context, req *volume_server_pb
 func (vs *VolumeServer) VolumeDelete(ctx context.Context, req *volume_server_pb.VolumeDeleteRequest) (*volume_server_pb.VolumeDeleteResponse, error) {
 
 	resp := &volume_server_pb.VolumeDeleteResponse{}
+	vid := needle.VolumeId(req.VolumeId)
 
-	err := vs.store.DeleteVolume(needle.VolumeId(req.VolumeId), req.OnlyEmpty)
+	err := vs.store.DeleteVolume(vid, req.OnlyEmpty)
 
 	if err != nil {
-		glog.Errorf("volume delete %v: %v", req, err)
+		var foundAndDeletedEcVolume bool
+		if req.IncludeEcVolume {
+			deletedCount := vs.store.DestroyEcVolume(vid)
+			foundAndDeletedEcVolume = deletedCount > 0
+		}
+
+		if foundAndDeletedEcVolume {
+			glog.V(2).Infof("ec volume delete %v", req)
+			return resp, nil
+		} else {
+			glog.Errorf("volume delete %v: %v", req, err)
+		}
 	} else {
 		glog.V(2).Infof("volume delete %v", req)
 	}

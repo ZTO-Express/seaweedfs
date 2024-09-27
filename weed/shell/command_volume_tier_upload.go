@@ -123,7 +123,7 @@ func doVolumeTierUpload(commandEnv *CommandEnv, writer io.Writer, collection str
 			continue
 		}
 		fmt.Printf("delete volume %d from %s\n", vid, location.Url)
-		err = deleteVolume(commandEnv.option.GrpcDialOption, vid, location.ServerAddress(), false)
+		err = deleteVolume(commandEnv.option.GrpcDialOption, vid, location.ServerAddress(), false, false)
 		if err != nil {
 			return fmt.Errorf("deleteVolume %s volume %d: %v", location.Url, vid, err)
 		}

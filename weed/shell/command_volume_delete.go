@@ -1,9 +1,13 @@
 package shell
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"io"
+	"strconv"
 
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 )
@@ -42,10 +46,45 @@ func (c *commandVolumeDelete) Do(args []string, commandEnv *CommandEnv, writer i
 		return
 	}
 
-	sourceVolumeServer := pb.ServerAddress(*nodeStr)
+	var sourceVolumeServerList []pb.ServerAddress
+	if nodeStr == nil || *nodeStr == "" {
+		// if don't specify volume node,delete the volumeId from all volume nodes
+		var resp *master_pb.LookupVolumeResponse
+		err = commandEnv.MasterClient.WithClient(false, func(client master_pb.SeaweedClient) error {
+			resp, err = client.LookupVolume(context.Background(), &master_pb.LookupVolumeRequest{
+				VolumeOrFileIds: []string{strconv.Itoa(*volumeIdInt)},
+			})
+			if err != nil {
+				return fmt.Errorf("LookupVolume from server,volumeId:%d, error: %v", volumeIdInt, err)
+			}
+			return nil
+		})
+		if err == nil && resp != nil {
+			//ec shards node deduplication
+			deduplication := map[string]struct{}{}
+			for _, loc := range resp.VolumeIdLocations {
+				for _, l := range loc.Locations {
+					url := l.Url
+					if _, ok := deduplication[url]; !ok {
+						deduplication[url] = struct{}{}
+						sourceVolumeServerList = append(sourceVolumeServerList, pb.ServerAddress(url))
+					}
+				}
+			}
+		}
+	} else {
+		// delete from the specify volume node
+		sourceVolumeServerList = append(sourceVolumeServerList, pb.ServerAddress(*nodeStr))
+	}
 
 	volumeId := needle.VolumeId(*volumeIdInt)
+	for _, sourceVolumeServer := range sourceVolumeServerList {
+		err = deleteVolume(commandEnv.option.GrpcDialOption, volumeId, sourceVolumeServer, false, true)
+		if err != nil {
+			//interrupt delete
+			return err
+		}
+	}
 
-	return deleteVolume(commandEnv.option.GrpcDialOption, volumeId, sourceVolumeServer, false)
-
+	return nil
 }

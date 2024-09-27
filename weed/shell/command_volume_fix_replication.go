@@ -260,7 +260,7 @@ func (c *commandVolumeFixReplication) deleteOneVolume(commandEnv *CommandEnv, wr
 		}
 
 		if err := deleteVolume(commandEnv.option.GrpcDialOption, needle.VolumeId(replica.info.Id),
-			pb.NewServerAddressFromDataNode(replica.location.dataNode), false); err != nil {
+			pb.NewServerAddressFromDataNode(replica.location.dataNode), false, false); err != nil {
 			return fmt.Errorf("deleting volume %d from %s : %v", replica.info.Id, replica.location.dataNode.Id, err)
 		}
 
