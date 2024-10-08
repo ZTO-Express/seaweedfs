@@ -4,9 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
+	"google.golang.org/grpc"
 	"io"
 	"strconv"
 	"strings"
@@ -96,7 +99,7 @@ func (c *commandEcVolumeDelete) Do(args []string, commandEnv *CommandEnv, writer
 	}
 
 	for _, sourceVolumeServer := range sourceVolumeServerList {
-		err = sourceServerDeleteEcShards(commandEnv.option.GrpcDialOption, collection, needle.VolumeId(volumeId), sourceVolumeServer, ecShards)
+		err = deleteEcVolume(commandEnv.option.GrpcDialOption, needle.VolumeId(volumeId), sourceVolumeServer)
 		if err != nil {
 			//delete error, interrupt
 			return err
@@ -135,4 +138,15 @@ func findEcVolumeLocations(commandEnv *CommandEnv, volumeId int, collection stri
 		}
 	}
 	return sourceVolumeServerList, err
+}
+
+func deleteEcVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, sourceVolumeServer pb.ServerAddress) (err error) {
+	return operation.WithVolumeServerClient(false, sourceVolumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
+		_, deleteErr := volumeServerClient.VolumeDelete(context.Background(), &volume_server_pb.VolumeDeleteRequest{
+			VolumeId:   uint32(volumeId),
+			OnlyEmpty:  false,
+			IsEcVolume: true, //ec volume delete
+		})
+		return deleteErr
+	})
 }
