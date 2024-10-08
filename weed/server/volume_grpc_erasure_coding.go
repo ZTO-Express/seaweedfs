@@ -216,15 +216,15 @@ func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocatio
 	indexBaseFilename := path.Join(location.IdxDirectory, bName)
 	dataBaseFilename := path.Join(location.Directory, bName)
 
-	if util.FileExists(path.Join(location.IdxDirectory, bName+".ecx")) {
-		for _, shardId := range shardIds {
-			shardFileName := dataBaseFilename + erasure_coding.ToExt(int(shardId))
-			if util.FileExists(shardFileName) {
-				found = true
-				os.Remove(shardFileName)
-			}
+	//if util.FileExists(path.Join(location.IdxDirectory, bName+".ecx")) {
+	for _, shardId := range shardIds {
+		shardFileName := dataBaseFilename + erasure_coding.ToExt(int(shardId))
+		if util.FileExists(shardFileName) {
+			found = true
+			os.Remove(shardFileName)
 		}
 	}
+	//}
 
 	if !found {
 		return nil
