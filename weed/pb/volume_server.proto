@@ -232,6 +232,7 @@ message VolumeDeleteResponse {
 
 message EcVolumeDeleteRequest {
     uint32 volume_id = 1;
+    string collection = 2;
 }
 message EcVolumeDeleteResponse {
 }

@@ -72,7 +72,7 @@ func (c *commandEcVolumeDelete) Do(args []string, commandEnv *CommandEnv, writer
 	}
 
 	for _, sourceVolumeServer := range sourceVolumeServerList {
-		err = deleteEcVolume(commandEnv.option.GrpcDialOption, needle.VolumeId(volumeId), sourceVolumeServer)
+		err = deleteEcVolume(commandEnv.option.GrpcDialOption, needle.VolumeId(volumeId), collection, sourceVolumeServer)
 		if err != nil {
 			//delete error, interrupt
 			return err
@@ -115,10 +115,11 @@ func findEcVolumeLocations(commandEnv *CommandEnv, volumeId int, collection stri
 	return sourceVolumeServerList, err
 }
 
-func deleteEcVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, sourceVolumeServer pb.ServerAddress) (err error) {
+func deleteEcVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, collection string, sourceVolumeServer pb.ServerAddress) (err error) {
 	return operation.WithVolumeServerClient(false, sourceVolumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
 		_, deleteErr := volumeServerClient.EcVolumeDelete(context.Background(), &volume_server_pb.EcVolumeDeleteRequest{
-			VolumeId: uint32(volumeId),
+			VolumeId:   uint32(volumeId),
+			Collection: collection,
 		})
 		return deleteErr
 	})

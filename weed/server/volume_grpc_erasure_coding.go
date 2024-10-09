@@ -200,7 +200,7 @@ func (vs *VolumeServer) VolumeEcShardsDelete(ctx context.Context, req *volume_se
 	glog.V(0).Infof("ec volume %s shard delete %v", bName, req.ShardIds)
 
 	for _, location := range vs.store.Locations {
-		if err := deleteEcShardIdsForEachLocation(bName, location, req.ShardIds); err != nil {
+		if _, err := deleteEcShardIdsForEachLocation(bName, location, req.ShardIds); err != nil {
 			glog.Errorf("deleteEcShards from %s %s.%v: %v", location.Directory, bName, req.ShardIds, err)
 			return nil, err
 		}
@@ -210,9 +210,26 @@ func (vs *VolumeServer) VolumeEcShardsDelete(ctx context.Context, req *volume_se
 	return &volume_server_pb.VolumeEcShardsDeleteResponse{}, nil
 }
 
-func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32) error {
+func deleteAllEcShardIdsForEachLocation(bName string, location *storage.DiskLocation) error {
+	var shardIds []uint32
+	for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+		shardIds = append(shardIds, uint32(i))
+	}
+	deleted, err := deleteEcShardIdsForEachLocation(bName, location, shardIds)
+	if err != nil {
+		return err
+	}
+	if len(deleted) == 0 {
+		glog.V(0).Infof("ec volume %s no shards found in directory:%s", bName, location.Directory)
+	} else {
+		glog.V(0).Infof("ec volume %s shard deleted %v, directory:%s", bName, deleted, location.Directory)
+	}
+	return nil
+}
 
-	found := false
+func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32) ([]uint32, error) {
+
+	deletedShards := make([]uint32, 0)
 
 	indexBaseFilename := path.Join(location.IdxDirectory, bName)
 	dataBaseFilename := path.Join(location.Directory, bName)
@@ -221,24 +238,24 @@ func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocatio
 	for _, shardId := range shardIds {
 		shardFileName := dataBaseFilename + erasure_coding.ToExt(int(shardId))
 		if util.FileExists(shardFileName) {
-			found = true
 			os.Remove(shardFileName)
+			deletedShards = append(deletedShards, shardId)
 		}
 	}
 	//}
 
-	if !found {
-		return nil
+	if len(deletedShards) == 0 {
+		return nil, nil
 	}
 
 	hasEcxFile, hasIdxFile, existingShardCount, err := checkEcVolumeStatus(bName, location)
 	if err != nil {
-		return err
+		return deletedShards, err
 	}
 
 	if hasEcxFile && existingShardCount == 0 {
 		if err := os.Remove(indexBaseFilename + ".ecx"); err != nil {
-			return err
+			return deletedShards, err
 		}
 		os.Remove(indexBaseFilename + ".ecj")
 
@@ -248,7 +265,7 @@ func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocatio
 		}
 	}
 
-	return nil
+	return deletedShards, nil
 }
 
 func checkEcVolumeStatus(bName string, location *storage.DiskLocation) (hasEcxFile bool, hasIdxFile bool, existingShardCount int, err error) {

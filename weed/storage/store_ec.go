@@ -146,13 +146,11 @@ func (s *Store) DestroyEcVolume(vid needle.VolumeId) []uint8 {
 					deletedShards = append(deletedShards, uint8(ecShard.ShardId))
 				}
 			} else {
-				glog.V(0).Infof("DestroyEcVolume %d: %v", vid, err)
+				glog.Errorf("DestroyEcVolume %d: %v", vid, err)
 			}
-		} else {
-
 		}
 	}
-	glog.V(0).Infof("delete ecVolume:%d", vid)
+	glog.V(0).Infof("delete ecVolume:%d, deletedShards:%v", vid, deletedShards)
 	return deletedShards
 }
 
