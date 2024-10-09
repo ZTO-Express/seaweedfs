@@ -197,13 +197,14 @@ func (vs *VolumeServer) VolumeEcShardsDelete(ctx context.Context, req *volume_se
 
 	bName := erasure_coding.EcShardBaseFileName(req.Collection, int(req.VolumeId))
 
-	glog.V(0).Infof("try to delete ec volume %s shard %v", bName, req.ShardIds)
+	glog.V(0).Infof("ec volume %s shard delete %v", bName, req.ShardIds)
 
 	for _, location := range vs.store.Locations {
 		if err := deleteEcShardIdsForEachLocation(bName, location, req.ShardIds); err != nil {
 			glog.Errorf("deleteEcShards from %s %s.%v: %v", location.Directory, bName, req.ShardIds, err)
 			return nil, err
 		}
+		glog.V(0).Infof("ec volume %s shard delete %v, directory:%s", bName, req.ShardIds, location.Directory)
 	}
 
 	return &volume_server_pb.VolumeEcShardsDeleteResponse{}, nil

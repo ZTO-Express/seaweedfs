@@ -31,6 +31,7 @@ const (
 	VolumeServer_VolumeMount_FullMethodName                 = "/volume_server_pb.VolumeServer/VolumeMount"
 	VolumeServer_VolumeUnmount_FullMethodName               = "/volume_server_pb.VolumeServer/VolumeUnmount"
 	VolumeServer_VolumeDelete_FullMethodName                = "/volume_server_pb.VolumeServer/VolumeDelete"
+	VolumeServer_EcVolumeDelete_FullMethodName              = "/volume_server_pb.VolumeServer/EcVolumeDelete"
 	VolumeServer_VolumeMarkReadonly_FullMethodName          = "/volume_server_pb.VolumeServer/VolumeMarkReadonly"
 	VolumeServer_VolumeMarkWritable_FullMethodName          = "/volume_server_pb.VolumeServer/VolumeMarkWritable"
 	VolumeServer_VolumeConfigure_FullMethodName             = "/volume_server_pb.VolumeServer/VolumeConfigure"
@@ -81,6 +82,7 @@ type VolumeServerClient interface {
 	VolumeMount(ctx context.Context, in *VolumeMountRequest, opts ...grpc.CallOption) (*VolumeMountResponse, error)
 	VolumeUnmount(ctx context.Context, in *VolumeUnmountRequest, opts ...grpc.CallOption) (*VolumeUnmountResponse, error)
 	VolumeDelete(ctx context.Context, in *VolumeDeleteRequest, opts ...grpc.CallOption) (*VolumeDeleteResponse, error)
+	EcVolumeDelete(ctx context.Context, in *EcVolumeDeleteRequest, opts ...grpc.CallOption) (*EcVolumeDeleteResponse, error)
 	VolumeMarkReadonly(ctx context.Context, in *VolumeMarkReadonlyRequest, opts ...grpc.CallOption) (*VolumeMarkReadonlyResponse, error)
 	VolumeMarkWritable(ctx context.Context, in *VolumeMarkWritableRequest, opts ...grpc.CallOption) (*VolumeMarkWritableResponse, error)
 	VolumeConfigure(ctx context.Context, in *VolumeConfigureRequest, opts ...grpc.CallOption) (*VolumeConfigureResponse, error)
@@ -275,6 +277,15 @@ func (c *volumeServerClient) VolumeUnmount(ctx context.Context, in *VolumeUnmoun
 func (c *volumeServerClient) VolumeDelete(ctx context.Context, in *VolumeDeleteRequest, opts ...grpc.CallOption) (*VolumeDeleteResponse, error) {
 	out := new(VolumeDeleteResponse)
 	err := c.cc.Invoke(ctx, VolumeServer_VolumeDelete_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *volumeServerClient) EcVolumeDelete(ctx context.Context, in *EcVolumeDeleteRequest, opts ...grpc.CallOption) (*EcVolumeDeleteResponse, error) {
+	out := new(EcVolumeDeleteResponse)
+	err := c.cc.Invoke(ctx, VolumeServer_EcVolumeDelete_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -761,6 +772,7 @@ type VolumeServerServer interface {
 	VolumeMount(context.Context, *VolumeMountRequest) (*VolumeMountResponse, error)
 	VolumeUnmount(context.Context, *VolumeUnmountRequest) (*VolumeUnmountResponse, error)
 	VolumeDelete(context.Context, *VolumeDeleteRequest) (*VolumeDeleteResponse, error)
+	EcVolumeDelete(context.Context, *EcVolumeDeleteRequest) (*EcVolumeDeleteResponse, error)
 	VolumeMarkReadonly(context.Context, *VolumeMarkReadonlyRequest) (*VolumeMarkReadonlyResponse, error)
 	VolumeMarkWritable(context.Context, *VolumeMarkWritableRequest) (*VolumeMarkWritableResponse, error)
 	VolumeConfigure(context.Context, *VolumeConfigureRequest) (*VolumeConfigureResponse, error)
@@ -839,6 +851,9 @@ func (UnimplementedVolumeServerServer) VolumeUnmount(context.Context, *VolumeUnm
 }
 func (UnimplementedVolumeServerServer) VolumeDelete(context.Context, *VolumeDeleteRequest) (*VolumeDeleteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VolumeDelete not implemented")
+}
+func (UnimplementedVolumeServerServer) EcVolumeDelete(context.Context, *EcVolumeDeleteRequest) (*EcVolumeDeleteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EcVolumeDelete not implemented")
 }
 func (UnimplementedVolumeServerServer) VolumeMarkReadonly(context.Context, *VolumeMarkReadonlyRequest) (*VolumeMarkReadonlyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VolumeMarkReadonly not implemented")
@@ -1164,6 +1179,24 @@ func _VolumeServer_VolumeDelete_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(VolumeServerServer).VolumeDelete(ctx, req.(*VolumeDeleteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VolumeServer_EcVolumeDelete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EcVolumeDeleteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumeServerServer).EcVolumeDelete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumeServer_EcVolumeDelete_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumeServerServer).EcVolumeDelete(ctx, req.(*EcVolumeDeleteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1796,6 +1829,10 @@ var VolumeServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VolumeDelete",
 			Handler:    _VolumeServer_VolumeDelete_Handler,
+		},
+		{
+			MethodName: "EcVolumeDelete",
+			Handler:    _VolumeServer_EcVolumeDelete_Handler,
 		},
 		{
 			MethodName: "VolumeMarkReadonly",

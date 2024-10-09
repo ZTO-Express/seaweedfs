@@ -128,10 +128,32 @@ func (s *Store) CollectEcShards(vid needle.VolumeId, shardFileNames []string) (e
 	return
 }
 
-func (s *Store) DestroyEcVolume(vid needle.VolumeId) {
+func (s *Store) DestroyEcVolume(vid needle.VolumeId) []uint8 {
+	var deletedShards = make([]uint8, 0)
+	var shardBits erasure_coding.ShardBits
 	for _, location := range s.Locations {
-		location.DestroyEcVolume(vid)
+		ecVol, found := location.FindEcVolume(vid)
+		if found {
+			//delete ec volume
+			if err := location.deleteEcVolumeById(vid); err == nil {
+				for _, ecShard := range ecVol.Shards {
+					s.DeletedEcShardsChan <- master_pb.VolumeEcShardInformationMessage{
+						Id:          uint32(vid),
+						Collection:  ecVol.Collection,
+						EcIndexBits: uint32(shardBits.AddShardId(ecShard.ShardId)),
+						DiskType:    string(ecShard.DiskType),
+					}
+					deletedShards = append(deletedShards, uint8(ecShard.ShardId))
+				}
+			} else {
+				glog.V(0).Infof("DestroyEcVolume %d: %v", vid, err)
+			}
+		} else {
+
+		}
 	}
+	glog.V(0).Infof("delete ecVolume:%d", vid)
+	return deletedShards
 }
 
 func (s *Store) ReadEcShardNeedle(vid needle.VolumeId, n *needle.Needle, onReadSizeFn func(size types.Size)) (int, error) {

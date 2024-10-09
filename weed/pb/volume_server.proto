@@ -37,6 +37,8 @@ service VolumeServer {
     }
     rpc VolumeDelete (VolumeDeleteRequest) returns (VolumeDeleteResponse) {
     }
+    rpc EcVolumeDelete (EcVolumeDeleteRequest) returns (EcVolumeDeleteResponse) {
+    }
     rpc VolumeMarkReadonly (VolumeMarkReadonlyRequest) returns (VolumeMarkReadonlyResponse) {
     }
     rpc VolumeMarkWritable (VolumeMarkWritableRequest) returns (VolumeMarkWritableResponse) {
@@ -224,9 +226,14 @@ message VolumeUnmountResponse {
 message VolumeDeleteRequest {
     uint32 volume_id = 1;
     bool only_empty = 2;
-    bool isEcVolume = 3;
 }
 message VolumeDeleteResponse {
+}
+
+message EcVolumeDeleteRequest {
+    uint32 volume_id = 1;
+}
+message EcVolumeDeleteResponse {
 }
 
 message VolumeMarkReadonlyRequest {

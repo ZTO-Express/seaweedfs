@@ -8,13 +8,10 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
-	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"google.golang.org/grpc"
 	"io"
 	"strconv"
-	"strings"
-
-	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 )
 
 func init() {
@@ -31,9 +28,9 @@ func (c *commandEcVolumeDelete) Name() string {
 func (c *commandEcVolumeDelete) Help() string {
 	return `delete a live ec volume from volume server
 
-	ecVolume.delete -node <volume server host:port> -volumeId <volume id> -collection <collection>
+	ecVolume.delete -collection <collection> -volumeId <volume id>  -node <volume server host:port>
 
-	This command deletes a ec volume from volume server,.
+	This command deletes a ec volume from volume server.
 
 `
 }
@@ -44,7 +41,6 @@ func (c *commandEcVolumeDelete) Do(args []string, commandEnv *CommandEnv, writer
 	volumeIdInt := volDeleteCommand.Int("volumeId", 0, "the volume id")
 	collectionStr := volDeleteCommand.String("collection", "", "the collection name")
 	nodeStr := volDeleteCommand.String("node", "", "optional, specify the volume server <host>:<port> to delete")
-	shardIds := volDeleteCommand.String("shards", "", "optional, ec shards to delete, delete all shards if not specify")
 	if err = volDeleteCommand.Parse(args); err != nil {
 		return nil
 	}
@@ -53,29 +49,6 @@ func (c *commandEcVolumeDelete) Do(args []string, commandEnv *CommandEnv, writer
 	collection := *collectionStr
 	if collection == "" || volumeId == 0 {
 		return fmt.Errorf("collection and volumeId are required")
-	}
-
-	var ecShards []uint32
-	if *shardIds == "" {
-		// try to delete all shards
-		for i := 0; i < erasure_coding.TotalShardsCount; i++ {
-			ecShards = append(ecShards, uint32(i))
-		}
-	} else {
-		//delete specify ec shards
-		for _, shard := range strings.Split(*shardIds, ",") {
-			shardId, err := strconv.Atoi(shard)
-			if err != nil {
-				fmt.Printf("invalid shard id %v\n", shard)
-				continue
-			}
-			ecShards = append(ecShards, uint32(shardId))
-		}
-	}
-
-	//check
-	if len(ecShards) == 0 {
-		return fmt.Errorf("collection:%s, volumeId:%d, no ec shards to delete", collection, volumeId)
 	}
 
 	var sourceVolumeServerList []pb.ServerAddress
@@ -104,7 +77,9 @@ func (c *commandEcVolumeDelete) Do(args []string, commandEnv *CommandEnv, writer
 			//delete error, interrupt
 			return err
 		}
+		fmt.Printf("deleteEcVolume %d from %s success\n", volumeId, sourceVolumeServer.String())
 	}
+	fmt.Printf("deleteEcVolume %d finish \n", volumeId)
 
 	return nil
 }
@@ -142,10 +117,8 @@ func findEcVolumeLocations(commandEnv *CommandEnv, volumeId int, collection stri
 
 func deleteEcVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, sourceVolumeServer pb.ServerAddress) (err error) {
 	return operation.WithVolumeServerClient(false, sourceVolumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
-		_, deleteErr := volumeServerClient.VolumeDelete(context.Background(), &volume_server_pb.VolumeDeleteRequest{
-			VolumeId:   uint32(volumeId),
-			OnlyEmpty:  false,
-			IsEcVolume: true, //ec volume delete
+		_, deleteErr := volumeServerClient.EcVolumeDelete(context.Background(), &volume_server_pb.EcVolumeDeleteRequest{
+			VolumeId: uint32(volumeId),
 		})
 		return deleteErr
 	})

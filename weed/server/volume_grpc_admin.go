@@ -112,6 +112,18 @@ func (vs *VolumeServer) VolumeDelete(ctx context.Context, req *volume_server_pb.
 
 }
 
+func (vs *VolumeServer) EcVolumeDelete(ctx context.Context, req *volume_server_pb.EcVolumeDeleteRequest) (*volume_server_pb.EcVolumeDeleteResponse, error) {
+	resp := &volume_server_pb.EcVolumeDeleteResponse{}
+	vid := needle.VolumeId(req.VolumeId)
+
+	locations := vs.store.DestroyEcVolume(vid)
+	if len(locations) == 0 {
+		return resp, fmt.Errorf("no ec shards found, volumeId:%d", req.VolumeId)
+	}
+	glog.V(0).Infof("ec volume [%d] deleted,shards: %v", vid, locations)
+	return resp, nil
+}
+
 func (vs *VolumeServer) VolumeConfigure(ctx context.Context, req *volume_server_pb.VolumeConfigureRequest) (*volume_server_pb.VolumeConfigureResponse, error) {
 
 	resp := &volume_server_pb.VolumeConfigureResponse{}
