@@ -129,13 +129,13 @@ func (s *Store) CollectEcShards(vid needle.VolumeId, shardFileNames []string) (e
 	return
 }
 
-func (s *Store) DestroyEcVolume(vid needle.VolumeId, shards []uint32) []erasure_coding.ShardId {
+func (s *Store) DestroyEcVolume(vid needle.VolumeId, shards []uint32, soft bool) []erasure_coding.ShardId {
 	var deletedShards []erasure_coding.ShardId
 	for _, location := range s.Locations {
 		ecVol, found := location.FindEcVolume(vid)
 		if found {
 			//delete ec volume
-			deletedShards = location.deleteEcVolumeById(vid, shards)
+			deletedShards = location.deleteEcVolumeById(vid, shards, soft)
 			for _, shardId := range deletedShards {
 				var shardBits erasure_coding.ShardBits
 				s.DeletedEcShardsChan <- master_pb.VolumeEcShardInformationMessage{

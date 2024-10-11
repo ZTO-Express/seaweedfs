@@ -122,7 +122,7 @@ func (vs *VolumeServer) EcVolumeDelete(ctx context.Context, req *volume_server_p
 		shards = append(shards, id)
 	}
 
-	deletedShards := vs.store.DestroyEcVolume(vid, shards)
+	deletedShards := vs.store.DestroyEcVolume(vid, shards, req.Soft)
 	if len(deletedShards) > 0 {
 		glog.V(0).Infof("deleteEcVolume %s_%d deleted,shards: %v", collection, vid, deletedShards)
 		return resp, nil
@@ -130,7 +130,7 @@ func (vs *VolumeServer) EcVolumeDelete(ctx context.Context, req *volume_server_p
 	glog.V(0).Infof("deleteEcVolume %s_%d location not found, try to delete by scan all location dir", collection, vid)
 	bName := erasure_coding.EcShardBaseFileName(collection, int(vid))
 	for _, location := range vs.store.Locations {
-		err := deleteAllEcShardIdsForEachLocation(bName, location, shards)
+		err := deleteAllEcShardIdsForEachLocation(bName, location, shards, req.Soft)
 		if err != nil {
 			glog.Errorf("deleteEcShards %s_%d from %s %s: %v", collection, vid, location.Directory, bName, err)
 			return nil, err

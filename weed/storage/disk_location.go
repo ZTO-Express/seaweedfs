@@ -270,7 +270,7 @@ func (l *DiskLocation) DeleteCollectionFromDiskLocation(collection string) (e er
 
 	go func() {
 		for _, v := range delEcVolsMap {
-			v.Destroy()
+			v.Destroy(false)
 		}
 		wg.Done()
 	}()

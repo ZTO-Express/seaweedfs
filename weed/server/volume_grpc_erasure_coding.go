@@ -200,7 +200,7 @@ func (vs *VolumeServer) VolumeEcShardsDelete(ctx context.Context, req *volume_se
 	glog.V(0).Infof("ec volume %s shard delete %v", bName, req.ShardIds)
 
 	for _, location := range vs.store.Locations {
-		if _, err := deleteEcShardIdsForEachLocation(bName, location, req.ShardIds); err != nil {
+		if _, err := deleteEcShardIdsForEachLocation(bName, location, req.ShardIds, req.Soft); err != nil {
 			glog.Errorf("deleteEcShards from %s %s.%v: %v", location.Directory, bName, req.ShardIds, err)
 			return nil, err
 		}
@@ -210,7 +210,7 @@ func (vs *VolumeServer) VolumeEcShardsDelete(ctx context.Context, req *volume_se
 	return &volume_server_pb.VolumeEcShardsDeleteResponse{}, nil
 }
 
-func deleteAllEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32) error {
+func deleteAllEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32, soft bool) error {
 	if len(shardIds) == 0 {
 		// delete all ec shards with bName
 		for i := 0; i < erasure_coding.TotalShardsCount; i++ {
@@ -218,7 +218,7 @@ func deleteAllEcShardIdsForEachLocation(bName string, location *storage.DiskLoca
 		}
 	}
 
-	deleted, err := deleteEcShardIdsForEachLocation(bName, location, shardIds)
+	deleted, err := deleteEcShardIdsForEachLocation(bName, location, shardIds, soft)
 	if err != nil {
 		return err
 	}
@@ -230,7 +230,7 @@ func deleteAllEcShardIdsForEachLocation(bName string, location *storage.DiskLoca
 	return nil
 }
 
-func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32) ([]int, error) {
+func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32, soft bool) ([]int, error) {
 
 	deletedShards := make([]int, 0)
 
@@ -241,7 +241,12 @@ func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocatio
 	for _, shardId := range shardIds {
 		shardFileName := dataBaseFilename + erasure_coding.ToExt(int(shardId))
 		if util.FileExists(shardFileName) {
-			os.Remove(shardFileName)
+			if soft {
+				err := erasure_coding.MoveFile(shardFileName, erasure_coding.GetSoftDeleteDir(shardFileName))
+				return deletedShards, err
+			} else {
+				os.Remove(shardFileName)
+			}
 			deletedShards = append(deletedShards, int(shardId))
 		}
 	}
@@ -257,6 +262,24 @@ func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocatio
 	}
 
 	if hasEcxFile && existingShardCount == 0 {
+		if soft {
+			if err := erasure_coding.MoveFile(indexBaseFilename+".ecx", erasure_coding.GetSoftDeleteDir(indexBaseFilename+".ecx")); err != nil {
+				return deletedShards, err
+			}
+			err = erasure_coding.MoveFile(indexBaseFilename+".ecj", erasure_coding.GetSoftDeleteDir(indexBaseFilename+".ecj"))
+			if err != nil {
+				glog.Errorf("move [%s] ecj file err:%v", bName, err)
+			}
+
+			if !hasIdxFile {
+				// .vif is used for ec volumes and normal volumes
+				err = erasure_coding.MoveFile(indexBaseFilename+".vif", erasure_coding.GetSoftDeleteDir(indexBaseFilename+".vif"))
+				if err != nil {
+					glog.Errorf("move [%s] vif file err:%v", bName, err)
+				}
+			}
+			return deletedShards, nil
+		}
 		if err := os.Remove(indexBaseFilename + ".ecx"); err != nil {
 			return deletedShards, err
 		}
@@ -510,7 +533,7 @@ func (vs *VolumeServer) VolumeEcShardsMove(ctx context.Context, req *volume_serv
 			continue
 		}
 		glog.V(3).Infof("move ec data %s -> %s", fileName, dataBaseFileName+erasure_coding.ToExt(int(shardId)))
-		if err := moveFile(fileName, dataBaseFileName+erasure_coding.ToExt(int(shardId))); err != nil {
+		if err := erasure_coding.MoveFile(fileName, dataBaseFileName+erasure_coding.ToExt(int(shardId))); err != nil {
 			glog.V(3).Infof("CopyFile not found ec volume id %v", err)
 		}
 		fileName = ""
@@ -583,29 +606,29 @@ func (vs *VolumeServer) VolumeEcShardsMove(ctx context.Context, req *volume_serv
 	return &volume_server_pb.VolumeEcShardsMoveResponse{}, nil
 }
 
-func moveFile(sourcePath, destPath string) error {
-	inputFile, err := os.Open(sourcePath)
-	if err != nil {
-		return fmt.Errorf("Couldn't open source file: %s", err)
-	}
-	outputFile, err := os.Create(destPath)
-	if err != nil {
-		inputFile.Close()
-		return fmt.Errorf("Couldn't open dest file: %s", err)
-	}
-	defer outputFile.Close()
-	_, err = io.Copy(outputFile, inputFile)
-	inputFile.Close()
-	if err != nil {
-		return fmt.Errorf("Writing to output file failed: %s", err)
-	}
-	// The copy was successful, so now delete the original file
-	err = os.Remove(sourcePath)
-	if err != nil {
-		return fmt.Errorf("Failed removing original file: %s", err)
-	}
-	return nil
-}
+//func moveFile(sourcePath, destPath string) error {
+//	inputFile, err := os.Open(sourcePath)
+//	if err != nil {
+//		return fmt.Errorf("Couldn't open source file: %s", err)
+//	}
+//	outputFile, err := os.Create(destPath)
+//	if err != nil {
+//		inputFile.Close()
+//		return fmt.Errorf("Couldn't open dest file: %s", err)
+//	}
+//	defer outputFile.Close()
+//	_, err = io.Copy(outputFile, inputFile)
+//	inputFile.Close()
+//	if err != nil {
+//		return fmt.Errorf("Writing to output file failed: %s", err)
+//	}
+//	// The copy was successful, so now delete the original file
+//	err = os.Remove(sourcePath)
+//	if err != nil {
+//		return fmt.Errorf("Failed removing original file: %s", err)
+//	}
+//	return nil
+//}
 
 func copyFile(sourcePath, destPath string) error {
 	inputFile, err := os.Open(sourcePath)

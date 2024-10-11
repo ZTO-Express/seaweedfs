@@ -136,6 +136,7 @@ func deleteEcVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, co
 			VolumeId:   uint32(volumeId),
 			Collection: collection,
 			ShardIds:   specifyShardsToDelete,
+			Soft:       true, //软删除
 		})
 		return deleteErr
 	})

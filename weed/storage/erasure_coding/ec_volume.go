@@ -150,27 +150,51 @@ func (ev *EcVolume) Close() {
 	}
 }
 
-func (ev *EcVolume) DestroyShards(shards []uint32) []ShardId {
+func (ev *EcVolume) DestroyShards(shards []uint32, soft bool) []ShardId {
 	var deletedShards []ShardId
 	for _, s := range shards {
 		shard, deleted := ev.DeleteEcVolumeShard(ShardId(s))
 		if deleted {
 			shard.Close()
-			shard.Destroy()
+			err := shard.Destroy(soft)
+			if err != nil {
+				glog.Errorf("destory ec shard %s_%d[%d] err:%v", ev.Collection, ev.VolumeId, shard.ShardId, err)
+				return deletedShards
+			}
 			deletedShards = append(deletedShards, shard.ShardId)
 		}
 	}
 	return deletedShards
 }
 
-func (ev *EcVolume) Destroy() []ShardId {
+func (ev *EcVolume) Destroy(soft bool) []ShardId {
 
 	ev.Close()
 
 	var shards []ShardId
+	var err error
 	for _, s := range ev.Shards {
-		s.Destroy()
+		err = s.Destroy(soft)
+		if err != nil {
+			glog.Errorf("destory ec shard %s_%d[%d] err:%v", ev.Collection, ev.VolumeId, s.ShardId, err)
+			return shards
+		}
 		shards = append(shards, s.ShardId)
+	}
+	if soft {
+		err = MoveFile(ev.FileName(".ecx"), GetSoftDeleteDir(ev.FileName(".ecx")))
+		if err != nil {
+			glog.Errorf("destory ec shard %s_%d move ecx err:%v", ev.Collection, ev.VolumeId, err)
+		}
+		err = MoveFile(ev.FileName(".ecj"), GetSoftDeleteDir(ev.FileName(".ecj")))
+		if err != nil {
+			glog.Errorf("destory ec shard %s_%d move ecj err:%v", ev.Collection, ev.VolumeId, err)
+		}
+		err = MoveFile(ev.FileName(".vif"), GetSoftDeleteDir(ev.FileName(".vif")))
+		if err != nil {
+			glog.Errorf("destory ec shard %s_%d move vif err:%v", ev.Collection, ev.VolumeId, err)
+		}
+		return shards
 	}
 	os.Remove(ev.FileName(".ecx"))
 	os.Remove(ev.FileName(".ecj"))

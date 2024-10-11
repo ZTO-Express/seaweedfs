@@ -35,7 +35,7 @@ func (l *DiskLocation) DestroyEcVolume(vid needle.VolumeId) {
 
 	ecVolume, found := l.ecVolumes[vid]
 	if found {
-		ecVolume.Destroy()
+		ecVolume.Destroy(false)
 		delete(l.ecVolumes, vid)
 	}
 }
@@ -202,7 +202,7 @@ func (l *DiskLocation) closeEcVolumeById(vid needle.VolumeId) {
 	}
 }
 
-func (l *DiskLocation) deleteEcVolumeById(vid needle.VolumeId, deleteShards []uint32) []erasure_coding.ShardId {
+func (l *DiskLocation) deleteEcVolumeById(vid needle.VolumeId, deleteShards []uint32, soft bool) []erasure_coding.ShardId {
 	l.ecVolumesLock.Lock()
 	defer l.ecVolumesLock.Unlock()
 	ecVolume, ok := l.ecVolumes[vid]
@@ -212,15 +212,15 @@ func (l *DiskLocation) deleteEcVolumeById(vid needle.VolumeId, deleteShards []ui
 
 	if len(deleteShards) > 0 {
 		//delete specify ec shards
-		deletedShards := ecVolume.DestroyShards(deleteShards)
+		deletedShards := ecVolume.DestroyShards(deleteShards, soft)
 		if len(ecVolume.Shards) == 0 {
-			ecVolume.Destroy()
+			ecVolume.Destroy(soft)
 			delete(l.ecVolumes, vid)
 			glog.V(0).Infof("destroyShards:%v, and destory ecVolume", deletedShards)
 		}
 		return deletedShards
 	}
-	deletedShards := ecVolume.Destroy()
+	deletedShards := ecVolume.Destroy(soft)
 	delete(l.ecVolumes, vid)
 	return deletedShards
 }
