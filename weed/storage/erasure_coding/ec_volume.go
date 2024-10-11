@@ -214,6 +214,7 @@ func (ev *EcVolume) ToVolumeEcShardInformationMessage() (messages []*master_pb.V
 				Collection:  s.Collection,
 				DiskType:    string(ev.diskType),
 				DestroyTime: ev.DestroyTime,
+				Dir:         ev.dir,
 			}
 			messages = append(messages, m)
 		}
