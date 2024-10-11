@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"io"
 	"strconv"
+	"strings"
 )
 
 func init() {
@@ -41,6 +42,7 @@ func (c *commandEcVolumeDelete) Do(args []string, commandEnv *CommandEnv, writer
 	volumeIdInt := volDeleteCommand.Int("volumeId", 0, "the volume id")
 	collectionStr := volDeleteCommand.String("collection", "", "the collection name")
 	nodeStr := volDeleteCommand.String("node", "", "optional, specify the volume server <host>:<port> to delete")
+	shards := volDeleteCommand.String("shards", "", "optional, specify the ec shards to delete")
 	if err = volDeleteCommand.Parse(args); err != nil {
 		return nil
 	}
@@ -67,12 +69,25 @@ func (c *commandEcVolumeDelete) Do(args []string, commandEnv *CommandEnv, writer
 		return fmt.Errorf("collection:%s, volumeId:%d, no volume server found", collection, volumeId)
 	}
 
+	var specifyShardsToDelete []uint32
+	if *shards != "" {
+		shardIds := strings.Split(*shards, ",")
+		for _, shard := range shardIds {
+			id, err := strconv.Atoi(shard)
+			if err != nil {
+				fmt.Printf("shard id is invaild:%s", shard)
+				continue
+			}
+			specifyShardsToDelete = append(specifyShardsToDelete, uint32(id))
+		}
+	}
+
 	if err = commandEnv.confirmIsLocked(args); err != nil {
 		return
 	}
 
 	for _, sourceVolumeServer := range sourceVolumeServerList {
-		err = deleteEcVolume(commandEnv.option.GrpcDialOption, needle.VolumeId(volumeId), collection, sourceVolumeServer)
+		err = deleteEcVolume(commandEnv.option.GrpcDialOption, needle.VolumeId(volumeId), collection, sourceVolumeServer, specifyShardsToDelete)
 		if err != nil {
 			//delete error, interrupt
 			return err
@@ -115,11 +130,12 @@ func findEcVolumeLocations(commandEnv *CommandEnv, volumeId int, collection stri
 	return sourceVolumeServerList, err
 }
 
-func deleteEcVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, collection string, sourceVolumeServer pb.ServerAddress) (err error) {
+func deleteEcVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, collection string, sourceVolumeServer pb.ServerAddress, specifyShardsToDelete []uint32) (err error) {
 	return operation.WithVolumeServerClient(false, sourceVolumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
 		_, deleteErr := volumeServerClient.EcVolumeDelete(context.Background(), &volume_server_pb.EcVolumeDeleteRequest{
 			VolumeId:   uint32(volumeId),
 			Collection: collection,
+			ShardIds:   specifyShardsToDelete,
 		})
 		return deleteErr
 	})

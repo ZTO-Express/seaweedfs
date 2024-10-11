@@ -210,11 +210,14 @@ func (vs *VolumeServer) VolumeEcShardsDelete(ctx context.Context, req *volume_se
 	return &volume_server_pb.VolumeEcShardsDeleteResponse{}, nil
 }
 
-func deleteAllEcShardIdsForEachLocation(bName string, location *storage.DiskLocation) error {
-	var shardIds []uint32
-	for i := 0; i < erasure_coding.TotalShardsCount; i++ {
-		shardIds = append(shardIds, uint32(i))
+func deleteAllEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32) error {
+	if len(shardIds) == 0 {
+		// delete all ec shards with bName
+		for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+			shardIds = append(shardIds, uint32(i))
+		}
 	}
+
 	deleted, err := deleteEcShardIdsForEachLocation(bName, location, shardIds)
 	if err != nil {
 		return err
@@ -227,9 +230,9 @@ func deleteAllEcShardIdsForEachLocation(bName string, location *storage.DiskLoca
 	return nil
 }
 
-func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32) ([]uint32, error) {
+func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32) ([]int, error) {
 
-	deletedShards := make([]uint32, 0)
+	deletedShards := make([]int, 0)
 
 	indexBaseFilename := path.Join(location.IdxDirectory, bName)
 	dataBaseFilename := path.Join(location.Directory, bName)
@@ -239,7 +242,7 @@ func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocatio
 		shardFileName := dataBaseFilename + erasure_coding.ToExt(int(shardId))
 		if util.FileExists(shardFileName) {
 			os.Remove(shardFileName)
-			deletedShards = append(deletedShards, shardId)
+			deletedShards = append(deletedShards, int(shardId))
 		}
 	}
 	//}

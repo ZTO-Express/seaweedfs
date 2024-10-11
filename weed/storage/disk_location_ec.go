@@ -202,16 +202,27 @@ func (l *DiskLocation) closeEcVolumeById(vid needle.VolumeId) {
 	}
 }
 
-func (l *DiskLocation) deleteEcVolumeById(vid needle.VolumeId) (e error) {
+func (l *DiskLocation) deleteEcVolumeById(vid needle.VolumeId, deleteShards []uint32) []erasure_coding.ShardId {
 	l.ecVolumesLock.Lock()
 	defer l.ecVolumesLock.Unlock()
 	ecVolume, ok := l.ecVolumes[vid]
 	if !ok {
-		return
+		return nil
 	}
-	ecVolume.Destroy()
+
+	if len(deleteShards) > 0 {
+		//delete specify ec shards
+		deletedShards := ecVolume.DestroyShards(deleteShards)
+		if len(ecVolume.Shards) == 0 {
+			ecVolume.Destroy()
+			delete(l.ecVolumes, vid)
+			glog.V(0).Infof("destroyShards:%v, and destory ecVolume", deletedShards)
+		}
+		return deletedShards
+	}
+	deletedShards := ecVolume.Destroy()
 	delete(l.ecVolumes, vid)
-	return
+	return deletedShards
 }
 
 func (l *DiskLocation) unmountEcVolumeByCollection(collectionName string) map[needle.VolumeId]*erasure_coding.EcVolume {

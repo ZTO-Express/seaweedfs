@@ -150,16 +150,32 @@ func (ev *EcVolume) Close() {
 	}
 }
 
-func (ev *EcVolume) Destroy() {
+func (ev *EcVolume) DestroyShards(shards []uint32) []ShardId {
+	var deletedShards []ShardId
+	for _, s := range shards {
+		shard, deleted := ev.DeleteEcVolumeShard(ShardId(s))
+		if deleted {
+			shard.Close()
+			shard.Destroy()
+			deletedShards = append(deletedShards, shard.ShardId)
+		}
+	}
+	return deletedShards
+}
+
+func (ev *EcVolume) Destroy() []ShardId {
 
 	ev.Close()
 
+	var shards []ShardId
 	for _, s := range ev.Shards {
 		s.Destroy()
+		shards = append(shards, s.ShardId)
 	}
 	os.Remove(ev.FileName(".ecx"))
 	os.Remove(ev.FileName(".ecj"))
 	os.Remove(ev.FileName(".vif"))
+	return shards
 }
 
 func (ev *EcVolume) FileName(ext string) string {

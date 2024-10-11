@@ -129,25 +129,21 @@ func (s *Store) CollectEcShards(vid needle.VolumeId, shardFileNames []string) (e
 	return
 }
 
-func (s *Store) DestroyEcVolume(vid needle.VolumeId) []uint8 {
-	var deletedShards = make([]uint8, 0)
-	var shardBits erasure_coding.ShardBits
+func (s *Store) DestroyEcVolume(vid needle.VolumeId, shards []uint32) []erasure_coding.ShardId {
+	var deletedShards []erasure_coding.ShardId
 	for _, location := range s.Locations {
 		ecVol, found := location.FindEcVolume(vid)
 		if found {
 			//delete ec volume
-			if err := location.deleteEcVolumeById(vid); err == nil {
-				for _, ecShard := range ecVol.Shards {
-					s.DeletedEcShardsChan <- master_pb.VolumeEcShardInformationMessage{
-						Id:          uint32(vid),
-						Collection:  ecVol.Collection,
-						EcIndexBits: uint32(shardBits.AddShardId(ecShard.ShardId)),
-						DiskType:    string(ecShard.DiskType),
-					}
-					deletedShards = append(deletedShards, uint8(ecShard.ShardId))
+			deletedShards = location.deleteEcVolumeById(vid, shards)
+			for _, shardId := range deletedShards {
+				var shardBits erasure_coding.ShardBits
+				s.DeletedEcShardsChan <- master_pb.VolumeEcShardInformationMessage{
+					Id:          uint32(vid),
+					Collection:  ecVol.Collection,
+					EcIndexBits: uint32(shardBits.AddShardId(shardId)),
+					DiskType:    types.HardDriveType.String(),
 				}
-			} else {
-				glog.Errorf("DestroyEcVolume %d: %v", vid, err)
 			}
 		}
 	}

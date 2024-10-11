@@ -233,6 +233,7 @@ message VolumeDeleteResponse {
 message EcVolumeDeleteRequest {
     uint32 volume_id = 1;
     string collection = 2;
+    repeated uint32 shard_ids = 3;
 }
 message EcVolumeDeleteResponse {
 }
