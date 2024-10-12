@@ -105,41 +105,31 @@ func (vs *VolumeServer) VolumeEcShardsRebuild(ctx context.Context, req *volume_s
 
 	var rebuiltShardIds []uint32
 
-	var locations []*storage.DiskLocation
 	for _, location := range vs.store.Locations {
 		_, _, existingShardCount, err := checkEcVolumeStatus(baseFileName, location)
 		if err != nil {
 			return nil, err
 		}
 
-		if existingShardCount == 0 {
+		if existingShardCount == 0 || existingShardCount < erasure_coding.DataShardsCount {
 			continue
 		}
-		locations = append(locations, location)
-	}
 
-	if len(locations) == 0 {
-		return nil, fmt.Errorf("no shards found for volume %d", req.VolumeId)
-	}
-	if len(locations) > 1 {
-		var loc []string
-		for _, location := range locations {
-			loc = append(loc, location.Directory)
-		}
-		return nil, fmt.Errorf("multiple shards found for volume %d, loc:%v", req.VolumeId, loc)
-	}
-	if util.FileExists(path.Join(locations[0].IdxDirectory, baseFileName+".ecx")) {
-		// write .ec00 ~ .ec13 files
-		dataBaseFileName := path.Join(locations[0].Directory, baseFileName)
-		if generatedShardIds, err := erasure_coding.RebuildEcFiles(dataBaseFileName); err != nil {
-			return nil, fmt.Errorf("RebuildEcFiles %s: %v", dataBaseFileName, err)
-		} else {
-			rebuiltShardIds = generatedShardIds
-		}
+		if util.FileExists(path.Join(location.IdxDirectory, baseFileName+".ecx")) {
+			// write .ec00 ~ .ec13 files
+			dataBaseFileName := path.Join(location.Directory, baseFileName)
+			if generatedShardIds, err := erasure_coding.RebuildEcFiles(dataBaseFileName); err != nil {
+				return nil, fmt.Errorf("RebuildEcFiles %s: %v", dataBaseFileName, err)
+			} else {
+				rebuiltShardIds = generatedShardIds
+			}
 
-		indexBaseFileName := path.Join(locations[0].IdxDirectory, baseFileName)
-		if err := erasure_coding.RebuildEcxFile(indexBaseFileName); err != nil {
-			return nil, fmt.Errorf("RebuildEcxFile %s: %v", dataBaseFileName, err)
+			indexBaseFileName := path.Join(location.IdxDirectory, baseFileName)
+			if err := erasure_coding.RebuildEcxFile(indexBaseFileName); err != nil {
+				return nil, fmt.Errorf("RebuildEcxFile %s: %v", dataBaseFileName, err)
+			}
+
+			break
 		}
 	}
 
