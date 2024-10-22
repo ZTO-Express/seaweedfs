@@ -35,7 +35,7 @@ func NewEcVolumeShard(diskType types.DiskType, dirname string, collection string
 
 	// open ecd file
 	if v.ecdFile, e = os.OpenFile(baseFileName+ToExt(int(shardId)), os.O_RDONLY, 0644); e != nil {
-		if e == os.ErrNotExist || strings.Contains(e.Error(), "no such file or directory") || strings.Contains(e.Error(), "The system cannot find the file specified") {
+		if e == os.ErrNotExist || strings.Contains(e.Error(), "no such file or directory") {
 			return nil, os.ErrNotExist
 		}
 		return nil, fmt.Errorf("cannot read ec volume shard %s%s: %v", baseFileName, ToExt(int(shardId)), e)
