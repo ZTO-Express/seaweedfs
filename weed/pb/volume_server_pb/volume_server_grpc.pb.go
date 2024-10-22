@@ -48,6 +48,7 @@ const (
 	VolumeServer_VolumeEcShardsGenerate_FullMethodName      = "/volume_server_pb.VolumeServer/VolumeEcShardsGenerate"
 	VolumeServer_VolumeEcShardsRebuild_FullMethodName       = "/volume_server_pb.VolumeServer/VolumeEcShardsRebuild"
 	VolumeServer_VolumeEcShardsCopy_FullMethodName          = "/volume_server_pb.VolumeServer/VolumeEcShardsCopy"
+	VolumeServer_VolumeEcShardsCopyByRebuild_FullMethodName = "/volume_server_pb.VolumeServer/VolumeEcShardsCopyByRebuild"
 	VolumeServer_VolumeEcShardsDelete_FullMethodName        = "/volume_server_pb.VolumeServer/VolumeEcShardsDelete"
 	VolumeServer_VolumeEcShardsMount_FullMethodName         = "/volume_server_pb.VolumeServer/VolumeEcShardsMount"
 	VolumeServer_VolumeEcShardsUnmount_FullMethodName       = "/volume_server_pb.VolumeServer/VolumeEcShardsUnmount"
@@ -101,6 +102,7 @@ type VolumeServerClient interface {
 	VolumeEcShardsGenerate(ctx context.Context, in *VolumeEcShardsGenerateRequest, opts ...grpc.CallOption) (*VolumeEcShardsGenerateResponse, error)
 	VolumeEcShardsRebuild(ctx context.Context, in *VolumeEcShardsRebuildRequest, opts ...grpc.CallOption) (*VolumeEcShardsRebuildResponse, error)
 	VolumeEcShardsCopy(ctx context.Context, in *VolumeEcShardsCopyRequest, opts ...grpc.CallOption) (*VolumeEcShardsCopyResponse, error)
+	VolumeEcShardsCopyByRebuild(ctx context.Context, in *VolumeEcShardsCopyByRebuildRequest, opts ...grpc.CallOption) (*VolumeEcShardsCopyByRebuildResponse, error)
 	VolumeEcShardsDelete(ctx context.Context, in *VolumeEcShardsDeleteRequest, opts ...grpc.CallOption) (*VolumeEcShardsDeleteResponse, error)
 	VolumeEcShardsMount(ctx context.Context, in *VolumeEcShardsMountRequest, opts ...grpc.CallOption) (*VolumeEcShardsMountResponse, error)
 	VolumeEcShardsUnmount(ctx context.Context, in *VolumeEcShardsUnmountRequest, opts ...grpc.CallOption) (*VolumeEcShardsUnmountResponse, error)
@@ -528,6 +530,15 @@ func (c *volumeServerClient) VolumeEcShardsCopy(ctx context.Context, in *VolumeE
 	return out, nil
 }
 
+func (c *volumeServerClient) VolumeEcShardsCopyByRebuild(ctx context.Context, in *VolumeEcShardsCopyByRebuildRequest, opts ...grpc.CallOption) (*VolumeEcShardsCopyByRebuildResponse, error) {
+	out := new(VolumeEcShardsCopyByRebuildResponse)
+	err := c.cc.Invoke(ctx, VolumeServer_VolumeEcShardsCopyByRebuild_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *volumeServerClient) VolumeEcShardsDelete(ctx context.Context, in *VolumeEcShardsDeleteRequest, opts ...grpc.CallOption) (*VolumeEcShardsDeleteResponse, error) {
 	out := new(VolumeEcShardsDeleteResponse)
 	err := c.cc.Invoke(ctx, VolumeServer_VolumeEcShardsDelete_FullMethodName, in, out, opts...)
@@ -791,6 +802,7 @@ type VolumeServerServer interface {
 	VolumeEcShardsGenerate(context.Context, *VolumeEcShardsGenerateRequest) (*VolumeEcShardsGenerateResponse, error)
 	VolumeEcShardsRebuild(context.Context, *VolumeEcShardsRebuildRequest) (*VolumeEcShardsRebuildResponse, error)
 	VolumeEcShardsCopy(context.Context, *VolumeEcShardsCopyRequest) (*VolumeEcShardsCopyResponse, error)
+	VolumeEcShardsCopyByRebuild(context.Context, *VolumeEcShardsCopyByRebuildRequest) (*VolumeEcShardsCopyByRebuildResponse, error)
 	VolumeEcShardsDelete(context.Context, *VolumeEcShardsDeleteRequest) (*VolumeEcShardsDeleteResponse, error)
 	VolumeEcShardsMount(context.Context, *VolumeEcShardsMountRequest) (*VolumeEcShardsMountResponse, error)
 	VolumeEcShardsUnmount(context.Context, *VolumeEcShardsUnmountRequest) (*VolumeEcShardsUnmountResponse, error)
@@ -902,6 +914,9 @@ func (UnimplementedVolumeServerServer) VolumeEcShardsRebuild(context.Context, *V
 }
 func (UnimplementedVolumeServerServer) VolumeEcShardsCopy(context.Context, *VolumeEcShardsCopyRequest) (*VolumeEcShardsCopyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VolumeEcShardsCopy not implemented")
+}
+func (UnimplementedVolumeServerServer) VolumeEcShardsCopyByRebuild(context.Context, *VolumeEcShardsCopyByRebuildRequest) (*VolumeEcShardsCopyByRebuildResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VolumeEcShardsCopyByRebuild not implemented")
 }
 func (UnimplementedVolumeServerServer) VolumeEcShardsDelete(context.Context, *VolumeEcShardsDeleteRequest) (*VolumeEcShardsDeleteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VolumeEcShardsDelete not implemented")
@@ -1501,6 +1516,24 @@ func _VolumeServer_VolumeEcShardsCopy_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VolumeServer_VolumeEcShardsCopyByRebuild_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VolumeEcShardsCopyByRebuildRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumeServerServer).VolumeEcShardsCopyByRebuild(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumeServer_VolumeEcShardsCopyByRebuild_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumeServerServer).VolumeEcShardsCopyByRebuild(ctx, req.(*VolumeEcShardsCopyByRebuildRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _VolumeServer_VolumeEcShardsDelete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VolumeEcShardsDeleteRequest)
 	if err := dec(in); err != nil {
@@ -1881,6 +1914,10 @@ var VolumeServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VolumeEcShardsCopy",
 			Handler:    _VolumeServer_VolumeEcShardsCopy_Handler,
+		},
+		{
+			MethodName: "VolumeEcShardsCopyByRebuild",
+			Handler:    _VolumeServer_VolumeEcShardsCopyByRebuild_Handler,
 		},
 		{
 			MethodName: "VolumeEcShardsDelete",

@@ -197,6 +197,75 @@ func (vs *VolumeServer) VolumeEcShardsCopy(ctx context.Context, req *volume_serv
 	return &volume_server_pb.VolumeEcShardsCopyResponse{}, nil
 }
 
+// VolumeEcShardsCopyByRebuild copy the .ecx and some ec data slices
+func (vs *VolumeServer) VolumeEcShardsCopyByRebuild(ctx context.Context, req *volume_server_pb.VolumeEcShardsCopyByRebuildRequest) (*volume_server_pb.VolumeEcShardsCopyByRebuildResponse, error) {
+
+	glog.V(0).Infof("VolumeEcShardsCopyByRebuild: %v", req)
+
+	var dir string
+	if req.SpecifyDir == "" {
+		location := vs.store.FindFreeLocation(types.HardDriveType)
+		if location == nil {
+			return nil, fmt.Errorf("no space left")
+		}
+		dir = location.Directory
+	} else {
+		dir = req.SpecifyDir
+	}
+
+	dataBaseFileName := storage.VolumeFileName(dir, req.Collection, int(req.VolumeId))
+	indexBaseFileName := storage.VolumeFileName(dir, req.Collection, int(req.VolumeId))
+
+	ifCopyEcxFile := req.CopyEcxFile
+	ifCopyEcjFile := req.CopyEcjFile
+	ifCopyVifFile := req.CopyVifFile
+
+	for node, shards := range req.GetNodeShardsMap() {
+
+		err := operation.WithVolumeServerClient(true, pb.ServerAddress(node), vs.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
+
+			// copy ec data slices
+			for _, shardId := range shards.ShardIds {
+				if _, err := vs.doCopyFile(client, true, req.Collection, req.VolumeId, math.MaxUint32, math.MaxInt64, dataBaseFileName, erasure_coding.ToExt(int(shardId)), false, false, nil); err != nil {
+					return err
+				}
+			}
+
+			if ifCopyEcxFile {
+				// copy ecx file
+				if _, err := vs.doCopyFile(client, true, req.Collection, req.VolumeId, math.MaxUint32, math.MaxInt64, indexBaseFileName, ".ecx", false, false, nil); err != nil {
+					return err
+				} else {
+					ifCopyEcxFile = false
+				}
+			}
+
+			if ifCopyEcjFile {
+				// copy ecj file
+				if _, err := vs.doCopyFile(client, true, req.Collection, req.VolumeId, math.MaxUint32, math.MaxInt64, indexBaseFileName, ".ecj", true, true, nil); err != nil {
+					return err
+				} else {
+					ifCopyEcjFile = false
+				}
+			}
+
+			if ifCopyVifFile {
+				// copy vif file
+				if _, err := vs.doCopyFile(client, true, req.Collection, req.VolumeId, math.MaxUint32, math.MaxInt64, dataBaseFileName, ".vif", false, true, nil); err != nil {
+					return err
+				} else {
+					ifCopyVifFile = false
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("VolumeEcShardsCopyByRebuild volume %d: %v", req.VolumeId, err)
+		}
+	}
+	return &volume_server_pb.VolumeEcShardsCopyByRebuildResponse{}, nil
+}
+
 // VolumeEcShardsDelete local delete the .ecx and some ec data slices if not needed
 // the shard should not be mounted before calling this.
 func (vs *VolumeServer) VolumeEcShardsDelete(ctx context.Context, req *volume_server_pb.VolumeEcShardsDeleteRequest) (*volume_server_pb.VolumeEcShardsDeleteResponse, error) {
