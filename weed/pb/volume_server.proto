@@ -37,6 +37,8 @@ service VolumeServer {
     }
     rpc VolumeDelete (VolumeDeleteRequest) returns (VolumeDeleteResponse) {
     }
+    rpc EcVolumeDelete (EcVolumeDeleteRequest) returns (EcVolumeDeleteResponse) {
+    }
     rpc VolumeMarkReadonly (VolumeMarkReadonlyRequest) returns (VolumeMarkReadonlyResponse) {
     }
     rpc VolumeMarkWritable (VolumeMarkWritableRequest) returns (VolumeMarkWritableResponse) {
@@ -74,6 +76,8 @@ service VolumeServer {
     rpc VolumeEcShardsRebuild (VolumeEcShardsRebuildRequest) returns (VolumeEcShardsRebuildResponse) {
     }
     rpc VolumeEcShardsCopy (VolumeEcShardsCopyRequest) returns (VolumeEcShardsCopyResponse) {
+    }
+    rpc VolumeEcShardsCopyByRebuild (VolumeEcShardsCopyByRebuildRequest) returns (VolumeEcShardsCopyByRebuildResponse) {
     }
     rpc VolumeEcShardsDelete (VolumeEcShardsDeleteRequest) returns (VolumeEcShardsDeleteResponse) {
     }
@@ -228,6 +232,15 @@ message VolumeDeleteRequest {
 message VolumeDeleteResponse {
 }
 
+message EcVolumeDeleteRequest {
+    uint32 volume_id = 1;
+    string collection = 2;
+    repeated uint32 shard_ids = 3;
+    bool soft = 4;
+}
+message EcVolumeDeleteResponse {
+}
+
 message VolumeMarkReadonlyRequest {
     uint32 volume_id = 1;
 }
@@ -377,8 +390,26 @@ message VolumeEcShardsCopyRequest {
     string source_data_node = 5;
     bool copy_ecj_file = 6;
     bool copy_vif_file = 7;
+    string specify_dir = 8;
 }
 message VolumeEcShardsCopyResponse {
+}
+
+message VolumeEcShardsCopyByRebuildRequest {
+    uint32 volume_id = 1;
+    string collection = 2;
+    map<string,Shards> node_shards_map = 3;
+    bool copy_ecx_file = 4;
+    bool copy_ecj_file = 5;
+    bool copy_vif_file = 6;
+    string specify_dir = 7;
+}
+
+message Shards {
+    repeated uint32 shard_ids = 1;
+}
+
+message VolumeEcShardsCopyByRebuildResponse {
 }
 
 message VolumeEcShardsMoveRequest {
@@ -398,6 +429,7 @@ message VolumeEcShardsDeleteRequest {
     uint32 volume_id = 1;
     string collection = 2;
     repeated uint32 shard_ids = 3;
+    bool soft = 4;
 }
 message VolumeEcShardsDeleteResponse {
 }

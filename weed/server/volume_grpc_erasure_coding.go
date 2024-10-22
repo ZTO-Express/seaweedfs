@@ -111,7 +111,7 @@ func (vs *VolumeServer) VolumeEcShardsRebuild(ctx context.Context, req *volume_s
 			return nil, err
 		}
 
-		if existingShardCount == 0 {
+		if existingShardCount == 0 || existingShardCount < erasure_coding.DataShardsCount {
 			continue
 		}
 
@@ -143,13 +143,19 @@ func (vs *VolumeServer) VolumeEcShardsCopy(ctx context.Context, req *volume_serv
 
 	glog.V(0).Infof("VolumeEcShardsCopy: %v", req)
 
-	location := vs.store.FindFreeLocation(types.HardDriveType)
-	if location == nil {
-		return nil, fmt.Errorf("no space left")
+	var dir string
+	if req.SpecifyDir == "" {
+		location := vs.store.FindFreeLocation(types.HardDriveType)
+		if location == nil {
+			return nil, fmt.Errorf("no space left")
+		}
+		dir = location.Directory
+	} else {
+		dir = req.SpecifyDir
 	}
 
-	dataBaseFileName := storage.VolumeFileName(location.Directory, req.Collection, int(req.VolumeId))
-	indexBaseFileName := storage.VolumeFileName(location.IdxDirectory, req.Collection, int(req.VolumeId))
+	dataBaseFileName := storage.VolumeFileName(dir, req.Collection, int(req.VolumeId))
+	indexBaseFileName := storage.VolumeFileName(dir, req.Collection, int(req.VolumeId))
 
 	err := operation.WithVolumeServerClient(true, pb.ServerAddress(req.SourceDataNode), vs.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
 
@@ -191,6 +197,75 @@ func (vs *VolumeServer) VolumeEcShardsCopy(ctx context.Context, req *volume_serv
 	return &volume_server_pb.VolumeEcShardsCopyResponse{}, nil
 }
 
+// VolumeEcShardsCopyByRebuild copy the .ecx and some ec data slices
+func (vs *VolumeServer) VolumeEcShardsCopyByRebuild(ctx context.Context, req *volume_server_pb.VolumeEcShardsCopyByRebuildRequest) (*volume_server_pb.VolumeEcShardsCopyByRebuildResponse, error) {
+
+	glog.V(0).Infof("VolumeEcShardsCopyByRebuild: %v", req)
+
+	var dir string
+	if req.SpecifyDir == "" {
+		location := vs.store.FindFreeLocation(types.HardDriveType)
+		if location == nil {
+			return nil, fmt.Errorf("no space left")
+		}
+		dir = location.Directory
+	} else {
+		dir = req.SpecifyDir
+	}
+
+	dataBaseFileName := storage.VolumeFileName(dir, req.Collection, int(req.VolumeId))
+	indexBaseFileName := storage.VolumeFileName(dir, req.Collection, int(req.VolumeId))
+
+	ifCopyEcxFile := req.CopyEcxFile
+	ifCopyEcjFile := req.CopyEcjFile
+	ifCopyVifFile := req.CopyVifFile
+
+	for node, shards := range req.GetNodeShardsMap() {
+
+		err := operation.WithVolumeServerClient(true, pb.ServerAddress(node), vs.grpcDialOption, func(client volume_server_pb.VolumeServerClient) error {
+
+			// copy ec data slices
+			for _, shardId := range shards.ShardIds {
+				if _, err := vs.doCopyFile(client, true, req.Collection, req.VolumeId, math.MaxUint32, math.MaxInt64, dataBaseFileName, erasure_coding.ToExt(int(shardId)), false, false, nil); err != nil {
+					return err
+				}
+			}
+
+			if ifCopyEcxFile {
+				// copy ecx file
+				if _, err := vs.doCopyFile(client, true, req.Collection, req.VolumeId, math.MaxUint32, math.MaxInt64, indexBaseFileName, ".ecx", false, false, nil); err != nil {
+					return err
+				} else {
+					ifCopyEcxFile = false
+				}
+			}
+
+			if ifCopyEcjFile {
+				// copy ecj file
+				if _, err := vs.doCopyFile(client, true, req.Collection, req.VolumeId, math.MaxUint32, math.MaxInt64, indexBaseFileName, ".ecj", true, true, nil); err != nil {
+					return err
+				} else {
+					ifCopyEcjFile = false
+				}
+			}
+
+			if ifCopyVifFile {
+				// copy vif file
+				if _, err := vs.doCopyFile(client, true, req.Collection, req.VolumeId, math.MaxUint32, math.MaxInt64, dataBaseFileName, ".vif", false, true, nil); err != nil {
+					return err
+				} else {
+					ifCopyVifFile = false
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("VolumeEcShardsCopyByRebuild volume %d: %v", req.VolumeId, err)
+		}
+	}
+	return &volume_server_pb.VolumeEcShardsCopyByRebuildResponse{}, nil
+}
+
 // VolumeEcShardsDelete local delete the .ecx and some ec data slices if not needed
 // the shard should not be mounted before calling this.
 func (vs *VolumeServer) VolumeEcShardsDelete(ctx context.Context, req *volume_server_pb.VolumeEcShardsDeleteRequest) (*volume_server_pb.VolumeEcShardsDeleteResponse, error) {
@@ -200,44 +275,88 @@ func (vs *VolumeServer) VolumeEcShardsDelete(ctx context.Context, req *volume_se
 	glog.V(0).Infof("ec volume %s shard delete %v", bName, req.ShardIds)
 
 	for _, location := range vs.store.Locations {
-		if err := deleteEcShardIdsForEachLocation(bName, location, req.ShardIds); err != nil {
+		if _, err := deleteEcShardIdsForEachLocation(bName, location, req.ShardIds, req.Soft); err != nil {
 			glog.Errorf("deleteEcShards from %s %s.%v: %v", location.Directory, bName, req.ShardIds, err)
 			return nil, err
 		}
+		glog.V(0).Infof("ec volume %s shard delete %v, directory:%s", bName, req.ShardIds, location.Directory)
 	}
 
 	return &volume_server_pb.VolumeEcShardsDeleteResponse{}, nil
 }
 
-func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32) error {
+func deleteAllEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32, soft bool) error {
+	if len(shardIds) == 0 {
+		// delete all ec shards with bName
+		for i := 0; i < erasure_coding.TotalShardsCount; i++ {
+			shardIds = append(shardIds, uint32(i))
+		}
+	}
 
-	found := false
+	deleted, err := deleteEcShardIdsForEachLocation(bName, location, shardIds, soft)
+	if err != nil {
+		return err
+	}
+	if len(deleted) == 0 {
+		glog.V(0).Infof("ec volume %s no shards found in directory:%s", bName, location.Directory)
+	} else {
+		glog.V(0).Infof("ec volume %s shard deleted %v, directory:%s", bName, deleted, location.Directory)
+	}
+	return nil
+}
+
+func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocation, shardIds []uint32, soft bool) ([]int, error) {
+
+	deletedShards := make([]int, 0)
 
 	indexBaseFilename := path.Join(location.IdxDirectory, bName)
 	dataBaseFilename := path.Join(location.Directory, bName)
 
-	if util.FileExists(path.Join(location.IdxDirectory, bName+".ecx")) {
-		for _, shardId := range shardIds {
-			shardFileName := dataBaseFilename + erasure_coding.ToExt(int(shardId))
-			if util.FileExists(shardFileName) {
-				found = true
+	//if util.FileExists(path.Join(location.IdxDirectory, bName+".ecx")) {
+	for _, shardId := range shardIds {
+		shardFileName := dataBaseFilename + erasure_coding.ToExt(int(shardId))
+		if util.FileExists(shardFileName) {
+			if soft {
+				err := erasure_coding.MoveFile(shardFileName, erasure_coding.GetSoftDeleteDir(shardFileName))
+				return deletedShards, err
+			} else {
 				os.Remove(shardFileName)
 			}
+			deletedShards = append(deletedShards, int(shardId))
 		}
 	}
+	//}
 
-	if !found {
-		return nil
+	if len(deletedShards) == 0 {
+		return nil, nil
 	}
 
 	hasEcxFile, hasIdxFile, existingShardCount, err := checkEcVolumeStatus(bName, location)
 	if err != nil {
-		return err
+		return deletedShards, err
 	}
 
 	if hasEcxFile && existingShardCount == 0 {
+		if soft {
+			if err := erasure_coding.MoveFile(indexBaseFilename+".ecx", erasure_coding.GetSoftDeleteDir(indexBaseFilename+".ecx")); err != nil {
+				return deletedShards, err
+			}
+			err = erasure_coding.MoveFile(indexBaseFilename+".ecj", erasure_coding.GetSoftDeleteDir(indexBaseFilename+".ecj"))
+			if err != nil {
+				glog.Errorf("move [%s] ecj file err:%v", bName, err)
+			}
+
+			if !hasIdxFile {
+				// .vif is used for ec volumes and normal volumes
+				err = erasure_coding.MoveFile(indexBaseFilename+".vif", erasure_coding.GetSoftDeleteDir(indexBaseFilename+".vif"))
+				if err != nil {
+					glog.Errorf("move [%s] vif file err:%v", bName, err)
+				}
+			}
+			return deletedShards, nil
+		}
 		if err := os.Remove(indexBaseFilename + ".ecx"); err != nil {
-			return err
+			return deletedShards, err
 		}
 		os.Remove(indexBaseFilename + ".ecj")
 
@@ -247,7 +366,7 @@ func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocatio
 		}
 	}
 
-	return nil
+	return deletedShards, nil
 }
 
 func checkEcVolumeStatus(bName string, location *storage.DiskLocation) (hasEcxFile bool, hasIdxFile bool, existingShardCount int, err error) {
@@ -489,7 +608,7 @@ func (vs *VolumeServer) VolumeEcShardsMove(ctx context.Context, req *volume_serv
 			continue
 		}
 		glog.V(3).Infof("move ec data %s -> %s", fileName, dataBaseFileName+erasure_coding.ToExt(int(shardId)))
-		if err := moveFile(fileName, dataBaseFileName+erasure_coding.ToExt(int(shardId))); err != nil {
+		if err := erasure_coding.MoveFile(fileName, dataBaseFileName+erasure_coding.ToExt(int(shardId))); err != nil {
 			glog.V(3).Infof("CopyFile not found ec volume id %v", err)
 		}
 		fileName = ""
@@ -562,29 +681,29 @@ func (vs *VolumeServer) VolumeEcShardsMove(ctx context.Context, req *volume_serv
 	return &volume_server_pb.VolumeEcShardsMoveResponse{}, nil
 }
 
-func moveFile(sourcePath, destPath string) error {
-	inputFile, err := os.Open(sourcePath)
-	if err != nil {
-		return fmt.Errorf("Couldn't open source file: %s", err)
-	}
-	outputFile, err := os.Create(destPath)
-	if err != nil {
-		inputFile.Close()
-		return fmt.Errorf("Couldn't open dest file: %s", err)
-	}
-	defer outputFile.Close()
-	_, err = io.Copy(outputFile, inputFile)
-	inputFile.Close()
-	if err != nil {
-		return fmt.Errorf("Writing to output file failed: %s", err)
-	}
-	// The copy was successful, so now delete the original file
-	err = os.Remove(sourcePath)
-	if err != nil {
-		return fmt.Errorf("Failed removing original file: %s", err)
-	}
-	return nil
-}
+//func moveFile(sourcePath, destPath string) error {
+//	inputFile, err := os.Open(sourcePath)
+//	if err != nil {
+//		return fmt.Errorf("Couldn't open source file: %s", err)
+//	}
+//	outputFile, err := os.Create(destPath)
+//	if err != nil {
+//		inputFile.Close()
+//		return fmt.Errorf("Couldn't open dest file: %s", err)
+//	}
+//	defer outputFile.Close()
+//	_, err = io.Copy(outputFile, inputFile)
+//	inputFile.Close()
+//	if err != nil {
+//		return fmt.Errorf("Writing to output file failed: %s", err)
+//	}
+//	// The copy was successful, so now delete the original file
+//	err = os.Remove(sourcePath)
+//	if err != nil {
+//		return fmt.Errorf("Failed removing original file: %s", err)
+//	}
+//	return nil
+//}
 
 func copyFile(sourcePath, destPath string) error {
 	inputFile, err := os.Open(sourcePath)

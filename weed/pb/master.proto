@@ -110,6 +110,8 @@ message VolumeInformationMessage {
   string remote_storage_name = 13;
   string remote_storage_key = 14;
   string disk_type = 15;
+
+  string dir = 16;
 }
 
 message VolumeShortInformationMessage {
@@ -127,6 +129,8 @@ message VolumeEcShardInformationMessage {
   uint32 ec_index_bits = 3;
   string disk_type = 4;
   uint64 destroy_time = 5;
+
+  string dir = 6;
 }
 
 message StorageBackend {

@@ -390,12 +390,7 @@ func (s *Store) deleteExpiredEcVolumes() (ecShards, deleted []*master_pb.VolumeE
 	for _, location := range s.Locations {
 		toDeleteEcVolumes, aliveEcVolumes := s.prepareDiffExpiredEcVolumesInLocation(location)
 		for _, ev := range toDeleteEcVolumes {
-			err := location.deleteEcVolumeById(ev.VolumeId)
-			if err != nil {
-				ecShards = append(ecShards, ev.ToVolumeEcShardInformationMessage()...)
-				glog.Errorf("delete EcVolume err %d: %v", ev.VolumeId, err)
-				continue
-			}
+			location.deleteEcVolumeById(ev.VolumeId, nil, false)
 			deleted = append(deleted, ev.ToVolumeEcShardInformationMessage()...)
 		}
 		for _, v := range aliveEcVolumes {

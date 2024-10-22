@@ -180,7 +180,8 @@ func (c *commandVolumeList) writeDiskInfo(writer io.Writer, t *master_pb.DiskInf
 		if destroyTime > 0 {
 			destroyTimeDisplay = time.Unix(int64(destroyTime), 0).Format("2006-01-02 15:04:05")
 		}
-		output(verbosityLevel >= 5, writer, "          ec volume id:%v collection:%v shards:%v destroyTime:%s\n", ecShardInfo.Id, ecShardInfo.Collection, erasure_coding.ShardBits(ecShardInfo.EcIndexBits).ShardIds(), destroyTimeDisplay)
+		output(verbosityLevel >= 5, writer, "          ec volume id:%v collection:%v shards:%v dir:%s destroyTime:%s\n",
+			ecShardInfo.Id, ecShardInfo.Collection, erasure_coding.ShardBits(ecShardInfo.EcIndexBits).ShardIds(), ecShardInfo.Dir, destroyTimeDisplay)
 	}
 	output(verbosityLevel >= 4, writer, "        Disk %s %+v \n", diskType, s)
 	return s

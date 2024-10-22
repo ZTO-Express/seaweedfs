@@ -5,8 +5,10 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
+	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -90,9 +92,14 @@ func (shard *EcVolumeShard) Close() {
 	}
 }
 
-func (shard *EcVolumeShard) Destroy() {
-	os.Remove(shard.FileName() + ToExt(int(shard.ShardId)))
+func (shard *EcVolumeShard) Destroy(soft bool) error {
+	shardFilename := shard.FileName() + ToExt(int(shard.ShardId))
+	if soft {
+		return MoveFile(shardFilename, GetSoftDeleteDir(shardFilename))
+	}
+	err := os.Remove(shardFilename)
 	stats.VolumeServerVolumeGauge.WithLabelValues(shard.Collection, "ec_shards").Dec()
+	return err
 }
 
 func (shard *EcVolumeShard) ReadAt(buf []byte, offset int64) (int, error) {
@@ -124,4 +131,43 @@ func (shard *EcVolumeShard) tryOpenEcdFile() (err error) {
 		}
 	}
 	return
+}
+
+func GetSoftDeleteDir(sourceFile string) string {
+	if strings.HasPrefix(sourceFile, "/") {
+		sourceFile = sourceFile[1:]
+	}
+	sourceFile = strings.ReplaceAll(sourceFile, "/", ":")
+	return os.TempDir() + "/backup/" + sourceFile
+}
+
+func MoveFile(sourcePath, destPath string) error {
+	inputFile, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf("couldn't open source file: %s", err)
+	}
+	destDir := filepath.Dir(destPath)
+
+	// 创建所有必要的父级目录
+	err = os.MkdirAll(destDir, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	outputFile, err := os.Create(destPath)
+	if err != nil {
+		inputFile.Close()
+		return fmt.Errorf("couldn't open dest file: %s", err)
+	}
+	defer outputFile.Close()
+	_, err = io.Copy(outputFile, inputFile)
+	inputFile.Close()
+	if err != nil {
+		return fmt.Errorf("writing to output file failed: %s", err)
+	}
+	// The copy was successful, so now delete the original file
+	err = os.Remove(sourcePath)
+	if err != nil {
+		return fmt.Errorf("failed removing original file: %s", err)
+	}
+	return nil
 }

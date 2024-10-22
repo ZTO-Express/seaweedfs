@@ -3,6 +3,7 @@ package weed_server
 import (
 	"context"
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
 	"path/filepath"
 	"time"
 
@@ -110,6 +111,32 @@ func (vs *VolumeServer) VolumeDelete(ctx context.Context, req *volume_server_pb.
 
 	return resp, err
 
+}
+
+func (vs *VolumeServer) EcVolumeDelete(ctx context.Context, req *volume_server_pb.EcVolumeDeleteRequest) (*volume_server_pb.EcVolumeDeleteResponse, error) {
+	resp := &volume_server_pb.EcVolumeDeleteResponse{}
+	vid := needle.VolumeId(req.VolumeId)
+	collection := req.Collection
+	var shards []uint32
+	for _, id := range req.ShardIds {
+		shards = append(shards, id)
+	}
+
+	deletedShards := vs.store.DestroyEcVolume(vid, shards, req.Soft)
+	if len(deletedShards) > 0 {
+		glog.V(0).Infof("deleteEcVolume %s_%d deleted,shards: %v", collection, vid, deletedShards)
+		return resp, nil
+	}
+	glog.V(0).Infof("deleteEcVolume %s_%d location not found, try to delete by scan all location dir", collection, vid)
+	bName := erasure_coding.EcShardBaseFileName(collection, int(vid))
+	for _, location := range vs.store.Locations {
+		err := deleteAllEcShardIdsForEachLocation(bName, location, shards, req.Soft)
+		if err != nil {
+			glog.Errorf("deleteEcShards %s_%d from %s %s: %v", collection, vid, location.Directory, bName, err)
+			return nil, err
+		}
+	}
+	return resp, nil
 }
 
 func (vs *VolumeServer) VolumeConfigure(ctx context.Context, req *volume_server_pb.VolumeConfigureRequest) (*volume_server_pb.VolumeConfigureResponse, error) {

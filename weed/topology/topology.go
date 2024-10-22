@@ -167,7 +167,9 @@ func (t *Topology) Lookup(collection string, vid needle.VolumeId) (dataNodes []*
 		}
 	} else {
 		if c, ok := t.collectionMap.Find(collection); ok {
-			return c.(*Collection).Lookup(vid)
+			if list := c.(*Collection).Lookup(vid); list != nil {
+				return list
+			}
 		}
 	}
 
