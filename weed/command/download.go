@@ -30,8 +30,8 @@ func init() {
 	cmdDownload.Run = runDownload // break init cycle
 	d.server = cmdDownload.Flag.String("server", "localhost:9333", "SeaweedFS master location")
 	d.dir = cmdDownload.Flag.String("dir", ".", "Download the whole folder recursively if specified.")
-	upload.Username = cmdUpload.Flag.String("username", "", "user auth")
-	upload.Password = cmdUpload.Flag.String("password", "", "user auth")
+	upload.Username = cmdDownload.Flag.String("username", "", "user auth")
+	upload.Password = cmdDownload.Flag.String("password", "", "user auth")
 }
 
 var cmdDownload = &Command{
