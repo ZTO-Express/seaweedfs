@@ -30,6 +30,8 @@ func init() {
 	cmdDownload.Run = runDownload // break init cycle
 	d.server = cmdDownload.Flag.String("server", "localhost:9333", "SeaweedFS master location")
 	d.dir = cmdDownload.Flag.String("dir", ".", "Download the whole folder recursively if specified.")
+	upload.Username = cmdUpload.Flag.String("username", "", "user auth")
+	upload.Password = cmdUpload.Flag.String("password", "", "user auth")
 }
 
 var cmdDownload = &Command{
@@ -63,7 +65,7 @@ func downloadToFile(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOpti
 	if lookupError != nil {
 		return lookupError
 	}
-	filename, _, rc, err := util.DownloadFile(fileUrl, jwt)
+	filename, _, rc, err := util.DownloadFile(fileUrl, jwt, *upload.Username, *upload.Password)
 	if err != nil {
 		return err
 	}
@@ -116,7 +118,7 @@ func fetchContent(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOption
 		return "", nil, lookupError
 	}
 	var rc *http.Response
-	if filename, _, rc, e = util.DownloadFile(fileUrl, jwt); e != nil {
+	if filename, _, rc, e = util.DownloadFile(fileUrl, jwt, *upload.Username, *upload.Password); e != nil {
 		return "", nil, e
 	}
 	defer util.CloseResponse(rc)

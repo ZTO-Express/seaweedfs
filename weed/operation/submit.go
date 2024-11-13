@@ -2,6 +2,7 @@ package operation
 
 import (
 	"context"
+	"encoding/base64"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"io"
 	"mime"
@@ -43,7 +44,8 @@ type SubmitResult struct {
 
 type GetMasterFn func(ctx context.Context) pb.ServerAddress
 
-func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []FilePart, replication string, collection string, dataCenter string, ttl string, diskType string, maxMB int, usePublicUrl bool) ([]SubmitResult, error) {
+func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []FilePart, replication string, collection string,
+	dataCenter string, ttl string, diskType string, maxMB int, usePublicUrl bool, username, password string) ([]SubmitResult, error) {
 	results := make([]SubmitResult, len(files))
 	for index, file := range files {
 		results[index].FileName = file.FileName
@@ -63,6 +65,11 @@ func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []F
 		}
 		return results, err
 	}
+
+	var basicAuth string
+	if username != "" {
+		basicAuth = genBasicAuth(username, password)
+	}
 	for index, file := range files {
 		file.Fid = ret.Fid
 		if index > 0 {
@@ -77,7 +84,7 @@ func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []F
 		file.DataCenter = dataCenter
 		file.Ttl = ttl
 		file.DiskType = diskType
-		results[index].Size, err = file.Upload(maxMB, masterFn, usePublicUrl, ret.Auth, "", grpcDialOption)
+		results[index].Size, err = file.Upload(maxMB, masterFn, usePublicUrl, ret.Auth, basicAuth, grpcDialOption)
 		if err != nil {
 			results[index].Error = err.Error()
 		}
@@ -187,7 +194,7 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 				baseName+"-"+strconv.FormatInt(i+1, 10),
 				io.LimitReader(fi.Reader, chunkSize),
 				masterFn, fileUrl,
-				ret.Auth)
+				ret.Auth, authHeader)
 			if e != nil {
 				// delete all uploaded chunks
 				cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
@@ -202,7 +209,7 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 			)
 			retSize += count
 		}
-		err = upload_chunked_file_manifest(fileUrl, &cm, jwt)
+		err = upload_chunked_file_manifest(fileUrl, &cm, jwt, authHeader)
 		if err != nil {
 			// delete all uploaded chunks
 			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
@@ -215,8 +222,8 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 			IsInputCompressed: false,
 			MimeType:          fi.MimeType,
 			PairMap:           nil,
-			AuthHeader:        authHeader,
 			Jwt:               jwt,
+			AuthHeader:        authHeader,
 		}
 		ret, e, _ := Upload(fi.Reader, uploadOption)
 		if e != nil {
@@ -228,7 +235,7 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 }
 
 func upload_one_chunk(filename string, reader io.Reader, masterFn GetMasterFn,
-	fileUrl string, jwt security.EncodedJwt,
+	fileUrl string, jwt security.EncodedJwt, basicAuth string,
 ) (size uint32, e error) {
 	glog.V(4).Info("Uploading part ", filename, " to ", fileUrl, "...")
 	uploadOption := &UploadOption{
@@ -239,6 +246,7 @@ func upload_one_chunk(filename string, reader io.Reader, masterFn GetMasterFn,
 		MimeType:          "",
 		PairMap:           nil,
 		Jwt:               jwt,
+		AuthHeader:        basicAuth,
 	}
 	uploadResult, uploadError, _ := Upload(reader, uploadOption)
 	if uploadError != nil {
@@ -247,7 +255,7 @@ func upload_one_chunk(filename string, reader io.Reader, masterFn GetMasterFn,
 	return uploadResult.Size, nil
 }
 
-func upload_chunked_file_manifest(fileUrl string, manifest *ChunkManifest, jwt security.EncodedJwt) error {
+func upload_chunked_file_manifest(fileUrl string, manifest *ChunkManifest, jwt security.EncodedJwt, basicAuth string) error {
 	buf, e := manifest.Marshal()
 	if e != nil {
 		return e
@@ -265,7 +273,13 @@ func upload_chunked_file_manifest(fileUrl string, manifest *ChunkManifest, jwt s
 		MimeType:          "application/json",
 		PairMap:           nil,
 		Jwt:               jwt,
+		AuthHeader:        basicAuth,
 	}
 	_, e = UploadData(buf, uploadOption)
 	return e
+}
+
+func genBasicAuth(username, password string) string {
+	auth := username + ":" + password
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 }
