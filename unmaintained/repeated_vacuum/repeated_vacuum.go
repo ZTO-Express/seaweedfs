@@ -5,12 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"google.golang.org/grpc"
 	"log"
 	"math/rand"
 	"time"
-	"context"
-
-	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/security"
