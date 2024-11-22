@@ -57,11 +57,11 @@ func Get(url string) ([]byte, bool, error) {
 }
 
 func GetAuthenticated(url, jwt string) ([]byte, bool, error) {
-	request, err := http.NewRequest("GET", url, nil)
+	request, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, true, err
 	}
-	maybeAddAuth(request, jwt)
+	maybeAddAuth(request, jwt, "")
 	request.Header.Add("Accept-Encoding", "gzip")
 
 	response, err := client.Do(request)
@@ -105,15 +105,17 @@ func Head(url string) (http.Header, error) {
 	return r.Header, nil
 }
 
-func maybeAddAuth(req *http.Request, jwt string) {
+func maybeAddAuth(req *http.Request, jwt, authHeader string) {
 	if jwt != "" {
 		req.Header.Set("Authorization", "BEARER "+string(jwt))
+	} else if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
 	}
 }
 
-func Delete(url string, jwt string) error {
-	req, err := http.NewRequest("DELETE", url, nil)
-	maybeAddAuth(req, jwt)
+func Delete(url string, jwt, authHeader string) error {
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	maybeAddAuth(req, jwt, authHeader)
 	if err != nil {
 		return err
 	}
@@ -140,8 +142,8 @@ func Delete(url string, jwt string) error {
 }
 
 func DeleteProxied(url string, jwt string) (body []byte, httpStatus int, err error) {
-	req, err := http.NewRequest("DELETE", url, nil)
-	maybeAddAuth(req, jwt)
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	maybeAddAuth(req, jwt, "")
 	if err != nil {
 		return
 	}
@@ -194,12 +196,12 @@ func GetUrlStream(url string, values url.Values, readFn func(io.Reader) error) e
 }
 
 func DownloadFile(fileUrl string, jwt string) (filename string, header http.Header, resp *http.Response, e error) {
-	req, err := http.NewRequest("GET", fileUrl, nil)
+	req, err := http.NewRequest(http.MethodGet, fileUrl, nil)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
-	maybeAddAuth(req, jwt)
+	maybeAddAuth(req, jwt, "")
 
 	response, err := client.Do(req)
 	if err != nil {
@@ -239,7 +241,7 @@ func ReadUrl(fileUrl string, cipherKey []byte, isContentCompressed bool, isFullC
 		return int64(n), err
 	}
 
-	req, err := http.NewRequest("GET", fileUrl, nil)
+	req, err := http.NewRequest(http.MethodGet, fileUrl, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -310,8 +312,8 @@ func ReadUrlAsStreamAuthenticated(fileUrl, jwt string, cipherKey []byte, isConte
 		return readEncryptedUrl(fileUrl, jwt, cipherKey, isContentGzipped, isFullChunk, offset, size, fn)
 	}
 
-	req, err := http.NewRequest("GET", fileUrl, nil)
-	maybeAddAuth(req, jwt)
+	req, err := http.NewRequest(http.MethodGet, fileUrl, nil)
+	maybeAddAuth(req, jwt, "")
 	if err != nil {
 		return false, err
 	}
@@ -391,7 +393,7 @@ func readEncryptedUrl(fileUrl, jwt string, cipherKey []byte, isContentCompressed
 
 func ReadUrlAsReaderCloser(fileUrl string, jwt string, rangeHeader string) (*http.Response, io.ReadCloser, error) {
 
-	req, err := http.NewRequest("GET", fileUrl, nil)
+	req, err := http.NewRequest(http.MethodGet, fileUrl, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -401,7 +403,7 @@ func ReadUrlAsReaderCloser(fileUrl string, jwt string, rangeHeader string) (*htt
 		req.Header.Add("Accept-Encoding", "gzip")
 	}
 
-	maybeAddAuth(req, jwt)
+	maybeAddAuth(req, jwt, "")
 
 	r, err := client.Do(req)
 	if err != nil {
