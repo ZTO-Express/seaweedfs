@@ -318,7 +318,9 @@ func deleteEcShardIdsForEachLocation(bName string, location *storage.DiskLocatio
 		if util.FileExists(shardFileName) {
 			if soft {
 				err := erasure_coding.MoveFile(shardFileName, erasure_coding.GetSoftDeleteDir(shardFileName))
-				return deletedShards, err
+				if err != nil {
+					return deletedShards, err
+				}
 			} else {
 				os.Remove(shardFileName)
 			}
