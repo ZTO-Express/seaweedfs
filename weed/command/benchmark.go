@@ -219,7 +219,13 @@ func writeFiles(idChan chan int, fileIdLineChan chan string, s *stat) {
 				if isSecure {
 					jwtAuthorization = operation.LookupJwt(b.masterClient.GetMaster(context.Background()), b.grpcDialOption, df.fp.Fid)
 				}
-				if e := util.Delete(fmt.Sprintf("http://%s/%s", df.fp.Server, df.fp.Fid), string(jwtAuthorization)); e == nil {
+				var authHeader string
+				if *b.username != "" {
+					auth := *b.username + ":" + *b.password
+					authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+				}
+
+				if e := util.Delete(fmt.Sprintf("http://%s/%s", df.fp.Server, df.fp.Fid), string(jwtAuthorization), authHeader); e == nil {
 					s.completed++
 				} else {
 					s.failed++

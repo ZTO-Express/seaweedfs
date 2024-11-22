@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -47,7 +48,7 @@ func main() {
 
 		assignResult, targetUrl := genFile(grpcDialOption, i)
 
-		util.Delete(targetUrl, string(assignResult.Auth))
+		util.Delete(targetUrl, string(assignResult.Auth), "")
 
 	}
 
