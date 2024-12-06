@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
+	"github.com/shirou/gopsutil/v4/mem"
 	"io"
+	"math"
 	"mime"
 	"net/url"
 	"os"
@@ -40,6 +43,13 @@ type SubmitResult struct {
 	Fid      string `json:"fid,omitempty"`
 	Size     uint32 `json:"size,omitempty"`
 	Error    string `json:"error,omitempty"`
+}
+
+type AsyncChunkUploadResult struct {
+	index int64
+	fid   string
+	count uint32
+	err   error
 }
 
 type GetMasterFn func(ctx context.Context) pb.ServerAddress
@@ -146,11 +156,11 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 			Name:   baseName,
 			Size:   fi.FileSize,
 			Mime:   fi.MimeType,
-			Chunks: make([]*ChunkInfo, 0, chunks),
+			Chunks: make([]*ChunkInfo, chunks),
 		}
 
 		var ret *AssignResult
-		var id string
+		//var id string
 		if fi.DataCenter != "" {
 			ar := &VolumeAssignRequest{
 				Count:       uint64(chunks),
@@ -164,51 +174,51 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 				return
 			}
 		}
+
+		var offset int64
+		var concurrent = calculateConcurrent(chunkSize, chunks)
+		var response = make(chan *AsyncChunkUploadResult, chunks)
+		var sem = util.NewSemaphore(concurrent)
+
+		glog.V(4).Info("Upload file, chunks ", chunks, "concurrent", concurrent, "baseName", baseName, "maxMB", maxMB, "collection", fi.Collection, "ttl", fi.Ttl, "diskType", fi.DiskType)
+
 		for i := int64(0); i < chunks; i++ {
-			if fi.DataCenter == "" {
-				ar := &VolumeAssignRequest{
-					Count:       1,
-					Replication: fi.Replication,
-					Collection:  fi.Collection,
-					Ttl:         fi.Ttl,
-					DiskType:    fi.DiskType,
-				}
-				ret, err = Assign(masterFn, grpcDialOption, ar)
-				if err != nil {
-					// delete all uploaded chunks
-					cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
-					return
-				}
-				id = ret.Fid
-			} else {
-				id = ret.Fid
-				if i > 0 {
-					id += "_" + strconv.FormatInt(i, 10)
-				}
+			filename := baseName + "-" + strconv.FormatInt(i+1, 10)
+			//reader := io.LimitReader(fi.Reader, chunkSize)
+			ar := &VolumeAssignRequest{
+				Count:       1,
+				Replication: fi.Replication,
+				Collection:  fi.Collection,
+				Ttl:         fi.Ttl,
+				DiskType:    fi.DiskType,
 			}
-			fileUrl := "http://" + ret.Url + "/" + id
-			if usePublicUrl {
-				fileUrl = "http://" + ret.PublicUrl + "/" + id
-			}
-			count, e := upload_one_chunk(
-				baseName+"-"+strconv.FormatInt(i+1, 10),
-				io.LimitReader(fi.Reader, chunkSize),
-				masterFn, fileUrl,
-				ret.Auth, authHeader)
-			if e != nil {
-				// delete all uploaded chunks
-				cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
-				return 0, e
-			}
-			cm.Chunks = append(cm.Chunks,
-				&ChunkInfo{
-					Offset: i * chunkSize,
-					Size:   int64(count),
-					Fid:    id,
-				},
-			)
-			retSize += count
+			newReader := io.NewSectionReader(fi.Reader.(*os.File), offset, chunkSize)
+			offset += chunkSize
+
+			sem.Acquire()
+			go uploadAsync(i, filename, fi.DataCenter, newReader, masterFn, usePublicUrl, authHeader, grpcDialOption, ar, ret, response, sem)
 		}
+
+		for i := 0; i < int(chunks); i++ {
+			r := <-response
+			if r.err != nil {
+				err = r.err
+				break
+			}
+			cm.Chunks[r.index] = &ChunkInfo{
+				Offset: r.index * chunkSize,
+				Size:   int64(r.count),
+				Fid:    r.fid,
+			}
+			retSize += r.count
+		}
+		close(response)
+		if err != nil {
+			// delete all uploaded chunks
+			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
+			return
+		}
+
 		err = upload_chunked_file_manifest(fileUrl, &cm, jwt, authHeader)
 		if err != nil {
 			// delete all uploaded chunks
@@ -232,6 +242,68 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 		return ret.Size, e
 	}
 	return
+}
+
+// 计算多大的并发数同时上传chunks
+func calculateConcurrent(chunkSize int64, chunks int64) int {
+	v, err := mem.VirtualMemory()
+	if err != nil {
+		return int(math.Min(float64(chunks), 10))
+	}
+	avail := (float64(v.Available) * 0.7) / float64(chunkSize) //基于70%的可用内存计算
+	if avail < 10 {
+		return int(math.Min(float64(chunks), 10))
+	}
+	return int(math.Min(float64(chunks), avail))
+}
+
+func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, masterFn GetMasterFn, usePublicUrl bool, authHeader string,
+	grpcDialOption grpc.DialOption, ar *VolumeAssignRequest, ret *AssignResult, resp chan<- *AsyncChunkUploadResult, sem *util.Semaphore) {
+	defer func() {
+		sem.Release()
+	}()
+
+	glog.V(4).Info("Uploading chunks async,index ", index, "filename ", filename, " dataCenter ", dataCenter, "usePublicUrl", usePublicUrl, "authHeader", authHeader)
+
+	var res = AsyncChunkUploadResult{}
+	var id string
+	var err error
+	if dataCenter == "" {
+		ret, err = Assign(masterFn, grpcDialOption, ar)
+		if err != nil {
+			res.err = err
+			return
+		}
+		id = ret.Fid
+	} else {
+		id = ret.Fid
+		if index > 0 {
+			id += "_" + strconv.FormatInt(index, 10)
+		}
+	}
+	fileUrl := "http://" + ret.Url + "/" + id
+	if usePublicUrl {
+		fileUrl = "http://" + ret.PublicUrl + "/" + id
+	}
+
+	for i := 0; i < 3; i++ { //重试
+		count, e := upload_one_chunk(filename, reader, masterFn, fileUrl, ret.Auth, authHeader)
+		if e == nil {
+			res.count = count
+			res.err = nil
+			break
+		}
+		res.err = e
+	}
+	res.fid = id
+	res.index = index
+	resp <- &res
+
+	//if e != nil {
+	//	// delete all uploaded chunks
+	//	cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
+	//	return 0, e
+	//}
 }
 
 func upload_one_chunk(filename string, reader io.Reader, masterFn GetMasterFn,

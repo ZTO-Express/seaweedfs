@@ -49,6 +49,7 @@ type ChunkedFileReader struct {
 	pw             *io.PipeWriter
 	mutex          sync.Mutex
 	grpcDialOption grpc.DialOption
+	authHeader     string
 }
 
 func (s ChunkList) Len() int           { return len(s) }
@@ -94,13 +95,16 @@ func (cm *ChunkManifest) DeleteChunks(masterFn GetMasterFn, usePublicUrl bool, g
 	return nil
 }
 
-func readChunkNeedle(fileUrl string, w io.Writer, offset int64, jwt string) (written int64, e error) {
+func readChunkNeedle(fileUrl string, w io.Writer, offset int64, jwt, authHeader string) (written int64, e error) {
 	req, err := http.NewRequest(http.MethodGet, fileUrl, nil)
 	if err != nil {
 		return written, err
 	}
 	if offset > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+	}
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
 	}
 
 	resp, err := util.Do(req)
@@ -125,7 +129,7 @@ func readChunkNeedle(fileUrl string, w io.Writer, offset int64, jwt string) (wri
 	return io.Copy(w, resp.Body)
 }
 
-func NewChunkedFileReader(chunkList []*ChunkInfo, master pb.ServerAddress, grpcDialOption grpc.DialOption) *ChunkedFileReader {
+func NewChunkedFileReader(chunkList []*ChunkInfo, master pb.ServerAddress, grpcDialOption grpc.DialOption, authHeader string) *ChunkedFileReader {
 	var totalSize int64
 	for _, chunk := range chunkList {
 		totalSize += chunk.Size
@@ -136,6 +140,7 @@ func NewChunkedFileReader(chunkList []*ChunkInfo, master pb.ServerAddress, grpcD
 		chunkList:      chunkList,
 		master:         master,
 		grpcDialOption: grpcDialOption,
+		authHeader:     authHeader,
 	}
 }
 
@@ -180,7 +185,7 @@ func (cf *ChunkedFileReader) WriteTo(w io.Writer) (n int64, err error) {
 		if lookupError != nil {
 			return n, lookupError
 		}
-		if wn, e := readChunkNeedle(fileUrl, w, chunkStartOffset, jwt); e != nil {
+		if wn, e := readChunkNeedle(fileUrl, w, chunkStartOffset, jwt, cf.authHeader); e != nil {
 			return n, e
 		} else {
 			n += wn
