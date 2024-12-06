@@ -3,6 +3,7 @@ package operation
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/shirou/gopsutil/v4/mem"
@@ -180,7 +181,7 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 		var response = make(chan *AsyncChunkUploadResult, chunks)
 		var sem = util.NewSemaphore(concurrent)
 
-		glog.V(4).Info("Upload file, chunks ", chunks, "concurrent", concurrent, "baseName", baseName, "maxMB", maxMB, "collection", fi.Collection, "ttl", fi.Ttl, "diskType", fi.DiskType)
+		fmt.Println("Upload file, chunks ", chunks, "concurrent", concurrent, "baseName", baseName, "maxMB", maxMB, "collection", fi.Collection, "ttl", fi.Ttl, "diskType", fi.DiskType)
 
 		for i := int64(0); i < chunks; i++ {
 			filename := baseName + "-" + strconv.FormatInt(i+1, 10)
@@ -263,7 +264,7 @@ func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, mas
 		sem.Release()
 	}()
 
-	glog.V(4).Info("Uploading chunks async,index ", index, "filename ", filename, " dataCenter ", dataCenter, "usePublicUrl", usePublicUrl, "authHeader", authHeader)
+	fmt.Println("Uploading chunks async,index ", index, "filename ", filename, " dataCenter ", dataCenter, "usePublicUrl", usePublicUrl, "authHeader", authHeader)
 
 	var res = AsyncChunkUploadResult{}
 	var id string

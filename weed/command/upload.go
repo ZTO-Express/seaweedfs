@@ -104,6 +104,7 @@ func runUpload(cmd *Command, args []string) bool {
 					if e != nil {
 						return e
 					}
+					fmt.Println("upload ", *upload.collection, *upload.diskType, *upload.maxMB)
 					results, e := operation.SubmitFiles(func(_ context.Context) pb.ServerAddress { return pb.ServerAddress(*upload.master) },
 						grpcDialOption, parts, *upload.replication, *upload.collection, *upload.dataCenter, *upload.ttl,
 						*upload.diskType, *upload.maxMB, *upload.usePublicUrl, *upload.Username, *upload.Password)
