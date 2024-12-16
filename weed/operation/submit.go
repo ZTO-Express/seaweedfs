@@ -56,7 +56,7 @@ type AsyncChunkUploadResult struct {
 type GetMasterFn func(ctx context.Context) pb.ServerAddress
 
 func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []FilePart, replication string, collection string,
-	dataCenter string, ttl string, diskType string, maxMB int, usePublicUrl bool, username, password string) ([]SubmitResult, error) {
+	dataCenter string, ttl string, diskType string, maxMB int, usePublicUrl bool, username, password string, chunkConcurrent int) ([]SubmitResult, error) {
 	results := make([]SubmitResult, len(files))
 	for index, file := range files {
 		results[index].FileName = file.FileName
@@ -95,7 +95,7 @@ func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []F
 		file.DataCenter = dataCenter
 		file.Ttl = ttl
 		file.DiskType = diskType
-		results[index].Size, err = file.Upload(maxMB, masterFn, usePublicUrl, ret.Auth, basicAuth, grpcDialOption)
+		results[index].Size, err = file.Upload(maxMB, masterFn, usePublicUrl, ret.Auth, basicAuth, grpcDialOption, chunkConcurrent)
 		if err != nil {
 			results[index].Error = err.Error()
 		}
@@ -138,7 +138,7 @@ func newFilePart(fullPathFilename string) (ret FilePart, err error) {
 	return ret, nil
 }
 
-func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jwt security.EncodedJwt, authHeader string, grpcDialOption grpc.DialOption) (retSize uint32, err error) {
+func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jwt security.EncodedJwt, authHeader string, grpcDialOption grpc.DialOption, chunkConcurrent int) (retSize uint32, err error) {
 	fileUrl := "http://" + fi.Server + "/" + fi.Fid
 	if fi.ModTime != 0 {
 		fileUrl += "?ts=" + strconv.Itoa(int(fi.ModTime))
@@ -177,7 +177,7 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 		}
 
 		var offset int64
-		var concurrent = calculateConcurrent(chunkSize, chunks)
+		var concurrent = chunkConcurrent
 		var response = make(chan *AsyncChunkUploadResult, chunks)
 		var sem = util.NewSemaphore(concurrent)
 
