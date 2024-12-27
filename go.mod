@@ -107,7 +107,7 @@ require (
 	golang.org/x/image v0.18.0
 	golang.org/x/net v0.27.0
 	golang.org/x/oauth2 v0.21.0 // indirect
-	golang.org/x/sys v0.22.0
+	golang.org/x/sys v0.26.0
 	golang.org/x/text v0.16.0 // indirect
 	golang.org/x/tools v0.23.0
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
@@ -213,6 +213,7 @@ require (
 	github.com/d4l3k/messagediff v1.2.1 // indirect
 	github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2 // indirect
 	github.com/dropbox/dropbox-sdk-go-unofficial/v6 v6.0.5 // indirect
+	github.com/ebitengine/purego v0.8.1 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
 	github.com/emersion/go-message v0.18.0 // indirect
 	github.com/emersion/go-textwrapper v0.0.0-20200911093747-65d896831594 // indirect
@@ -291,6 +292,7 @@ require (
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/segmentio/encoding v0.4.0 // indirect
+	github.com/shirou/gopsutil/v4 v4.24.11 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966 // indirect
 	github.com/smartystreets/goconvey v1.8.1 // indirect

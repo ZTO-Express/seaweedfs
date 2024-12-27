@@ -2,6 +2,7 @@ package util
 
 import (
 	"compress/gzip"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -195,13 +196,13 @@ func GetUrlStream(url string, values url.Values, readFn func(io.Reader) error) e
 	return readFn(r.Body)
 }
 
-func DownloadFile(fileUrl string, jwt string) (filename string, header http.Header, resp *http.Response, e error) {
+func DownloadFile(fileUrl string, jwt string, username, password string) (filename string, header http.Header, resp *http.Response, e error) {
 	req, err := http.NewRequest(http.MethodGet, fileUrl, nil)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
-	maybeAddAuth(req, jwt, "")
+	maybeAddAuth(req, jwt, genBasicAuth(username, password))
 
 	response, err := client.Do(req)
 	if err != nil {
@@ -496,4 +497,12 @@ func RetriedFetchChunkData(buffer []byte, urlStrings []string, cipherKey []byte,
 
 	return n, err
 
+}
+
+func genBasicAuth(username, password string) string {
+	if username != "" {
+		auth := username + ":" + password
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+	}
+	return ""
 }
