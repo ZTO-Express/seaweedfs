@@ -15,6 +15,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 
@@ -264,7 +265,7 @@ func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, mas
 		sem.Release()
 	}()
 
-	fmt.Println("Uploading chunks async,index ", index, "filename ", filename, " dataCenter ", dataCenter, "usePublicUrl", usePublicUrl, "authHeader", authHeader)
+	fmt.Println("Uploading chunks async,index ", index, "filename ", filename, " dataCenter ", dataCenter, "usePublicUrl", usePublicUrl, "currentTime", time.Now().Format("2006-01-02 15:04:05.010101"))
 
 	var res = AsyncChunkUploadResult{}
 	var id string
