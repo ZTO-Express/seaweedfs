@@ -152,6 +152,7 @@ func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request)
 	var count int
 	var memoryCost types.Size
 	readOption.AttemptMetaOnly, readOption.MustMetaOnly = shouldAttemptStreamWrite(hasVolume, ext, r)
+	glog.V(0).Infof("readOption.AttemptMetaOnly is: %v,readOption.MustMetaOnly is: %v", readOption.AttemptMetaOnly, readOption.MustMetaOnly)
 	onReadSizeFn := func(size types.Size) {
 		memoryCost = size
 		atomic.AddInt64(&vs.inFlightDownloadDataSize, int64(memoryCost))
@@ -161,6 +162,7 @@ func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request)
 	} else if hasEcVolume {
 		count, err = vs.store.ReadEcShardNeedle(volumeId, n, onReadSizeFn)
 	}
+	glog.V(0).Infof("readOption.IsMetaOnly is: %v,n.IsCompressed() is: %v", readOption.IsMetaOnly, n.IsCompressed())
 	defer func() {
 		atomic.AddInt64(&vs.inFlightDownloadDataSize, -int64(memoryCost))
 		vs.inFlightDownloadDataLimitCond.Signal()
@@ -271,6 +273,7 @@ func shouldAttemptStreamWrite(hasLocalVolume bool, ext string, r *http.Request) 
 		return true, true
 	}
 	_, _, _, shouldResize := shouldResizeImages(ext, r)
+	glog.V(0).Infof("shouldAttemptStreamWrite method shouldResize is: %v", shouldResize)
 	_, _, _, _, shouldCrop := shouldCropImages(ext, r)
 	if shouldResize || shouldCrop {
 		return false, false
@@ -324,6 +327,7 @@ func conditionallyResizeImages(originalDataReaderSeeker io.ReadSeeker, ext strin
 		ext = strings.ToLower(ext)
 	}
 	width, height, mode, shouldResize := shouldResizeImages(ext, r)
+	glog.V(0).Infof("conditionallyResizeImages width: %v,height: %v,mode: %v,shouldResize: %v", width, height, mode, shouldResize)
 	if shouldResize {
 		rs, _, _ = images.Resized(ext, originalDataReaderSeeker, width, height, mode)
 	}
