@@ -2,9 +2,11 @@ package command
 
 import (
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/images"
 	"net/http"
 	httppprof "net/http/pprof"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -76,6 +78,8 @@ type VolumeServerOptions struct {
 
 	ecVolumeExpireClose *int64
 	ecVolumeLoopTime    *int64
+
+	imageResizeLimit *int
 }
 
 func init() {
@@ -114,6 +118,8 @@ func init() {
 	v.password = cmdVolume.Flag.String("password", "", "password for authentication")
 	v.ecVolumeExpireClose = cmdVolume.Flag.Int64("ecVolumeExpireClose", 60, "How long has it been since the last reading that ec volume needs to be closed (default 60 minutes)")
 	v.ecVolumeLoopTime = cmdVolume.Flag.Int64("ecVolumeLoopTime", 60*12, "Interval to check if ec volume needs to be closed (default 720 minutes)")
+	// 在命令行参数定义部分添加
+	v.imageResizeLimit = cmdVolume.Flag.Int("imageResizeLimit", 0, "限制同时处理的图像数量，默认为CPU核心数的一半")
 }
 
 var cmdVolume = &Command{
@@ -308,6 +314,19 @@ func (v VolumeServerOptions) startVolumeServer(volumeFolders, maxVolumeCounts, v
 		shutdown(publicHttpDown, clusterHttpServer, grpcS, volumeServer)
 		stopChan <- true
 	})
+
+	// 设置图像处理限流
+	if *v.imageResizeLimit > 0 {
+		images.SetResizeThrottleLimit(*v.imageResizeLimit)
+		glog.V(0).Infof("设置图像处理并发限制为: %d", *v.imageResizeLimit)
+	} else {
+		defaultLimit := runtime.NumCPU() / 2
+		if defaultLimit < 1 {
+			defaultLimit = 1
+		}
+		images.SetResizeThrottleLimit(defaultLimit)
+		glog.V(0).Infof("使用默认图像处理并发限制: %d", defaultLimit)
+	}
 
 	select {
 	case <-stopChan:
