@@ -1,11 +1,14 @@
 package security
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
@@ -14,31 +17,22 @@ var (
 	ErrUnauthorized = errors.New("unauthorized token")
 )
 
-/*
-Guard is to ensure data access security.
-There are 2 ways to check access:
- 1. white list. It's checking request ip address.
- 2. JSON Web Token(JWT) generated from secretKey.
-    The jwt can come from:
- 1. url parameter jwt=...
- 2. request header "Authorization"
- 3. cookie with the name "jwt"
+type Permission struct {
+	Bucket    string   `json:"bucket"`
+	Scope     string   `json:"scope"`
+	scopeList []string // 内部使用，解析后的权限列表
+}
 
-The white list is checked first because it is easy.
-Then the JWT is checked.
+type User struct {
+	Username    string       `json:"username"`
+	Password    string       `json:"password"`
+	Permissions []Permission `json:"permissions"`
+}
 
-The Guard will also check these claims if provided:
-1. "exp" Expiration Time
-2. "nbf" Not Before
+type UserConfig struct {
+	Users []User `json:"users"`
+}
 
-Generating JWT:
- 1. use HS256 to sign
- 2. optionally set "exp", "nbf" fields, in Unix time,
-    the number of seconds elapsed since January 1, 1970 UTC.
-
-Referenced:
-https://github.com/pkieltyka/jwtauth/blob/master/jwtauth.go
-*/
 type Guard struct {
 	whiteList           []string
 	SigningKey          SigningKey
@@ -47,12 +41,41 @@ type Guard struct {
 	ReadExpiresAfterSec int
 	username            string
 	password            string
+	userConfig          *UserConfig
+	usersFile           string
 
 	isBasicAuth   bool
 	isWriteActive bool
 }
 
-func NewGuard(whiteList []string, signingKey string, expiresAfterSec int, readSigningKey string, readExpiresAfterSec int, username string, password string) *Guard {
+func LoadUserConfig(filePath string) (*UserConfig, error) {
+	if filePath == "" {
+		return nil, nil
+	}
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read user config file: %v", err)
+	}
+	var config UserConfig
+	if err := json.Unmarshal(data, &config.Users); err != nil {
+		return nil, fmt.Errorf("failed to parse user config: %v", err)
+	}
+	// 预处理权限列表
+	for i := range config.Users {
+		for j := range config.Users[i].Permissions {
+			config.Users[i].Permissions[j].scopeList = strings.Split(config.Users[i].Permissions[j].Scope, ",")
+		}
+	}
+	glog.V(0).Infof("Loaded user config from %s: %d users: %+v", filePath, len(config.Users), config.Users)
+	return &config, nil
+}
+
+func NewGuard(whiteList []string, signingKey string, expiresAfterSec int, readSigningKey string, readExpiresAfterSec int, username string, password string, usersFile string) *Guard {
+	userConfig, err := LoadUserConfig(usersFile)
+	if err != nil {
+		glog.Errorf("Failed to load user config: %v", err)
+	}
+
 	g := &Guard{
 		whiteList:           whiteList,
 		SigningKey:          SigningKey(signingKey),
@@ -61,9 +84,27 @@ func NewGuard(whiteList []string, signingKey string, expiresAfterSec int, readSi
 		ReadExpiresAfterSec: readExpiresAfterSec,
 		username:            username,
 		password:            password,
+		userConfig:          userConfig,
+		usersFile:           usersFile,
 	}
 	g.isWriteActive = len(g.whiteList) != 0 || len(g.SigningKey) != 0
-	g.isBasicAuth = g.username != "" && g.password != ""
+	// 只有当单用户认证或多用户认证至少有一个配置时，才启用认证
+	g.isBasicAuth = (g.username != "" && g.password != "") || (g.userConfig != nil && len(g.userConfig.Users) > 0)
+	// 如果配置了用户文件，则定时重新加载
+	if usersFile != "" {
+		go func(path string) {
+			ticker := time.NewTicker(time.Minute)
+			for range ticker.C {
+				cfg, err := LoadUserConfig(path)
+				if err != nil {
+					glog.Errorf("Failed to reload user config: %v", err)
+					continue
+				}
+				g.userConfig = cfg
+				glog.V(0).Infof("Reloaded user config from %s: %d users", path, len(cfg.Users))
+			}
+		}(usersFile)
+	}
 	return g
 }
 
@@ -82,6 +123,27 @@ func (g *Guard) WhiteList(f http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func (g *Guard) checkUserPermission(username string, bucket string, operation string) bool {
+	if g.userConfig == nil {
+		return false
+	}
+	for _, user := range g.userConfig.Users {
+		if user.Username == username {
+			for _, perm := range user.Permissions {
+				if perm.Bucket == "" || perm.Bucket == bucket {
+					for _, scope := range perm.scopeList {
+						if scope == operation {
+							return true
+						}
+					}
+				}
+			}
+			break
+		}
+	}
+	return false
+}
+
 func (g *Guard) BasicAuth(f http.HandlerFunc) http.HandlerFunc {
 	if !g.isBasicAuth {
 		return f
@@ -92,11 +154,37 @@ func (g *Guard) BasicAuth(f http.HandlerFunc) http.HandlerFunc {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if username != g.username || password != g.password {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
+
+		// 先检查单用户模式
+		if g.username != "" && g.password != "" {
+			if username == g.username && password == g.password {
+				f(w, r)
+				return
+			}
 		}
-		f(w, r)
+
+		// 检查多用户模式
+		if g.userConfig != nil && len(g.userConfig.Users) > 0 {
+			for _, user := range g.userConfig.Users {
+				if username == user.Username && password == user.Password {
+					// 获取请求的 bucket 和操作类型
+					bucket := r.URL.Query().Get("bucket")
+					operation := "read" // 默认为读操作
+					if r.Method == "POST" || r.Method == "PUT" {
+						operation = "write"
+					} else if r.Method == "DELETE" {
+						operation = "delete"
+					}
+
+					if g.checkUserPermission(username, bucket, operation) {
+						f(w, r)
+						return
+					}
+				}
+			}
+		}
+
+		w.WriteHeader(http.StatusUnauthorized)
 	}
 }
 

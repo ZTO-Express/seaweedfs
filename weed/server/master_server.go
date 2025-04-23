@@ -52,6 +52,7 @@ type MasterOption struct {
 	IsFollower              bool
 	Username                string
 	Password                string
+	UsersFile               string
 }
 
 type MasterServer struct {
@@ -135,7 +136,7 @@ func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.Se
 	ms.vg = topology.NewDefaultVolumeGrowth()
 	glog.V(0).Infoln("Volume Size Limit is", ms.option.VolumeSizeLimitMB, "MB")
 
-	ms.guard = security.NewGuard(ms.option.WhiteList, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec, ms.option.Username, ms.option.Password)
+	ms.guard = security.NewGuard(ms.option.WhiteList, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec, ms.option.Username, ms.option.Password, ms.option.UsersFile)
 
 	handleStaticResources2(r)
 	r.HandleFunc("/", ms.proxyToLeader(ms.uiStatusHandler))
