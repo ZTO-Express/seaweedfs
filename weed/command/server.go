@@ -101,9 +101,9 @@ func init() {
 	masterOptions.raftBootstrap = cmdServer.Flag.Bool("master.raftBootstrap", false, "Whether to bootstrap the Raft cluster")
 	masterOptions.heartbeatInterval = cmdServer.Flag.Duration("master.heartbeatInterval", 300*time.Millisecond, "heartbeat interval of master servers, and will be randomly multiplied by [1, 1.25)")
 	masterOptions.electionTimeout = cmdServer.Flag.Duration("master.electionTimeout", 10*time.Second, "election timeout of master servers")
-	masterOptions.username = cmdMaster.Flag.String("username", "", "username for authentication")
-	masterOptions.password = cmdMaster.Flag.String("password", "", "password for authentication")
-	masterOptions.usersFile = cmdMaster.Flag.String("users", "", "path to users configuration file for multi-user authentication")
+	masterOptions.username = cmdMaster.Flag.String("master.username", "", "username for authentication")
+	masterOptions.password = cmdMaster.Flag.String("master.password", "", "password for authentication")
+	masterOptions.usersFile = cmdMaster.Flag.String("master.users", "", "path to users configuration file for multi-user authentication")
 
 	filerOptions.filerGroup = cmdServer.Flag.String("filer.filerGroup", "", "share metadata with other filers in the same filerGroup")
 	filerOptions.collection = cmdServer.Flag.String("filer.collection", "", "all data will be stored in this collection")
@@ -143,9 +143,11 @@ func init() {
 	serverOptions.v.inflightUploadDataTimeout = cmdServer.Flag.Duration("volume.inflightUploadDataTimeout", 60*time.Second, "inflight upload data wait timeout of volume servers")
 	serverOptions.v.hasSlowRead = cmdServer.Flag.Bool("volume.hasSlowRead", true, "<experimental> if true, this prevents slow reads from blocking other requests, but large file read P99 latency will increase.")
 	serverOptions.v.readBufferSizeMB = cmdServer.Flag.Int("volume.readBufferSizeMB", 4, "<experimental> larger values can optimize query performance but will increase some memory usage,Use with hasSlowRead normally")
-	serverOptions.v.username = cmdMaster.Flag.String("username", "", "username for authentication")
-	serverOptions.v.password = cmdMaster.Flag.String("password", "", "password for authentication")
-	serverOptions.v.usersFile = cmdMaster.Flag.String("users", "", "path to users configuration file for multi-user authentication")
+	serverOptions.v.username = cmdMaster.Flag.String("volume.username", "", "username for authentication")
+	serverOptions.v.password = cmdMaster.Flag.String("volume.password", "", "password for authentication")
+	serverOptions.v.usersFile = cmdMaster.Flag.String("volume.users", "", "path to users configuration file for multi-user authentication")
+	serverOptions.v.ecVolumeExpireClose = cmdVolume.Flag.Int64("volume.ecVolumeExpireClose", 60, "How long has it been since the last reading that ec volume needs to be closed (default 60 minutes)")
+	serverOptions.v.ecVolumeLoopTime = cmdVolume.Flag.Int64("volume.ecVolumeLoopTime", 60*12, "Interval to check if ec volume needs to be closed (default 720 minutes)")
 
 	s3Options.port = cmdServer.Flag.Int("s3.port", 8333, "s3 server http listen port")
 	s3Options.portHttps = cmdServer.Flag.Int("s3.port.https", 0, "s3 server https listen port")
@@ -161,8 +163,8 @@ func init() {
 	s3Options.allowEmptyFolder = cmdServer.Flag.Bool("s3.allowEmptyFolder", true, "allow empty folders")
 	s3Options.allowDeleteBucketNotEmpty = cmdServer.Flag.Bool("s3.allowDeleteBucketNotEmpty", true, "allow recursive deleting all entries along with bucket")
 	s3Options.localSocket = cmdServer.Flag.String("s3.localSocket", "", "default to /tmp/seaweedfs-s3-<port>.sock")
-	s3Options.username = cmdMaster.Flag.String("username", "", "username for authentication")
-	s3Options.password = cmdMaster.Flag.String("password", "", "password for authentication")
+	s3Options.username = cmdMaster.Flag.String("s3.username", "", "username for authentication")
+	s3Options.password = cmdMaster.Flag.String("s3.password", "", "password for authentication")
 
 	iamOptions.port = cmdServer.Flag.Int("iam.port", 8111, "iam server http listen port")
 
