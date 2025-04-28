@@ -3,9 +3,9 @@ entries:
   seaweedfs:
   - apiVersion: v1
     appVersion: "3.69"
-    created: "2024-12-27T07:36:11.162244891Z"
+    created: "2025-04-28T10:51:24.21885707Z"
     description: SeaweedFS
-    digest: 05b00cf7824fd89dbb3d116715701819c8afeb448a26566c235a66c1b6bd7b06
+    digest: bc29d16b7e182f4a88ba73e94c6faac4945fdf96f96508fd9ba56452ed6e90c1
     name: seaweedfs
     urls:
     - https://ZTO-Express.github.io/seaweedfs/helm/seaweedfs-4.0.0.tgz
@@ -280,4 +280,4 @@ entries:
     urls:
     - https://seaweedfs.github.io/seaweedfs/helm/seaweedfs-3.42.tgz
     version: "3.42"
-generated: "2024-12-27T07:36:11.160053907Z"
+generated: "2025-04-28T10:51:24.216326336Z"
