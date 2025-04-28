@@ -3,7 +3,9 @@ package weed_server
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -12,7 +14,9 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/topology"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/util/buffer_pool"
+	"github.com/seaweedfs/seaweedfs/weed/util/mem"
 )
 
 func (vs *VolumeServer) PostHandler(w http.ResponseWriter, r *http.Request) {
@@ -74,8 +78,18 @@ func (vs *VolumeServer) PostHandler(w http.ResponseWriter, r *http.Request) {
 func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	n := new(needle.Needle)
 	vid, fid, _, _, _ := parseURLPath(r.URL.Path)
-	volumeId, _ := needle.NewVolumeId(vid)
-	n.ParsePath(fid)
+	volumeId, err := needle.NewVolumeId(vid)
+	if err != nil {
+		glog.V(2).Infof("parsing vid %s: %v", r.URL.Path, err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	err = n.ParsePath(fid)
+	if err != nil {
+		glog.V(2).Infof("parsing fid %s: %v", r.URL.Path, err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	if !vs.maybeCheckJwtAuthorization(r, vid, fid, true) {
 		writeJsonError(w, r, http.StatusUnauthorized, errors.New("wrong jwt"))
@@ -86,7 +100,84 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	cookie := n.Cookie
 
+	hasVolume := vs.store.HasVolume(volumeId)
 	ecVolume, hasEcVolume := vs.store.FindEcVolume(volumeId)
+
+	if !hasVolume && !hasEcVolume {
+		if vs.ReadMode == "local" {
+			glog.V(0).Infoln("volume is not local:", err, r.URL.Path)
+			NotFound(w)
+			return
+		}
+		lookupResult, err := operation.LookupVolumeId(vs.GetMaster, vs.grpcDialOption, volumeId.String())
+		glog.V(2).Infoln("volume", volumeId, "found on", lookupResult, "error", err)
+		if err != nil || len(lookupResult.Locations) <= 0 {
+			glog.V(0).Infoln("lookup error:", err, r.URL.Path)
+			NotFound(w)
+			return
+		}
+		if vs.ReadMode == "proxy" {
+			// proxy client request to target server
+			localUrl := fmt.Sprintf("%s:%d", vs.store.Ip, vs.store.Port)
+			var proxyIp string
+			for _, loc := range lookupResult.Locations {
+				if localUrl == loc.Url {
+					continue
+				}
+				proxyIp = loc.Url
+				break
+			}
+			if proxyIp == "" {
+				glog.V(0).Infof("failed to instance http request of location: %v", lookupResult.Locations)
+				InternalError(w)
+				return
+			}
+			u, _ := url.Parse(util.NormalizeUrl(proxyIp))
+			r.URL.Host = u.Host
+			r.URL.Scheme = u.Scheme
+			request, err := http.NewRequest(http.MethodDelete, r.URL.String(), nil)
+			if err != nil {
+				glog.V(0).Infof("failed to instance http request of url %s: %v", r.URL.String(), err)
+				InternalError(w)
+				return
+			}
+			for k, vv := range r.Header {
+				for _, v := range vv {
+					request.Header.Add(k, v)
+				}
+			}
+
+			response, err := client.Do(request)
+			if err != nil {
+				glog.V(0).Infof("request remote url %s: %v", r.URL.String(), err)
+				InternalError(w)
+				return
+			}
+			defer util.CloseResponse(response)
+			// proxy target response to client
+			for k, vv := range response.Header {
+				for _, v := range vv {
+					w.Header().Add(k, v)
+				}
+			}
+			w.WriteHeader(response.StatusCode)
+			buf := mem.Allocate(128 * 1024)
+			defer mem.Free(buf)
+			io.CopyBuffer(w, response.Body, buf)
+			return
+		} else {
+			// redirect
+			u, _ := url.Parse(util.NormalizeUrl(lookupResult.Locations[0].PublicUrl))
+			u.Path = fmt.Sprintf("%s/%s,%s", u.Path, vid, fid)
+			arg := url.Values{}
+			if c := r.FormValue("collection"); c != "" {
+				arg.Set("collection", c)
+			}
+			u.RawQuery = arg.Encode()
+			http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
+			return
+		}
+	}
 
 	if hasEcVolume {
 		count, err := vs.store.DeleteEcShardNeedle(ecVolume, n, cookie)
@@ -132,7 +223,7 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err := topology.ReplicatedDelete(vs.GetMaster, vs.grpcDialOption, vs.store, volumeId, n, r)
+	_, err = topology.ReplicatedDelete(vs.GetMaster, vs.grpcDialOption, vs.store, volumeId, n, r)
 
 	writeDeleteResult(err, count, w, r)
 
