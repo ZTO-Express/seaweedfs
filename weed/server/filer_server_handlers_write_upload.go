@@ -3,6 +3,7 @@ package weed_server
 import (
 	"bytes"
 	"crypto/md5"
+	"encoding/base64"
 	"fmt"
 	"hash"
 	"io"
@@ -25,6 +26,15 @@ var bufPool = sync.Pool{
 	New: func() interface{} {
 		return new(bytes.Buffer)
 	},
+}
+
+// 生成 Basic 认证头
+func generateBasicAuth(username, password string) string {
+	if username != "" {
+		auth := username + ":" + password
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+	}
+	return ""
 }
 
 func (fs *FilerServer) uploadReaderToChunks(w http.ResponseWriter, r *http.Request, reader io.Reader, chunkSize int32, fileName, contentType string, contentLength int64, so *operation.StorageOption) (fileChunks []*filer_pb.FileChunk, md5Hash hash.Hash, chunkOffset int64, uploadErr error, smallContent []byte) {
@@ -141,7 +151,7 @@ func (fs *FilerServer) uploadReaderToChunks(w http.ResponseWriter, r *http.Reque
 	return fileChunks, md5Hash, chunkOffset, nil, smallContent
 }
 
-func (fs *FilerServer) doUpload(urlLocation string, limitedReader io.Reader, fileName string, contentType string, pairMap map[string]string, auth security.EncodedJwt) (*operation.UploadResult, error, []byte) {
+func (fs *FilerServer) doUpload(urlLocation string, limitedReader io.Reader, fileName string, contentType string, pairMap map[string]string, auth security.EncodedJwt, authHeader string) (*operation.UploadResult, error, []byte) {
 
 	stats.FilerHandlerCounter.WithLabelValues(stats.ChunkUpload).Inc()
 	start := time.Now()
@@ -157,6 +167,7 @@ func (fs *FilerServer) doUpload(urlLocation string, limitedReader io.Reader, fil
 		MimeType:          contentType,
 		PairMap:           pairMap,
 		Jwt:               auth,
+		AuthHeader:        authHeader,
 	}
 	uploadResult, err, data := operation.Upload(limitedReader, uploadOption)
 	if uploadResult != nil && uploadResult.RetryCount > 0 {
@@ -171,9 +182,15 @@ func (fs *FilerServer) dataToChunk(fileName, contentType string, data []byte, ch
 	// retry to assign a different file id
 	var fileId, urlLocation string
 	var auth security.EncodedJwt
+	var authHeader string
 	var uploadErr error
 	var uploadResult *operation.UploadResult
 	var failedFileChunks []*filer_pb.FileChunk
+
+	// 添加 Basic 认证头
+	if fs.option.Username != "" && fs.option.Password != "" {
+		authHeader = generateBasicAuth(fs.option.Username, fs.option.Password)
+	}
 
 	err := util.Retry("filerDataToChunk", func() error {
 		// assign one file id for one chunk
@@ -184,7 +201,7 @@ func (fs *FilerServer) dataToChunk(fileName, contentType string, data []byte, ch
 			return uploadErr
 		}
 		// upload the chunk to the volume server
-		uploadResult, uploadErr, _ = fs.doUpload(urlLocation, dataReader, fileName, contentType, nil, auth)
+		uploadResult, uploadErr, _ = fs.doUpload(urlLocation, dataReader, fileName, contentType, nil, auth, authHeader)
 		if uploadErr != nil {
 			glog.V(4).Infof("retry later due to upload error: %v", uploadErr)
 			stats.FilerHandlerCounter.WithLabelValues(stats.ChunkDoUploadRetry).Inc()
