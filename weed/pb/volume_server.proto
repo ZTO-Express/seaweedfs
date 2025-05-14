@@ -47,7 +47,8 @@ service VolumeServer {
     }
     rpc VolumeStatus (VolumeStatusRequest) returns (VolumeStatusResponse) {
     }
-
+    rpc VolumeEcShardsStatus (VolumeEcShardsStatusRequest) returns (VolumeEcShardsStatusResponse) {
+    }
     // copy the .idx .dat files, and mount this volume
     rpc VolumeCopy (VolumeCopyRequest) returns (stream VolumeCopyResponse) {
     }
@@ -239,6 +240,14 @@ message EcVolumeDeleteRequest {
     bool soft = 4;
 }
 message EcVolumeDeleteResponse {
+}
+
+message VolumeEcShardsStatusRequest {
+    uint32 volume_id = 1;
+}
+
+message VolumeEcShardsStatusResponse {
+    bool is_all_needles_deleted = 1;
 }
 
 message VolumeMarkReadonlyRequest {

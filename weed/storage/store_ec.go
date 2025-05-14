@@ -193,12 +193,12 @@ func (s *Store) ReadEcShardNeedle(vid needle.VolumeId, n *needle.Needle, onReadS
 
 func (s *Store) readEcShardIntervals(vid needle.VolumeId, needleId types.NeedleId, ecVolume *erasure_coding.EcVolume, intervals []erasure_coding.Interval) (data []byte, is_deleted bool, err error) {
 
-	if err = s.cachedLookupEcShardLocations(ecVolume); err != nil {
+	if err = s.CachedLookupEcShardLocations(ecVolume); err != nil {
 		return nil, false, fmt.Errorf("failed to locate shard via master grpc %s: %v", s.MasterAddress, err)
 	}
 
 	for i, interval := range intervals {
-		if d, isDeleted, e := s.readOneEcShardInterval(needleId, ecVolume, interval); e != nil {
+		if d, isDeleted, e := s.ReadOneEcShardInterval(needleId, ecVolume, interval); e != nil {
 			return nil, isDeleted, e
 		} else {
 			if isDeleted {
@@ -214,7 +214,8 @@ func (s *Store) readEcShardIntervals(vid needle.VolumeId, needleId types.NeedleI
 	return
 }
 
-func (s *Store) readOneEcShardInterval(needleId types.NeedleId, ecVolume *erasure_coding.EcVolume, interval erasure_coding.Interval) (data []byte, is_deleted bool, err error) {
+// ReadOneEcShardInterval 读取一个EC分片区间，并判断是否被删除
+func (s *Store) ReadOneEcShardInterval(needleId types.NeedleId, ecVolume *erasure_coding.EcVolume, interval erasure_coding.Interval) (data []byte, is_deleted bool, err error) {
 	shardId, actualOffset := interval.ToShardIdAndOffset(erasure_coding.ErasureCodingLargeBlockSize, erasure_coding.ErasureCodingSmallBlockSize)
 	data = make([]byte, interval.Size)
 	if shard, found := ecVolume.FindEcVolumeShard(shardId); found {
@@ -253,7 +254,7 @@ func forgetShardId(ecVolume *erasure_coding.EcVolume, shardId erasure_coding.Sha
 	ecVolume.ShardLocationsLock.Unlock()
 }
 
-func (s *Store) cachedLookupEcShardLocations(ecVolume *erasure_coding.EcVolume) (err error) {
+func (s *Store) CachedLookupEcShardLocations(ecVolume *erasure_coding.EcVolume) (err error) {
 
 	shardCount := len(ecVolume.ShardLocations)
 	if shardCount < erasure_coding.DataShardsCount &&

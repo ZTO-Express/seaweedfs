@@ -226,6 +226,7 @@ func (t *Topology) Vacuum(grpcDialOption grpc.DialOption, garbageThreshold float
 
 	glog.V(1).Infof("Start vacuum on demand with threshold: %f collection: %s volumeId: %d",
 		garbageThreshold, collection, volumeId)
+	// 处理普通卷
 	for _, col := range t.collectionMap.Items() {
 		c := col.(*Collection)
 		if collection != "" && collection != c.Name {
@@ -248,6 +249,9 @@ func (t *Topology) Vacuum(grpcDialOption grpc.DialOption, garbageThreshold float
 			}
 		}
 	}
+
+	// 处理EC卷
+	t.vacuumEcVolumes(grpcDialOption, collection, volumeId)
 }
 
 func (t *Topology) vacuumOneVolumeLayout(grpcDialOption grpc.DialOption, volumeLayout *VolumeLayout, c *Collection, garbageThreshold float64, preallocate int64) {

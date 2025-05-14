@@ -355,3 +355,96 @@ func (ev *EcVolume) IsExpire() bool {
 func (ev *EcVolume) IsTimeToDestroy() bool {
 	return ev.DestroyTime > 0 && time.Now().Unix() > (int64(ev.DestroyTime)+destroyDelaySeconds)
 }
+
+// checks if all needles in the ecx file are deleted
+// GetAllNeedleIds 获取EC卷中的所有needleId列表
+func (ev *EcVolume) GetAllNeedleIds() ([]types.NeedleId, error) {
+	// 如果文件已关闭，则先打开
+	err := ev.tryOpenEcxFile()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open ecx file: %v", err)
+	}
+
+	ev.ecxFileAccessLock.RLock()
+	defer ev.ecxFileAccessLock.RUnlock()
+
+	if ev.ecxFileSize == 0 {
+		// 空文件，没有needle
+		return []types.NeedleId{}, nil
+	}
+
+	// 遍历ecx文件中的所有条目，收集所有needleId
+	var needleIds []types.NeedleId
+	buf := make([]byte, types.NeedleMapEntrySize)
+	for i := int64(0); i < ev.ecxFileSize/types.NeedleMapEntrySize; i++ {
+		if _, err := ev.ecxFile.ReadAt(buf, i*types.NeedleMapEntrySize); err != nil {
+			return nil, fmt.Errorf("ecx file read at %d: %v", i*types.NeedleMapEntrySize, err)
+		}
+		needleId, _, _ := idx.IdxFileEntry(buf)
+		needleIds = append(needleIds, needleId)
+	}
+
+	return needleIds, nil
+}
+
+func (ev *EcVolume) IsAllNeedlesDeleted() (bool, error) {
+	// 如果文件已关闭，则先打开
+	err := ev.tryOpenEcxFile()
+	if err != nil {
+		return false, fmt.Errorf("failed to open ecx file: %v", err)
+	}
+
+	ev.ecxFileAccessLock.RLock()
+	defer ev.ecxFileAccessLock.RUnlock()
+
+	if ev.ecxFileSize == 0 {
+		// 空文件，认为没有needle
+		return true, nil
+	}
+
+	// 遍历ecx文件中的所有条目
+	buf := make([]byte, types.NeedleMapEntrySize)
+	for i := int64(0); i < ev.ecxFileSize/types.NeedleMapEntrySize; i++ {
+		if _, err := ev.ecxFile.ReadAt(buf, i*types.NeedleMapEntrySize); err != nil {
+			return false, fmt.Errorf("ecx file read at %d: %v", i*types.NeedleMapEntrySize, err)
+		}
+		_, offset, size := idx.IdxFileEntry(buf)
+		// 检查needle是否被删除
+		if !size.IsDeleted() {
+			// 如果size不是已删除状态，则需要检查intervals
+			intervals := ev.LocateEcShardNeedleInterval(ev.Version, offset.ToActualOffset(), types.Size(needle.GetActualSize(size, ev.Version)))
+
+			// 检查每个interval是否都被标记为已删除
+			for _, interval := range intervals {
+				shardId, _ := interval.ToShardIdAndOffset(ErasureCodingLargeBlockSize, ErasureCodingSmallBlockSize)
+				// 检查本地分片
+				if _, found := ev.FindEcVolumeShard(shardId); found {
+					continue
+				} else {
+					return false, nil
+					//ev.ShardLocationsLock.RLock()
+					//sourceDataNodes, hasShardIdLocation := ev.ShardLocations[shardId]
+					//ev.ShardLocationsLock.RUnlock()
+					//// try reading directly
+					//if hasShardIdLocation {
+					//	_, is_deleted, err = s.ReadRemoteEcShardInterval(sourceDataNodes, needleId, ev.VolumeId, shardId, data, actualOffset)
+					//	if err == nil {
+					//		return
+					//	}
+					//	glog.V(0).Infof("clearing ec shard %d.%d locations: %v", ev.VolumeId, shardId, err)
+					//}
+					//// try reading by recovering from other shards
+					//_, is_deleted, err = s.recoverOneRemoteEcShardInterval(needleId, ev, shardId, data, actualOffset)
+					//if err == nil {
+					//	return
+					//}
+				}
+				// 如果本地分片不存在，则认为已经被删除,因为其他shard也会逐个检查
+			}
+		}
+		// 如果size.IsDeleted()为true或者所有intervals都已检查完毕，继续检查下一个needle
+	}
+
+	// 所有needle和它们的intervals都已删除
+	return true, nil
+}

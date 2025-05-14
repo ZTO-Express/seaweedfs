@@ -36,6 +36,7 @@ const (
 	VolumeServer_VolumeMarkWritable_FullMethodName          = "/volume_server_pb.VolumeServer/VolumeMarkWritable"
 	VolumeServer_VolumeConfigure_FullMethodName             = "/volume_server_pb.VolumeServer/VolumeConfigure"
 	VolumeServer_VolumeStatus_FullMethodName                = "/volume_server_pb.VolumeServer/VolumeStatus"
+	VolumeServer_VolumeEcShardsStatus_FullMethodName        = "/volume_server_pb.VolumeServer/VolumeEcShardsStatus"
 	VolumeServer_VolumeCopy_FullMethodName                  = "/volume_server_pb.VolumeServer/VolumeCopy"
 	VolumeServer_ReadVolumeFileStatus_FullMethodName        = "/volume_server_pb.VolumeServer/ReadVolumeFileStatus"
 	VolumeServer_CopyFile_FullMethodName                    = "/volume_server_pb.VolumeServer/CopyFile"
@@ -88,6 +89,7 @@ type VolumeServerClient interface {
 	VolumeMarkWritable(ctx context.Context, in *VolumeMarkWritableRequest, opts ...grpc.CallOption) (*VolumeMarkWritableResponse, error)
 	VolumeConfigure(ctx context.Context, in *VolumeConfigureRequest, opts ...grpc.CallOption) (*VolumeConfigureResponse, error)
 	VolumeStatus(ctx context.Context, in *VolumeStatusRequest, opts ...grpc.CallOption) (*VolumeStatusResponse, error)
+	VolumeEcShardsStatus(ctx context.Context, in *VolumeEcShardsStatusRequest, opts ...grpc.CallOption) (*VolumeEcShardsStatusResponse, error)
 	// copy the .idx .dat files, and mount this volume
 	VolumeCopy(ctx context.Context, in *VolumeCopyRequest, opts ...grpc.CallOption) (VolumeServer_VolumeCopyClient, error)
 	ReadVolumeFileStatus(ctx context.Context, in *ReadVolumeFileStatusRequest, opts ...grpc.CallOption) (*ReadVolumeFileStatusResponse, error)
@@ -324,6 +326,15 @@ func (c *volumeServerClient) VolumeConfigure(ctx context.Context, in *VolumeConf
 func (c *volumeServerClient) VolumeStatus(ctx context.Context, in *VolumeStatusRequest, opts ...grpc.CallOption) (*VolumeStatusResponse, error) {
 	out := new(VolumeStatusResponse)
 	err := c.cc.Invoke(ctx, VolumeServer_VolumeStatus_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *volumeServerClient) VolumeEcShardsStatus(ctx context.Context, in *VolumeEcShardsStatusRequest, opts ...grpc.CallOption) (*VolumeEcShardsStatusResponse, error) {
+	out := new(VolumeEcShardsStatusResponse)
+	err := c.cc.Invoke(ctx, VolumeServer_VolumeEcShardsStatus_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -788,6 +799,7 @@ type VolumeServerServer interface {
 	VolumeMarkWritable(context.Context, *VolumeMarkWritableRequest) (*VolumeMarkWritableResponse, error)
 	VolumeConfigure(context.Context, *VolumeConfigureRequest) (*VolumeConfigureResponse, error)
 	VolumeStatus(context.Context, *VolumeStatusRequest) (*VolumeStatusResponse, error)
+	VolumeEcShardsStatus(context.Context, *VolumeEcShardsStatusRequest) (*VolumeEcShardsStatusResponse, error)
 	// copy the .idx .dat files, and mount this volume
 	VolumeCopy(*VolumeCopyRequest, VolumeServer_VolumeCopyServer) error
 	ReadVolumeFileStatus(context.Context, *ReadVolumeFileStatusRequest) (*ReadVolumeFileStatusResponse, error)
@@ -878,6 +890,9 @@ func (UnimplementedVolumeServerServer) VolumeConfigure(context.Context, *VolumeC
 }
 func (UnimplementedVolumeServerServer) VolumeStatus(context.Context, *VolumeStatusRequest) (*VolumeStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VolumeStatus not implemented")
+}
+func (UnimplementedVolumeServerServer) VolumeEcShardsStatus(context.Context, *VolumeEcShardsStatusRequest) (*VolumeEcShardsStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VolumeEcShardsStatus not implemented")
 }
 func (UnimplementedVolumeServerServer) VolumeCopy(*VolumeCopyRequest, VolumeServer_VolumeCopyServer) error {
 	return status.Errorf(codes.Unimplemented, "method VolumeCopy not implemented")
@@ -1284,6 +1299,24 @@ func _VolumeServer_VolumeStatus_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(VolumeServerServer).VolumeStatus(ctx, req.(*VolumeStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VolumeServer_VolumeEcShardsStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VolumeEcShardsStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumeServerServer).VolumeEcShardsStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumeServer_VolumeEcShardsStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumeServerServer).VolumeEcShardsStatus(ctx, req.(*VolumeEcShardsStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1882,6 +1915,10 @@ var VolumeServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VolumeStatus",
 			Handler:    _VolumeServer_VolumeStatus_Handler,
+		},
+		{
+			MethodName: "VolumeEcShardsStatus",
+			Handler:    _VolumeServer_VolumeEcShardsStatus_Handler,
 		},
 		{
 			MethodName: "ReadVolumeFileStatus",
