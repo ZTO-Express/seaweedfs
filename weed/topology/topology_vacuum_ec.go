@@ -27,11 +27,17 @@ func (t *Topology) vacuumEcVolumes(grpcDialOption grpc.DialOption, collection st
 		return
 	}
 
-	// 处理所有EC卷
+	// 处理所有EC卷 - 使用无锁设计，复制ecShardMap后处理
+	// 短暂加锁复制ecShardMap
 	t.ecShardMapLock.RLock()
-	defer t.ecShardMapLock.RUnlock()
-
+	ecShardMapCopy := make(map[needle.VolumeId]*EcShardLocations, len(t.ecShardMap))
 	for vid, ecLocations := range t.ecShardMap {
+		ecShardMapCopy[vid] = ecLocations
+	}
+	t.ecShardMapLock.RUnlock()
+
+	// 在无锁状态下处理复制的数据
+	for vid, ecLocations := range ecShardMapCopy {
 		// 如果指定了集合名称，只处理该集合的卷
 		if collection != "" && collection != ecLocations.Collection {
 			continue

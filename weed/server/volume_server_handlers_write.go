@@ -180,7 +180,40 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hasEcVolume {
-		count, err := vs.store.DeleteEcShardNeedle(ecVolume, n, cookie)
+		// 先读取EC分片的needle内容，以便检查是否为分块清单
+		_, err := vs.store.ReadEcShardNeedle(volumeId, n, nil)
+		if err != nil {
+			m := make(map[string]uint32)
+			m["size"] = 0
+			writeJsonQuiet(w, r, http.StatusNotFound, m)
+			return
+		}
+
+		if n.Cookie != cookie {
+			glog.V(0).Infoln("delete", r.URL.Path, "with unmaching cookie from ", r.RemoteAddr, "agent", r.UserAgent())
+			writeJsonError(w, r, http.StatusBadRequest, errors.New("File Random Cookie does not match."))
+			return
+		}
+
+		count := int64(n.Size)
+
+		// 检查是否为分块清单，如果是，需要先删除所有块
+		if n.IsChunkedManifest() {
+			chunkManifest, e := operation.LoadChunkManifest(n.Data, n.IsCompressed())
+			if e != nil {
+				writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Load chunks manifest error: %v", e))
+				return
+			}
+			// 确保在删除清单前删除所有块
+			if e := chunkManifest.DeleteChunks(vs.GetMaster, false, vs.grpcDialOption); e != nil {
+				writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Delete chunks error: %v", e))
+				return
+			}
+			count = chunkManifest.Size
+		}
+
+		// 删除EC分片
+		_, err = vs.store.DeleteEcShardNeedle(ecVolume, n, cookie)
 		writeDeleteResult(err, count, w, r)
 		return
 	}

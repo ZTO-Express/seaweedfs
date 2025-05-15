@@ -2,11 +2,13 @@ package weed_server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
+	"github.com/seaweedfs/seaweedfs/weed/storage"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 )
 
@@ -29,7 +31,7 @@ func (vs *VolumeServer) BatchDelete(ctx context.Context, req *volume_server_pb.B
 		n := new(needle.Needle)
 		volumeId, _ := needle.NewVolumeId(vid)
 		ecVolume, isEcVolume := vs.store.FindEcVolume(volumeId)
-		if req.SkipCookieCheck {
+		if req.SkipCookieCheck && !isEcVolume {
 			n.Id, _, err = needle.ParseNeedleIdCookie(id_cookie)
 			if err != nil {
 				resp.Results = append(resp.Results, &volume_server_pb.DeleteResult{
@@ -52,6 +54,9 @@ func (vs *VolumeServer) BatchDelete(ctx context.Context, req *volume_server_pb.B
 				}
 			} else {
 				if _, err := vs.store.ReadEcShardNeedle(volumeId, n, nil); err != nil {
+					if errors.Is(err, storage.ErrorDeleted) {
+						continue
+					}
 					resp.Results = append(resp.Results, &volume_server_pb.DeleteResult{
 						FileId: fid,
 						Status: http.StatusNotFound,
@@ -101,6 +106,9 @@ func (vs *VolumeServer) BatchDelete(ctx context.Context, req *volume_server_pb.B
 			}
 		} else {
 			if size, err := vs.store.DeleteEcShardNeedle(ecVolume, n, n.Cookie); err != nil {
+				if errors.Is(err, storage.ErrorDeleted) {
+					continue
+				}
 				resp.Results = append(resp.Results, &volume_server_pb.DeleteResult{
 					FileId: fid,
 					Status: http.StatusInternalServerError,
