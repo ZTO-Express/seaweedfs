@@ -48,6 +48,8 @@ func (t *Topology) vacuumEcVolumes(grpcDialOption grpc.DialOption, collection st
 
 // 处理单个EC卷的垃圾回收
 func (t *Topology) vacuumOneEcVolumeId(grpcDialOption grpc.DialOption, ecLocations *EcShardLocations, vid needle.VolumeId, collection string) {
+	// 记录开始时间，用于统计耗时
+	startTime := time.Now()
 	glog.V(1).Infof("Check vacuum on EC volume:%d", vid)
 
 	// 检查是否有足够的EC分片
@@ -76,6 +78,10 @@ func (t *Topology) vacuumOneEcVolumeId(grpcDialOption grpc.DialOption, ecLocatio
 			glog.V(0).Infof("Failed to vacuum EC volume:%d", vid)
 		}
 	}
+
+	// 计算并记录耗时
+	elapsedTime := time.Since(startTime)
+	glog.V(0).Infof("Vacuum EC volume:%d completed, time cost: %v", vid, elapsedTime)
 }
 
 // 检查EC卷是否需要垃圾回收

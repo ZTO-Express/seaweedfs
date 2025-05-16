@@ -35,7 +35,7 @@ func (vs *VolumeServer) VolumeEcShardsStatus(ctx context.Context, req *volume_se
 		_, size, intervals, err := ecVolume.LocateEcShardNeedle(needleId, ecVolume.Version)
 		if err != nil {
 			glog.Errorf("locate ec shard needle %d: %v", needleId, err)
-			continue
+			return &volume_server_pb.VolumeEcShardsStatusResponse{IsAllNeedlesDeleted: false}, nil
 		}
 
 		// 如果文件标记为已删除，则继续检查下一个文件
