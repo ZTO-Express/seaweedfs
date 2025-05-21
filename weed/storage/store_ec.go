@@ -267,7 +267,7 @@ func (s *Store) CachedLookupEcShardLocations(ecVolume *erasure_coding.EcVolume) 
 		return nil
 	}
 
-	glog.V(3).Infof("lookup and cache ec volume %d locations", ecVolume.VolumeId)
+	glog.V(4).Infof("lookup and cache ec volume %d locations", ecVolume.VolumeId)
 
 	err = operation.WithMasterServerClient(false, s.MasterAddress, s.grpcDialOption, func(masterClient master_pb.SeaweedClient) error {
 		req := &master_pb.LookupEcVolumeRequest{
@@ -304,7 +304,7 @@ func (s *Store) readRemoteEcShardInterval(sourceDataNodes []pb.ServerAddress, ne
 	}
 
 	for _, sourceDataNode := range sourceDataNodes {
-		glog.V(3).Infof("read remote ec shard %d.%d from %s", vid, shardId, sourceDataNode)
+		glog.V(4).Infof("read remote ec shard %d.%d from %s", vid, shardId, sourceDataNode)
 		n, is_deleted, err = s.doReadRemoteEcShardInterval(sourceDataNode, needleId, vid, shardId, buf, offset)
 		if err == nil {
 			return
@@ -400,6 +400,11 @@ func (s *Store) recoverOneRemoteEcShardInterval(needleId types.NeedleId, ecVolum
 
 	wg.Wait()
 
+	// 如果一个节点认为该文件被删除了则返回为已删除
+	if is_deleted {
+		glog.V(3).Infof("ec needlId %d.%d  is deleted", ecVolume.VolumeId, needleId)
+		return 0, true, nil
+	}
 	if err = enc.ReconstructData(bufs); err != nil {
 		glog.V(3).Infof("recovered ec shard %d.%d failed: %v", ecVolume.VolumeId, shardIdToRecover, err)
 		return 0, false, err

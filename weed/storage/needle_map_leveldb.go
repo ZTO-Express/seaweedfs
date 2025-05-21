@@ -190,7 +190,7 @@ func getWatermark(db *leveldb.DB) uint64 {
 }
 
 func setWatermark(db *leveldb.DB, watermark uint64) error {
-	glog.V(3).Infof("set watermark %d", watermark)
+	//glog.V(0).Infof("set watermark %d", watermark)
 	var wmBytes = make([]byte, 8)
 	util.Uint64toBytes(wmBytes, watermark)
 	if err := db.Put(watermarkKey, wmBytes, nil); err != nil {

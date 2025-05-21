@@ -437,7 +437,7 @@ func (l *DiskLocation) UnUsedSpace(volumeSizeLimit uint64) (unUsedSpace uint64) 
 		}
 		datSize, idxSize, _ := vol.FileStat()
 		unUsedSpaceVolume := int64(volumeSizeLimit) - int64(datSize+idxSize)
-		glog.V(4).Infof("Volume stats for %d: volumeSizeLimit=%d, datSize=%d idxSize=%d unused=%d", vol.Id, volumeSizeLimit, datSize, idxSize, unUsedSpaceVolume)
+		//glog.V(4).Infof("Volume stats for %d: volumeSizeLimit=%d, datSize=%d idxSize=%d unused=%d", vol.Id, volumeSizeLimit, datSize, idxSize, unUsedSpaceVolume)
 		if unUsedSpaceVolume >= 0 {
 			unUsedSpace += uint64(unUsedSpaceVolume)
 		}

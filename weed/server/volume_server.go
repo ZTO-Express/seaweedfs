@@ -117,6 +117,7 @@ func NewVolumeServer(adminMux, publicMux *http.ServeMux, ip string,
 	handleStaticResources(adminMux)
 	adminMux.HandleFunc("/status", vs.statusHandler)
 	adminMux.HandleFunc("/healthz", vs.healthzHandler)
+	adminMux.HandleFunc("/ec/status", vs.ecShardsStatusHandler)
 	if signingKey == "" || enableUiAccess {
 		// only expose the volume server details for safe environments
 		adminMux.HandleFunc("/ui/index.html", vs.uiStatusHandler)
