@@ -37,7 +37,7 @@ func (vs *VolumeServer) VolumeEcShardsStatus(ctx context.Context, req *volume_se
 	deletedCount := 0
 	for i, needleId := range needleIds {
 		// 获取文件的位置信息
-		_, size, intervals, err := ecVolume.LocateEcShardNeedle(needleId, ecVolume.Version)
+		offset, size, intervals, err := ecVolume.LocateEcShardNeedle(needleId, ecVolume.Version)
 		if err != nil {
 			glog.Errorf("定位EC分片文件 %d 失败: %v", needleId, err)
 			return &volume_server_pb.VolumeEcShardsStatusResponse{IsAllNeedlesDeleted: false}, nil
@@ -52,23 +52,34 @@ func (vs *VolumeServer) VolumeEcShardsStatus(ctx context.Context, req *volume_se
 
 		// 检查文件的每个分片是否已删除
 		fileIsDeleted := false
+		var fileData []byte
+
 		for j, interval := range intervals {
 			// 参考store_ec.go中的ReadOneEcShardInterval方法
 			if err = vs.store.CachedLookupEcShardLocations(ecVolume); err != nil {
 				glog.Errorf("通过master grpc %s 定位分片失败: %v", vs.store.MasterAddress, err)
 			}
-			_, isDeleted, _ := vs.store.ReadOneEcShardInterval(needleId, ecVolume, interval)
+			data, isDeleted, _ := vs.store.ReadOneEcShardInterval(needleId, ecVolume, interval)
 			if isDeleted {
 				glog.V(4).Infof("EC卷 %d 中的文件 %d 的分片 %d 已删除", vid, needleId, j)
 				fileIsDeleted = true
-				break
+			} else {
+				glog.V(4).Infof("EC卷 %d 中的文件 %d 的分片 %d 未被删除", vid, needleId, j)
+				// 仿照store_ec.go中的逻辑，收集未删除文件的数据
+				if j == 0 {
+					fileData = data
+				} else {
+					fileData = append(fileData, data...)
+				}
 			}
 		}
-
-		// 如果有任何一个文件未被删除，则返回false
+		// 如果有任何一个文件未被删除，则收集该文件ID
 		if !fileIsDeleted && !size.IsDeleted() {
-			glog.V(3).Infof("EC卷 %d 中的文件 %d 未被删除，已检查 %d/%d 个文件，其中 %d 个已删除",
-				vid, needleId, i+1, len(needleIds), deletedCount)
+			n := new(needle.Needle)
+			err = n.ReadBytes(fileData, offset.ToActualOffset(), size, ecVolume.Version)
+			key := needle.NewFileIdFromNeedle(vid, n).String()
+			glog.V(3).Infof("EC卷 %d 中的文件 %s 未被删除，已检查 %d/%d 个文件，其中 %d 个已删除",
+				vid, key, i+1, len(needleIds), deletedCount)
 			return &volume_server_pb.VolumeEcShardsStatusResponse{IsAllNeedlesDeleted: false}, nil
 		}
 
