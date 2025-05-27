@@ -268,6 +268,9 @@ func writeDeleteResult(err error, count int64, w http.ResponseWriter, r *http.Re
 		m["size"] = count
 		writeJsonQuiet(w, r, http.StatusAccepted, m)
 	} else {
+		// 提取URL路径中的卷ID和文件ID信息
+		vid, fid, _, _, _ := parseURLPath(r.URL.Path)
+		glog.V(4).Infof("Delete failed for volume:%s file:%s from %s method:%s error:%v", vid, fid, r.RemoteAddr, r.Method, err)
 		writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Deletion Failed: %v", err))
 	}
 }

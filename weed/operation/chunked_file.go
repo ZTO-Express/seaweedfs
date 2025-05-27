@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sort"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc"
 
@@ -76,22 +77,28 @@ func (cm *ChunkManifest) Marshal() ([]byte, error) {
 }
 
 func (cm *ChunkManifest) DeleteChunks(masterFn GetMasterFn, usePublicUrl bool, grpcDialOption grpc.DialOption) error {
+	startTime := time.Now()
 	var fileIds []string
 	for _, ci := range cm.Chunks {
 		fileIds = append(fileIds, ci.Fid)
 	}
+	glog.V(4).Infof("开始删除分块文件，总数量: %d", len(fileIds))
 	results, err := DeleteFiles(masterFn, usePublicUrl, grpcDialOption, fileIds)
 	if err != nil {
-		glog.V(0).Infof("delete %+v: %v", fileIds, err)
+		glog.V(0).Infof("删除分块文件失败 %+v: %v, 耗时: %v", fileIds, err, time.Since(startTime))
 		return fmt.Errorf("chunk delete: %v", err)
 	}
+	var errorCount int
 	for _, result := range results {
 		if result.Error != "" {
-			glog.V(0).Infof("delete file %+v: %v", result.FileId, result.Error)
+			errorCount++
+			glog.V(0).Infof("删除文件失败 %+v: %v", result.FileId, result.Error)
 			return fmt.Errorf("chunk delete %v: %v", result.FileId, result.Error)
 		}
 	}
 
+	glog.V(4).Infof("分块文件删除完成，总数量: %d，成功: %d，失败: %d，总耗时: %v",
+		len(fileIds), len(results)-errorCount, errorCount, time.Since(startTime))
 	return nil
 }
 
