@@ -161,30 +161,13 @@ func (t *Topology) cleanupEcVolume(grpcDialOption grpc.DialOption, vid needle.Vo
 	ch := make(chan bool, len(dataNodes))
 	for _, dn := range dataNodes {
 		go func(url pb.ServerAddress, vid needle.VolumeId, dn *DataNode) {
-			// 获取该节点上的EC分片ID
-			var shardIds []uint32
-			for _, ecShards := range dn.GetEcShards() {
-				if ecShards.VolumeId == vid {
-					for _, shardId := range ecShards.ShardIds() {
-						shardIds = append(shardIds, uint32(shardId))
-					}
-					break
-				}
-			}
-
-			// 如果没有找到分片，跳过该节点
-			if len(shardIds) == 0 {
-				glog.V(0).Infof("No EC shards found for volume %d on %s", vid, url)
-				ch <- true
-				return
-			}
-
+			// 直接删除所有EC分片，不需要获取具体的分片ID
 			err := operation.WithVolumeServerClient(false, url, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
-				// 删除EC卷分片
+				// 删除EC卷分片，传递空的shardIds让服务端自动处理所有分片
 				_, deleteErr := volumeServerClient.EcVolumeDelete(context.Background(), &volume_server_pb.EcVolumeDeleteRequest{
 					VolumeId:   uint32(vid),
 					Collection: collection,
-					ShardIds:   shardIds,
+					ShardIds:   nil,   // 传递nil，服务端会自动处理所有分片
 					Soft:       false, //软删除
 				})
 				return deleteErr

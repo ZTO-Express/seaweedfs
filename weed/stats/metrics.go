@@ -176,6 +176,14 @@ var (
 			Help:      "Counter of volume vacuuming commit counter",
 		}, []string{"success"})
 
+	VolumeServerEcVolumeDeleteCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: "volumeServer",
+			Name:      "ec_volume_delete_count",
+			Help:      "Counter of EC volume delete operations",
+		}, []string{"success"})
+
 	VolumeServerVacuumingHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: Namespace,
@@ -290,6 +298,7 @@ func init() {
 	Gather.MustRegister(VolumeServerRequestHistogram)
 	Gather.MustRegister(VolumeServerVacuumingCompactCounter)
 	Gather.MustRegister(VolumeServerVacuumingCommitCounter)
+	Gather.MustRegister(VolumeServerEcVolumeDeleteCounter)
 	Gather.MustRegister(VolumeServerVacuumingHistogram)
 	Gather.MustRegister(VolumeServerVolumeGauge)
 	Gather.MustRegister(VolumeServerMaxVolumeCounter)
