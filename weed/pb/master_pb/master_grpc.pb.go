@@ -32,6 +32,7 @@ const (
 	Seaweed_VolumeListWithoutECVolume_FullMethodName = "/master_pb.Seaweed/VolumeListWithoutECVolume"
 	Seaweed_LookupEcVolume_FullMethodName            = "/master_pb.Seaweed/LookupEcVolume"
 	Seaweed_VacuumVolume_FullMethodName              = "/master_pb.Seaweed/VacuumVolume"
+	Seaweed_VacuumEcVolume_FullMethodName            = "/master_pb.Seaweed/VacuumEcVolume"
 	Seaweed_DisableVacuum_FullMethodName             = "/master_pb.Seaweed/DisableVacuum"
 	Seaweed_EnableVacuum_FullMethodName              = "/master_pb.Seaweed/EnableVacuum"
 	Seaweed_VolumeMarkReadonly_FullMethodName        = "/master_pb.Seaweed/VolumeMarkReadonly"
@@ -62,6 +63,7 @@ type SeaweedClient interface {
 	VolumeListWithoutECVolume(ctx context.Context, in *VolumeListWithoutECVolumeRequest, opts ...grpc.CallOption) (*VolumeListResponse, error)
 	LookupEcVolume(ctx context.Context, in *LookupEcVolumeRequest, opts ...grpc.CallOption) (*LookupEcVolumeResponse, error)
 	VacuumVolume(ctx context.Context, in *VacuumVolumeRequest, opts ...grpc.CallOption) (*VacuumVolumeResponse, error)
+	VacuumEcVolume(ctx context.Context, in *VacuumEcVolumeRequest, opts ...grpc.CallOption) (*VacuumEcVolumeResponse, error)
 	DisableVacuum(ctx context.Context, in *DisableVacuumRequest, opts ...grpc.CallOption) (*DisableVacuumResponse, error)
 	EnableVacuum(ctx context.Context, in *EnableVacuumRequest, opts ...grpc.CallOption) (*EnableVacuumResponse, error)
 	VolumeMarkReadonly(ctx context.Context, in *VolumeMarkReadonlyRequest, opts ...grpc.CallOption) (*VolumeMarkReadonlyResponse, error)
@@ -266,6 +268,15 @@ func (c *seaweedClient) VacuumVolume(ctx context.Context, in *VacuumVolumeReques
 	return out, nil
 }
 
+func (c *seaweedClient) VacuumEcVolume(ctx context.Context, in *VacuumEcVolumeRequest, opts ...grpc.CallOption) (*VacuumEcVolumeResponse, error) {
+	out := new(VacuumEcVolumeResponse)
+	err := c.cc.Invoke(ctx, Seaweed_VacuumEcVolume_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *seaweedClient) DisableVacuum(ctx context.Context, in *DisableVacuumRequest, opts ...grpc.CallOption) (*DisableVacuumResponse, error) {
 	out := new(DisableVacuumResponse)
 	err := c.cc.Invoke(ctx, Seaweed_DisableVacuum_FullMethodName, in, out, opts...)
@@ -382,6 +393,7 @@ type SeaweedServer interface {
 	VolumeListWithoutECVolume(context.Context, *VolumeListWithoutECVolumeRequest) (*VolumeListResponse, error)
 	LookupEcVolume(context.Context, *LookupEcVolumeRequest) (*LookupEcVolumeResponse, error)
 	VacuumVolume(context.Context, *VacuumVolumeRequest) (*VacuumVolumeResponse, error)
+	VacuumEcVolume(context.Context, *VacuumEcVolumeRequest) (*VacuumEcVolumeResponse, error)
 	DisableVacuum(context.Context, *DisableVacuumRequest) (*DisableVacuumResponse, error)
 	EnableVacuum(context.Context, *EnableVacuumRequest) (*EnableVacuumResponse, error)
 	VolumeMarkReadonly(context.Context, *VolumeMarkReadonlyRequest) (*VolumeMarkReadonlyResponse, error)
@@ -438,6 +450,9 @@ func (UnimplementedSeaweedServer) LookupEcVolume(context.Context, *LookupEcVolum
 }
 func (UnimplementedSeaweedServer) VacuumVolume(context.Context, *VacuumVolumeRequest) (*VacuumVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VacuumVolume not implemented")
+}
+func (UnimplementedSeaweedServer) VacuumEcVolume(context.Context, *VacuumEcVolumeRequest) (*VacuumEcVolumeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VacuumEcVolume not implemented")
 }
 func (UnimplementedSeaweedServer) DisableVacuum(context.Context, *DisableVacuumRequest) (*DisableVacuumResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DisableVacuum not implemented")
@@ -743,6 +758,24 @@ func _Seaweed_VacuumVolume_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Seaweed_VacuumEcVolume_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VacuumEcVolumeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SeaweedServer).VacuumEcVolume(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Seaweed_VacuumEcVolume_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SeaweedServer).VacuumEcVolume(ctx, req.(*VacuumEcVolumeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Seaweed_DisableVacuum_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DisableVacuumRequest)
 	if err := dec(in); err != nil {
@@ -987,6 +1020,10 @@ var Seaweed_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VacuumVolume",
 			Handler:    _Seaweed_VacuumVolume_Handler,
+		},
+		{
+			MethodName: "VacuumEcVolume",
+			Handler:    _Seaweed_VacuumEcVolume_Handler,
 		},
 		{
 			MethodName: "DisableVacuum",

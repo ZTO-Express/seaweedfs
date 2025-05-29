@@ -1,6 +1,7 @@
 package weed_server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/topology"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -214,6 +217,27 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 		// 删除EC分片
 		_, err = vs.store.DeleteEcShardNeedle(ecVolume, n, cookie)
+		if err == nil {
+			// 删除成功后，异步触发EC卷的垃圾回收
+			go func() {
+				masterAddress := vs.GetMaster(context.Background())
+				if masterAddress == "" {
+					glog.V(0).Infof("无法获取master地址，跳过EC卷 %d 的垃圾回收", volumeId)
+					return
+				}
+				vacuumErr := pb.WithMasterClient(false, masterAddress, vs.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
+					_, vacuumErr := client.VacuumEcVolume(context.Background(), &master_pb.VacuumEcVolumeRequest{
+						VolumeId: uint32(volumeId),
+					})
+					return vacuumErr
+				})
+				if vacuumErr != nil {
+					glog.V(0).Infof("EC卷 %d 垃圾回收失败: %v", volumeId, vacuumErr)
+				} else {
+					glog.V(1).Infof("EC卷 %d 垃圾回收已触发", volumeId)
+				}
+			}()
+		}
 		writeDeleteResult(err, count, w, r)
 		return
 	}

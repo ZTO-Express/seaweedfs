@@ -14,7 +14,7 @@ import (
 )
 
 // 处理EC卷的垃圾回收
-func (t *Topology) vacuumEcVolumes(grpcDialOption grpc.DialOption, collection string, volumeId uint32) {
+func (t *Topology) VacuumEcVolumes(grpcDialOption grpc.DialOption, collection string, volumeId uint32) {
 	glog.V(1).Infof("Start vacuum EC volumes for collection: %s volumeId: %d", collection, volumeId)
 
 	// 如果指定了特定的卷ID，只处理该卷

@@ -230,6 +230,20 @@ func (ms *MasterServer) VacuumVolume(ctx context.Context, req *master_pb.VacuumV
 	return resp, nil
 }
 
+func (ms *MasterServer) VacuumEcVolume(ctx context.Context, req *master_pb.VacuumEcVolumeRequest) (*master_pb.VacuumEcVolumeResponse, error) {
+
+	if !ms.Topo.IsLeader() {
+		return nil, raft.NotLeaderError
+	}
+
+	resp := &master_pb.VacuumEcVolumeResponse{}
+
+	// 调用专门的EC卷垃圾回收方法
+	ms.Topo.VacuumEcVolumes(ms.grpcDialOption, "", req.VolumeId)
+
+	return resp, nil
+}
+
 func (ms *MasterServer) DisableVacuum(ctx context.Context, req *master_pb.DisableVacuumRequest) (*master_pb.DisableVacuumResponse, error) {
 
 	ms.Topo.DisableVacuum()

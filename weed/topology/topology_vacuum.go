@@ -251,7 +251,7 @@ func (t *Topology) Vacuum(grpcDialOption grpc.DialOption, garbageThreshold float
 	}
 
 	// 处理EC卷
-	t.vacuumEcVolumes(grpcDialOption, collection, volumeId)
+	t.VacuumEcVolumes(grpcDialOption, collection, volumeId)
 }
 
 func (t *Topology) vacuumOneVolumeLayout(grpcDialOption grpc.DialOption, volumeLayout *VolumeLayout, c *Collection, garbageThreshold float64, preallocate int64) {

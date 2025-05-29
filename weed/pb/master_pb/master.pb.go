@@ -2861,6 +2861,91 @@ func (*VacuumVolumeResponse) Descriptor() ([]byte, []int) {
 	return file_master_proto_rawDescGZIP(), []int{39}
 }
 
+type VacuumEcVolumeRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	VolumeId uint32 `protobuf:"varint,1,opt,name=volume_id,json=volumeId,proto3" json:"volume_id,omitempty"`
+}
+
+func (x *VacuumEcVolumeRequest) Reset() {
+	*x = VacuumEcVolumeRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_master_proto_msgTypes[40]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *VacuumEcVolumeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VacuumEcVolumeRequest) ProtoMessage() {}
+
+func (x *VacuumEcVolumeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_master_proto_msgTypes[40]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VacuumEcVolumeRequest.ProtoReflect.Descriptor instead.
+func (*VacuumEcVolumeRequest) Descriptor() ([]byte, []int) {
+	return file_master_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *VacuumEcVolumeRequest) GetVolumeId() uint32 {
+	if x != nil {
+		return x.VolumeId
+	}
+	return 0
+}
+
+type VacuumEcVolumeResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *VacuumEcVolumeResponse) Reset() {
+	*x = VacuumEcVolumeResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_master_proto_msgTypes[41]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *VacuumEcVolumeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VacuumEcVolumeResponse) ProtoMessage() {}
+
+func (x *VacuumEcVolumeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_master_proto_msgTypes[41]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VacuumEcVolumeResponse.ProtoReflect.Descriptor instead.
+func (*VacuumEcVolumeResponse) Descriptor() ([]byte, []int) {
+	return file_master_proto_rawDescGZIP(), []int{41}
+}
+
 type DisableVacuumRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -2870,7 +2955,7 @@ type DisableVacuumRequest struct {
 func (x *DisableVacuumRequest) Reset() {
 	*x = DisableVacuumRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[40]
+		mi := &file_master_proto_msgTypes[42]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2883,7 +2968,7 @@ func (x *DisableVacuumRequest) String() string {
 func (*DisableVacuumRequest) ProtoMessage() {}
 
 func (x *DisableVacuumRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[40]
+	mi := &file_master_proto_msgTypes[42]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2896,7 +2981,7 @@ func (x *DisableVacuumRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisableVacuumRequest.ProtoReflect.Descriptor instead.
 func (*DisableVacuumRequest) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{40}
+	return file_master_proto_rawDescGZIP(), []int{42}
 }
 
 type DisableVacuumResponse struct {
@@ -2908,7 +2993,7 @@ type DisableVacuumResponse struct {
 func (x *DisableVacuumResponse) Reset() {
 	*x = DisableVacuumResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[41]
+		mi := &file_master_proto_msgTypes[43]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2921,7 +3006,7 @@ func (x *DisableVacuumResponse) String() string {
 func (*DisableVacuumResponse) ProtoMessage() {}
 
 func (x *DisableVacuumResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[41]
+	mi := &file_master_proto_msgTypes[43]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2934,7 +3019,7 @@ func (x *DisableVacuumResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisableVacuumResponse.ProtoReflect.Descriptor instead.
 func (*DisableVacuumResponse) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{41}
+	return file_master_proto_rawDescGZIP(), []int{43}
 }
 
 type EnableVacuumRequest struct {
@@ -2946,7 +3031,7 @@ type EnableVacuumRequest struct {
 func (x *EnableVacuumRequest) Reset() {
 	*x = EnableVacuumRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[42]
+		mi := &file_master_proto_msgTypes[44]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2959,7 +3044,7 @@ func (x *EnableVacuumRequest) String() string {
 func (*EnableVacuumRequest) ProtoMessage() {}
 
 func (x *EnableVacuumRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[42]
+	mi := &file_master_proto_msgTypes[44]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2972,7 +3057,7 @@ func (x *EnableVacuumRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnableVacuumRequest.ProtoReflect.Descriptor instead.
 func (*EnableVacuumRequest) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{42}
+	return file_master_proto_rawDescGZIP(), []int{44}
 }
 
 type EnableVacuumResponse struct {
@@ -2984,7 +3069,7 @@ type EnableVacuumResponse struct {
 func (x *EnableVacuumResponse) Reset() {
 	*x = EnableVacuumResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[43]
+		mi := &file_master_proto_msgTypes[45]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2997,7 +3082,7 @@ func (x *EnableVacuumResponse) String() string {
 func (*EnableVacuumResponse) ProtoMessage() {}
 
 func (x *EnableVacuumResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[43]
+	mi := &file_master_proto_msgTypes[45]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3010,7 +3095,7 @@ func (x *EnableVacuumResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnableVacuumResponse.ProtoReflect.Descriptor instead.
 func (*EnableVacuumResponse) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{43}
+	return file_master_proto_rawDescGZIP(), []int{45}
 }
 
 type VolumeMarkReadonlyRequest struct {
@@ -3032,7 +3117,7 @@ type VolumeMarkReadonlyRequest struct {
 func (x *VolumeMarkReadonlyRequest) Reset() {
 	*x = VolumeMarkReadonlyRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[44]
+		mi := &file_master_proto_msgTypes[46]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3045,7 +3130,7 @@ func (x *VolumeMarkReadonlyRequest) String() string {
 func (*VolumeMarkReadonlyRequest) ProtoMessage() {}
 
 func (x *VolumeMarkReadonlyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[44]
+	mi := &file_master_proto_msgTypes[46]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3058,7 +3143,7 @@ func (x *VolumeMarkReadonlyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VolumeMarkReadonlyRequest.ProtoReflect.Descriptor instead.
 func (*VolumeMarkReadonlyRequest) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{44}
+	return file_master_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *VolumeMarkReadonlyRequest) GetIp() string {
@@ -3133,7 +3218,7 @@ type VolumeMarkReadonlyResponse struct {
 func (x *VolumeMarkReadonlyResponse) Reset() {
 	*x = VolumeMarkReadonlyResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[45]
+		mi := &file_master_proto_msgTypes[47]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3146,7 +3231,7 @@ func (x *VolumeMarkReadonlyResponse) String() string {
 func (*VolumeMarkReadonlyResponse) ProtoMessage() {}
 
 func (x *VolumeMarkReadonlyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[45]
+	mi := &file_master_proto_msgTypes[47]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3159,7 +3244,7 @@ func (x *VolumeMarkReadonlyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VolumeMarkReadonlyResponse.ProtoReflect.Descriptor instead.
 func (*VolumeMarkReadonlyResponse) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{45}
+	return file_master_proto_rawDescGZIP(), []int{47}
 }
 
 type GetMasterConfigurationRequest struct {
@@ -3171,7 +3256,7 @@ type GetMasterConfigurationRequest struct {
 func (x *GetMasterConfigurationRequest) Reset() {
 	*x = GetMasterConfigurationRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[46]
+		mi := &file_master_proto_msgTypes[48]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3184,7 +3269,7 @@ func (x *GetMasterConfigurationRequest) String() string {
 func (*GetMasterConfigurationRequest) ProtoMessage() {}
 
 func (x *GetMasterConfigurationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[46]
+	mi := &file_master_proto_msgTypes[48]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3197,7 +3282,7 @@ func (x *GetMasterConfigurationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMasterConfigurationRequest.ProtoReflect.Descriptor instead.
 func (*GetMasterConfigurationRequest) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{46}
+	return file_master_proto_rawDescGZIP(), []int{48}
 }
 
 type GetMasterConfigurationResponse struct {
@@ -3217,7 +3302,7 @@ type GetMasterConfigurationResponse struct {
 func (x *GetMasterConfigurationResponse) Reset() {
 	*x = GetMasterConfigurationResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[47]
+		mi := &file_master_proto_msgTypes[49]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3230,7 +3315,7 @@ func (x *GetMasterConfigurationResponse) String() string {
 func (*GetMasterConfigurationResponse) ProtoMessage() {}
 
 func (x *GetMasterConfigurationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[47]
+	mi := &file_master_proto_msgTypes[49]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3243,7 +3328,7 @@ func (x *GetMasterConfigurationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMasterConfigurationResponse.ProtoReflect.Descriptor instead.
 func (*GetMasterConfigurationResponse) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{47}
+	return file_master_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *GetMasterConfigurationResponse) GetMetricsAddress() string {
@@ -3308,7 +3393,7 @@ type ListClusterNodesRequest struct {
 func (x *ListClusterNodesRequest) Reset() {
 	*x = ListClusterNodesRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[48]
+		mi := &file_master_proto_msgTypes[50]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3321,7 +3406,7 @@ func (x *ListClusterNodesRequest) String() string {
 func (*ListClusterNodesRequest) ProtoMessage() {}
 
 func (x *ListClusterNodesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[48]
+	mi := &file_master_proto_msgTypes[50]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3334,7 +3419,7 @@ func (x *ListClusterNodesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListClusterNodesRequest.ProtoReflect.Descriptor instead.
 func (*ListClusterNodesRequest) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{48}
+	return file_master_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListClusterNodesRequest) GetClientType() string {
@@ -3369,7 +3454,7 @@ type ListClusterNodesResponse struct {
 func (x *ListClusterNodesResponse) Reset() {
 	*x = ListClusterNodesResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[49]
+		mi := &file_master_proto_msgTypes[51]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3382,7 +3467,7 @@ func (x *ListClusterNodesResponse) String() string {
 func (*ListClusterNodesResponse) ProtoMessage() {}
 
 func (x *ListClusterNodesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[49]
+	mi := &file_master_proto_msgTypes[51]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3395,7 +3480,7 @@ func (x *ListClusterNodesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListClusterNodesResponse.ProtoReflect.Descriptor instead.
 func (*ListClusterNodesResponse) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{49}
+	return file_master_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ListClusterNodesResponse) GetClusterNodes() []*ListClusterNodesResponse_ClusterNode {
@@ -3420,7 +3505,7 @@ type LeaseAdminTokenRequest struct {
 func (x *LeaseAdminTokenRequest) Reset() {
 	*x = LeaseAdminTokenRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[50]
+		mi := &file_master_proto_msgTypes[52]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3433,7 +3518,7 @@ func (x *LeaseAdminTokenRequest) String() string {
 func (*LeaseAdminTokenRequest) ProtoMessage() {}
 
 func (x *LeaseAdminTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[50]
+	mi := &file_master_proto_msgTypes[52]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3446,7 +3531,7 @@ func (x *LeaseAdminTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseAdminTokenRequest.ProtoReflect.Descriptor instead.
 func (*LeaseAdminTokenRequest) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{50}
+	return file_master_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *LeaseAdminTokenRequest) GetPreviousToken() int64 {
@@ -3496,7 +3581,7 @@ type LeaseAdminTokenResponse struct {
 func (x *LeaseAdminTokenResponse) Reset() {
 	*x = LeaseAdminTokenResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[51]
+		mi := &file_master_proto_msgTypes[53]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3509,7 +3594,7 @@ func (x *LeaseAdminTokenResponse) String() string {
 func (*LeaseAdminTokenResponse) ProtoMessage() {}
 
 func (x *LeaseAdminTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[51]
+	mi := &file_master_proto_msgTypes[53]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3522,7 +3607,7 @@ func (x *LeaseAdminTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseAdminTokenResponse.ProtoReflect.Descriptor instead.
 func (*LeaseAdminTokenResponse) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{51}
+	return file_master_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *LeaseAdminTokenResponse) GetToken() int64 {
@@ -3552,7 +3637,7 @@ type ReleaseAdminTokenRequest struct {
 func (x *ReleaseAdminTokenRequest) Reset() {
 	*x = ReleaseAdminTokenRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[52]
+		mi := &file_master_proto_msgTypes[54]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3565,7 +3650,7 @@ func (x *ReleaseAdminTokenRequest) String() string {
 func (*ReleaseAdminTokenRequest) ProtoMessage() {}
 
 func (x *ReleaseAdminTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[52]
+	mi := &file_master_proto_msgTypes[54]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3578,7 +3663,7 @@ func (x *ReleaseAdminTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseAdminTokenRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseAdminTokenRequest) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{52}
+	return file_master_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ReleaseAdminTokenRequest) GetPreviousToken() int64 {
@@ -3611,7 +3696,7 @@ type ReleaseAdminTokenResponse struct {
 func (x *ReleaseAdminTokenResponse) Reset() {
 	*x = ReleaseAdminTokenResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[53]
+		mi := &file_master_proto_msgTypes[55]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3624,7 +3709,7 @@ func (x *ReleaseAdminTokenResponse) String() string {
 func (*ReleaseAdminTokenResponse) ProtoMessage() {}
 
 func (x *ReleaseAdminTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[53]
+	mi := &file_master_proto_msgTypes[55]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3637,7 +3722,7 @@ func (x *ReleaseAdminTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseAdminTokenResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseAdminTokenResponse) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{53}
+	return file_master_proto_rawDescGZIP(), []int{55}
 }
 
 type PingRequest struct {
@@ -3652,7 +3737,7 @@ type PingRequest struct {
 func (x *PingRequest) Reset() {
 	*x = PingRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[54]
+		mi := &file_master_proto_msgTypes[56]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3665,7 +3750,7 @@ func (x *PingRequest) String() string {
 func (*PingRequest) ProtoMessage() {}
 
 func (x *PingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[54]
+	mi := &file_master_proto_msgTypes[56]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3678,7 +3763,7 @@ func (x *PingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingRequest.ProtoReflect.Descriptor instead.
 func (*PingRequest) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{54}
+	return file_master_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *PingRequest) GetTarget() string {
@@ -3708,7 +3793,7 @@ type PingResponse struct {
 func (x *PingResponse) Reset() {
 	*x = PingResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[55]
+		mi := &file_master_proto_msgTypes[57]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3721,7 +3806,7 @@ func (x *PingResponse) String() string {
 func (*PingResponse) ProtoMessage() {}
 
 func (x *PingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[55]
+	mi := &file_master_proto_msgTypes[57]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3734,7 +3819,7 @@ func (x *PingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingResponse.ProtoReflect.Descriptor instead.
 func (*PingResponse) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{55}
+	return file_master_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *PingResponse) GetStartTimeNs() int64 {
@@ -3771,7 +3856,7 @@ type RaftAddServerRequest struct {
 func (x *RaftAddServerRequest) Reset() {
 	*x = RaftAddServerRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[56]
+		mi := &file_master_proto_msgTypes[58]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3784,7 +3869,7 @@ func (x *RaftAddServerRequest) String() string {
 func (*RaftAddServerRequest) ProtoMessage() {}
 
 func (x *RaftAddServerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[56]
+	mi := &file_master_proto_msgTypes[58]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3797,7 +3882,7 @@ func (x *RaftAddServerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RaftAddServerRequest.ProtoReflect.Descriptor instead.
 func (*RaftAddServerRequest) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{56}
+	return file_master_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *RaftAddServerRequest) GetId() string {
@@ -3830,7 +3915,7 @@ type RaftAddServerResponse struct {
 func (x *RaftAddServerResponse) Reset() {
 	*x = RaftAddServerResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[57]
+		mi := &file_master_proto_msgTypes[59]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3843,7 +3928,7 @@ func (x *RaftAddServerResponse) String() string {
 func (*RaftAddServerResponse) ProtoMessage() {}
 
 func (x *RaftAddServerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[57]
+	mi := &file_master_proto_msgTypes[59]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3856,7 +3941,7 @@ func (x *RaftAddServerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RaftAddServerResponse.ProtoReflect.Descriptor instead.
 func (*RaftAddServerResponse) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{57}
+	return file_master_proto_rawDescGZIP(), []int{59}
 }
 
 type RaftRemoveServerRequest struct {
@@ -3871,7 +3956,7 @@ type RaftRemoveServerRequest struct {
 func (x *RaftRemoveServerRequest) Reset() {
 	*x = RaftRemoveServerRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[58]
+		mi := &file_master_proto_msgTypes[60]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3884,7 +3969,7 @@ func (x *RaftRemoveServerRequest) String() string {
 func (*RaftRemoveServerRequest) ProtoMessage() {}
 
 func (x *RaftRemoveServerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[58]
+	mi := &file_master_proto_msgTypes[60]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3897,7 +3982,7 @@ func (x *RaftRemoveServerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RaftRemoveServerRequest.ProtoReflect.Descriptor instead.
 func (*RaftRemoveServerRequest) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{58}
+	return file_master_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *RaftRemoveServerRequest) GetId() string {
@@ -3923,7 +4008,7 @@ type RaftRemoveServerResponse struct {
 func (x *RaftRemoveServerResponse) Reset() {
 	*x = RaftRemoveServerResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[59]
+		mi := &file_master_proto_msgTypes[61]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3936,7 +4021,7 @@ func (x *RaftRemoveServerResponse) String() string {
 func (*RaftRemoveServerResponse) ProtoMessage() {}
 
 func (x *RaftRemoveServerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[59]
+	mi := &file_master_proto_msgTypes[61]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3949,7 +4034,7 @@ func (x *RaftRemoveServerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RaftRemoveServerResponse.ProtoReflect.Descriptor instead.
 func (*RaftRemoveServerResponse) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{59}
+	return file_master_proto_rawDescGZIP(), []int{61}
 }
 
 type RaftListClusterServersRequest struct {
@@ -3961,7 +4046,7 @@ type RaftListClusterServersRequest struct {
 func (x *RaftListClusterServersRequest) Reset() {
 	*x = RaftListClusterServersRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[60]
+		mi := &file_master_proto_msgTypes[62]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3974,7 +4059,7 @@ func (x *RaftListClusterServersRequest) String() string {
 func (*RaftListClusterServersRequest) ProtoMessage() {}
 
 func (x *RaftListClusterServersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[60]
+	mi := &file_master_proto_msgTypes[62]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3987,7 +4072,7 @@ func (x *RaftListClusterServersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RaftListClusterServersRequest.ProtoReflect.Descriptor instead.
 func (*RaftListClusterServersRequest) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{60}
+	return file_master_proto_rawDescGZIP(), []int{62}
 }
 
 type RaftListClusterServersResponse struct {
@@ -4001,7 +4086,7 @@ type RaftListClusterServersResponse struct {
 func (x *RaftListClusterServersResponse) Reset() {
 	*x = RaftListClusterServersResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[61]
+		mi := &file_master_proto_msgTypes[63]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4014,7 +4099,7 @@ func (x *RaftListClusterServersResponse) String() string {
 func (*RaftListClusterServersResponse) ProtoMessage() {}
 
 func (x *RaftListClusterServersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[61]
+	mi := &file_master_proto_msgTypes[63]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4027,7 +4112,7 @@ func (x *RaftListClusterServersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RaftListClusterServersResponse.ProtoReflect.Descriptor instead.
 func (*RaftListClusterServersResponse) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{61}
+	return file_master_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *RaftListClusterServersResponse) GetClusterServers() []*RaftListClusterServersResponse_ClusterServers {
@@ -4050,7 +4135,7 @@ type SuperBlockExtra_ErasureCoding struct {
 func (x *SuperBlockExtra_ErasureCoding) Reset() {
 	*x = SuperBlockExtra_ErasureCoding{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[64]
+		mi := &file_master_proto_msgTypes[66]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4063,7 +4148,7 @@ func (x *SuperBlockExtra_ErasureCoding) String() string {
 func (*SuperBlockExtra_ErasureCoding) ProtoMessage() {}
 
 func (x *SuperBlockExtra_ErasureCoding) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[64]
+	mi := &file_master_proto_msgTypes[66]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4114,7 +4199,7 @@ type LookupVolumeResponse_VolumeIdLocation struct {
 func (x *LookupVolumeResponse_VolumeIdLocation) Reset() {
 	*x = LookupVolumeResponse_VolumeIdLocation{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[65]
+		mi := &file_master_proto_msgTypes[67]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4127,7 +4212,7 @@ func (x *LookupVolumeResponse_VolumeIdLocation) String() string {
 func (*LookupVolumeResponse_VolumeIdLocation) ProtoMessage() {}
 
 func (x *LookupVolumeResponse_VolumeIdLocation) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[65]
+	mi := &file_master_proto_msgTypes[67]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4183,7 +4268,7 @@ type LookupEcVolumeResponse_EcShardIdLocation struct {
 func (x *LookupEcVolumeResponse_EcShardIdLocation) Reset() {
 	*x = LookupEcVolumeResponse_EcShardIdLocation{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[71]
+		mi := &file_master_proto_msgTypes[73]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4196,7 +4281,7 @@ func (x *LookupEcVolumeResponse_EcShardIdLocation) String() string {
 func (*LookupEcVolumeResponse_EcShardIdLocation) ProtoMessage() {}
 
 func (x *LookupEcVolumeResponse_EcShardIdLocation) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[71]
+	mi := &file_master_proto_msgTypes[73]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4241,7 +4326,7 @@ type ListClusterNodesResponse_ClusterNode struct {
 func (x *ListClusterNodesResponse_ClusterNode) Reset() {
 	*x = ListClusterNodesResponse_ClusterNode{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[72]
+		mi := &file_master_proto_msgTypes[74]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4254,7 +4339,7 @@ func (x *ListClusterNodesResponse_ClusterNode) String() string {
 func (*ListClusterNodesResponse_ClusterNode) ProtoMessage() {}
 
 func (x *ListClusterNodesResponse_ClusterNode) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[72]
+	mi := &file_master_proto_msgTypes[74]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4267,7 +4352,7 @@ func (x *ListClusterNodesResponse_ClusterNode) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ListClusterNodesResponse_ClusterNode.ProtoReflect.Descriptor instead.
 func (*ListClusterNodesResponse_ClusterNode) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{49, 0}
+	return file_master_proto_rawDescGZIP(), []int{51, 0}
 }
 
 func (x *ListClusterNodesResponse_ClusterNode) GetAddress() string {
@@ -4319,7 +4404,7 @@ type RaftListClusterServersResponse_ClusterServers struct {
 func (x *RaftListClusterServersResponse_ClusterServers) Reset() {
 	*x = RaftListClusterServersResponse_ClusterServers{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_master_proto_msgTypes[73]
+		mi := &file_master_proto_msgTypes[75]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -4332,7 +4417,7 @@ func (x *RaftListClusterServersResponse_ClusterServers) String() string {
 func (*RaftListClusterServersResponse_ClusterServers) ProtoMessage() {}
 
 func (x *RaftListClusterServersResponse_ClusterServers) ProtoReflect() protoreflect.Message {
-	mi := &file_master_proto_msgTypes[73]
+	mi := &file_master_proto_msgTypes[75]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4345,7 +4430,7 @@ func (x *RaftListClusterServersResponse_ClusterServers) ProtoReflect() protorefl
 
 // Deprecated: Use RaftListClusterServersResponse_ClusterServers.ProtoReflect.Descriptor instead.
 func (*RaftListClusterServersResponse_ClusterServers) Descriptor() ([]byte, []int) {
-	return file_master_proto_rawDescGZIP(), []int{61, 0}
+	return file_master_proto_rawDescGZIP(), []int{63, 0}
 }
 
 func (x *RaftListClusterServersResponse_ClusterServers) GetId() string {
@@ -4881,6 +4966,11 @@ var file_master_proto_rawDesc = []byte{
 	0x75, 0x6d, 0x65, 0x49, 0x64, 0x12, 0x1e, 0x0a, 0x0a, 0x63, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74,
 	0x69, 0x6f, 0x6e, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x63, 0x6f, 0x6c, 0x6c, 0x65,
 	0x63, 0x74, 0x69, 0x6f, 0x6e, 0x22, 0x16, 0x0a, 0x14, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x56,
+	0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x34, 0x0a,
+	0x15, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x45, 0x63, 0x56, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x52,
+	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x1b, 0x0a, 0x09, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65,
+	0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x08, 0x76, 0x6f, 0x6c, 0x75, 0x6d,
+	0x65, 0x49, 0x64, 0x22, 0x18, 0x0a, 0x16, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x45, 0x63, 0x56,
 	0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x16, 0x0a,
 	0x14, 0x44, 0x69, 0x73, 0x61, 0x62, 0x6c, 0x65, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x52, 0x65,
 	0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x17, 0x0a, 0x15, 0x44, 0x69, 0x73, 0x61, 0x62, 0x6c, 0x65,
@@ -5027,7 +5117,7 @@ var file_master_proto_rawDesc = []byte{
 	0x65, 0x73, 0x73, 0x12, 0x1a, 0x0a, 0x08, 0x73, 0x75, 0x66, 0x66, 0x72, 0x61, 0x67, 0x65, 0x18,
 	0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x73, 0x75, 0x66, 0x66, 0x72, 0x61, 0x67, 0x65, 0x12,
 	0x1a, 0x0a, 0x08, 0x69, 0x73, 0x4c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x18, 0x04, 0x20, 0x01, 0x28,
-	0x08, 0x52, 0x08, 0x69, 0x73, 0x4c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x32, 0xc1, 0x10, 0x0a, 0x07,
+	0x08, 0x52, 0x08, 0x69, 0x73, 0x4c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x32, 0x9a, 0x11, 0x0a, 0x07,
 	0x53, 0x65, 0x61, 0x77, 0x65, 0x65, 0x64, 0x12, 0x49, 0x0a, 0x0d, 0x53, 0x65, 0x6e, 0x64, 0x48,
 	0x65, 0x61, 0x72, 0x74, 0x62, 0x65, 0x61, 0x74, 0x12, 0x14, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65,
 	0x72, 0x5f, 0x70, 0x62, 0x2e, 0x48, 0x65, 0x61, 0x72, 0x74, 0x62, 0x65, 0x61, 0x74, 0x1a, 0x1c,
@@ -5096,74 +5186,80 @@ var file_master_proto_rawDesc = []byte{
 	0x75, 0x6d, 0x56, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
 	0x1f, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x56, 0x61, 0x63, 0x75,
 	0x75, 0x6d, 0x56, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
-	0x22, 0x00, 0x12, 0x54, 0x0a, 0x0d, 0x44, 0x69, 0x73, 0x61, 0x62, 0x6c, 0x65, 0x56, 0x61, 0x63,
-	0x75, 0x75, 0x6d, 0x12, 0x1f, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e,
-	0x44, 0x69, 0x73, 0x61, 0x62, 0x6c, 0x65, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x52, 0x65, 0x71,
-	0x75, 0x65, 0x73, 0x74, 0x1a, 0x20, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62,
-	0x2e, 0x44, 0x69, 0x73, 0x61, 0x62, 0x6c, 0x65, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x52, 0x65,
-	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x51, 0x0a, 0x0c, 0x45, 0x6e, 0x61, 0x62,
-	0x6c, 0x65, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x12, 0x1e, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65,
-	0x72, 0x5f, 0x70, 0x62, 0x2e, 0x45, 0x6e, 0x61, 0x62, 0x6c, 0x65, 0x56, 0x61, 0x63, 0x75, 0x75,
-	0x6d, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1f, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65,
-	0x72, 0x5f, 0x70, 0x62, 0x2e, 0x45, 0x6e, 0x61, 0x62, 0x6c, 0x65, 0x56, 0x61, 0x63, 0x75, 0x75,
-	0x6d, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x63, 0x0a, 0x12, 0x56,
-	0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x4d, 0x61, 0x72, 0x6b, 0x52, 0x65, 0x61, 0x64, 0x6f, 0x6e, 0x6c,
-	0x79, 0x12, 0x24, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x56, 0x6f,
-	0x6c, 0x75, 0x6d, 0x65, 0x4d, 0x61, 0x72, 0x6b, 0x52, 0x65, 0x61, 0x64, 0x6f, 0x6e, 0x6c, 0x79,
-	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x25, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72,
-	0x5f, 0x70, 0x62, 0x2e, 0x56, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x4d, 0x61, 0x72, 0x6b, 0x52, 0x65,
-	0x61, 0x64, 0x6f, 0x6e, 0x6c, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00,
-	0x12, 0x6f, 0x0a, 0x16, 0x47, 0x65, 0x74, 0x4d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x43, 0x6f, 0x6e,
-	0x66, 0x69, 0x67, 0x75, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x28, 0x2e, 0x6d, 0x61, 0x73,
-	0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x47, 0x65, 0x74, 0x4d, 0x61, 0x73, 0x74, 0x65, 0x72,
-	0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71,
-	0x75, 0x65, 0x73, 0x74, 0x1a, 0x29, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62,
-	0x2e, 0x47, 0x65, 0x74, 0x4d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67,
-	0x75, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22,
-	0x00, 0x12, 0x5d, 0x0a, 0x10, 0x4c, 0x69, 0x73, 0x74, 0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72,
-	0x4e, 0x6f, 0x64, 0x65, 0x73, 0x12, 0x22, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70,
-	0x62, 0x2e, 0x4c, 0x69, 0x73, 0x74, 0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x4e, 0x6f, 0x64,
-	0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x23, 0x2e, 0x6d, 0x61, 0x73, 0x74,
-	0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x4c, 0x69, 0x73, 0x74, 0x43, 0x6c, 0x75, 0x73, 0x74, 0x65,
-	0x72, 0x4e, 0x6f, 0x64, 0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00,
-	0x12, 0x5a, 0x0a, 0x0f, 0x4c, 0x65, 0x61, 0x73, 0x65, 0x41, 0x64, 0x6d, 0x69, 0x6e, 0x54, 0x6f,
-	0x6b, 0x65, 0x6e, 0x12, 0x21, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e,
-	0x4c, 0x65, 0x61, 0x73, 0x65, 0x41, 0x64, 0x6d, 0x69, 0x6e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52,
-	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x22, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f,
-	0x70, 0x62, 0x2e, 0x4c, 0x65, 0x61, 0x73, 0x65, 0x41, 0x64, 0x6d, 0x69, 0x6e, 0x54, 0x6f, 0x6b,
-	0x65, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x60, 0x0a, 0x11,
-	0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x41, 0x64, 0x6d, 0x69, 0x6e, 0x54, 0x6f, 0x6b, 0x65,
-	0x6e, 0x12, 0x23, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x52, 0x65,
-	0x6c, 0x65, 0x61, 0x73, 0x65, 0x41, 0x64, 0x6d, 0x69, 0x6e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52,
-	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x24, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f,
-	0x70, 0x62, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x41, 0x64, 0x6d, 0x69, 0x6e, 0x54,
-	0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x39,
-	0x0a, 0x04, 0x50, 0x69, 0x6e, 0x67, 0x12, 0x16, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f,
-	0x70, 0x62, 0x2e, 0x50, 0x69, 0x6e, 0x67, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x17,
-	0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x50, 0x69, 0x6e, 0x67, 0x52,
-	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x6f, 0x0a, 0x16, 0x52, 0x61, 0x66,
-	0x74, 0x4c, 0x69, 0x73, 0x74, 0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x53, 0x65, 0x72, 0x76,
-	0x65, 0x72, 0x73, 0x12, 0x28, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e,
-	0x52, 0x61, 0x66, 0x74, 0x4c, 0x69, 0x73, 0x74, 0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x53,
-	0x65, 0x72, 0x76, 0x65, 0x72, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x29, 0x2e,
-	0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x52, 0x61, 0x66, 0x74, 0x4c, 0x69,
-	0x73, 0x74, 0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x73,
-	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x54, 0x0a, 0x0d, 0x52, 0x61,
-	0x66, 0x74, 0x41, 0x64, 0x64, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x12, 0x1f, 0x2e, 0x6d, 0x61,
-	0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x52, 0x61, 0x66, 0x74, 0x41, 0x64, 0x64, 0x53,
-	0x65, 0x72, 0x76, 0x65, 0x72, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x20, 0x2e, 0x6d,
-	0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x52, 0x61, 0x66, 0x74, 0x41, 0x64, 0x64,
-	0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00,
-	0x12, 0x5d, 0x0a, 0x10, 0x52, 0x61, 0x66, 0x74, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x53, 0x65,
-	0x72, 0x76, 0x65, 0x72, 0x12, 0x22, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62,
-	0x2e, 0x52, 0x61, 0x66, 0x74, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x53, 0x65, 0x72, 0x76, 0x65,
-	0x72, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x23, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65,
-	0x72, 0x5f, 0x70, 0x62, 0x2e, 0x52, 0x61, 0x66, 0x74, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x53,
-	0x65, 0x72, 0x76, 0x65, 0x72, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x42,
-	0x32, 0x5a, 0x30, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x73, 0x65,
-	0x61, 0x77, 0x65, 0x65, 0x64, 0x66, 0x73, 0x2f, 0x73, 0x65, 0x61, 0x77, 0x65, 0x65, 0x64, 0x66,
-	0x73, 0x2f, 0x77, 0x65, 0x65, 0x64, 0x2f, 0x70, 0x62, 0x2f, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72,
-	0x5f, 0x70, 0x62, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x22, 0x00, 0x12, 0x57, 0x0a, 0x0e, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x45, 0x63, 0x56, 0x6f,
+	0x6c, 0x75, 0x6d, 0x65, 0x12, 0x20, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62,
+	0x2e, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x45, 0x63, 0x56, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x52,
+	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x21, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f,
+	0x70, 0x62, 0x2e, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x45, 0x63, 0x56, 0x6f, 0x6c, 0x75, 0x6d,
+	0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x54, 0x0a, 0x0d, 0x44,
+	0x69, 0x73, 0x61, 0x62, 0x6c, 0x65, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x12, 0x1f, 0x2e, 0x6d,
+	0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x44, 0x69, 0x73, 0x61, 0x62, 0x6c, 0x65,
+	0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x20, 0x2e,
+	0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x44, 0x69, 0x73, 0x61, 0x62, 0x6c,
+	0x65, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22,
+	0x00, 0x12, 0x51, 0x0a, 0x0c, 0x45, 0x6e, 0x61, 0x62, 0x6c, 0x65, 0x56, 0x61, 0x63, 0x75, 0x75,
+	0x6d, 0x12, 0x1e, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x45, 0x6e,
+	0x61, 0x62, 0x6c, 0x65, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x1a, 0x1f, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x45, 0x6e,
+	0x61, 0x62, 0x6c, 0x65, 0x56, 0x61, 0x63, 0x75, 0x75, 0x6d, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
+	0x73, 0x65, 0x22, 0x00, 0x12, 0x63, 0x0a, 0x12, 0x56, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x4d, 0x61,
+	0x72, 0x6b, 0x52, 0x65, 0x61, 0x64, 0x6f, 0x6e, 0x6c, 0x79, 0x12, 0x24, 0x2e, 0x6d, 0x61, 0x73,
+	0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x56, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x4d, 0x61, 0x72,
+	0x6b, 0x52, 0x65, 0x61, 0x64, 0x6f, 0x6e, 0x6c, 0x79, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x1a, 0x25, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x56, 0x6f, 0x6c,
+	0x75, 0x6d, 0x65, 0x4d, 0x61, 0x72, 0x6b, 0x52, 0x65, 0x61, 0x64, 0x6f, 0x6e, 0x6c, 0x79, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x6f, 0x0a, 0x16, 0x47, 0x65, 0x74,
+	0x4d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x61, 0x74,
+	0x69, 0x6f, 0x6e, 0x12, 0x28, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e,
+	0x47, 0x65, 0x74, 0x4d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75,
+	0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x29, 0x2e,
+	0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x47, 0x65, 0x74, 0x4d, 0x61, 0x73,
+	0x74, 0x65, 0x72, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x5d, 0x0a, 0x10, 0x4c, 0x69,
+	0x73, 0x74, 0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x4e, 0x6f, 0x64, 0x65, 0x73, 0x12, 0x22,
+	0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x4c, 0x69, 0x73, 0x74, 0x43,
+	0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x4e, 0x6f, 0x64, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x1a, 0x23, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x4c,
+	0x69, 0x73, 0x74, 0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x4e, 0x6f, 0x64, 0x65, 0x73, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x5a, 0x0a, 0x0f, 0x4c, 0x65, 0x61,
+	0x73, 0x65, 0x41, 0x64, 0x6d, 0x69, 0x6e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x12, 0x21, 0x2e, 0x6d,
+	0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x4c, 0x65, 0x61, 0x73, 0x65, 0x41, 0x64,
+	0x6d, 0x69, 0x6e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
+	0x22, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x4c, 0x65, 0x61, 0x73,
+	0x65, 0x41, 0x64, 0x6d, 0x69, 0x6e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f,
+	0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x60, 0x0a, 0x11, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65,
+	0x41, 0x64, 0x6d, 0x69, 0x6e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x12, 0x23, 0x2e, 0x6d, 0x61, 0x73,
+	0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x52, 0x65, 0x6c, 0x65, 0x61, 0x73, 0x65, 0x41, 0x64,
+	0x6d, 0x69, 0x6e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
+	0x24, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x52, 0x65, 0x6c, 0x65,
+	0x61, 0x73, 0x65, 0x41, 0x64, 0x6d, 0x69, 0x6e, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x39, 0x0a, 0x04, 0x50, 0x69, 0x6e, 0x67, 0x12,
+	0x16, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x50, 0x69, 0x6e, 0x67,
+	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x17, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72,
+	0x5f, 0x70, 0x62, 0x2e, 0x50, 0x69, 0x6e, 0x67, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
+	0x22, 0x00, 0x12, 0x6f, 0x0a, 0x16, 0x52, 0x61, 0x66, 0x74, 0x4c, 0x69, 0x73, 0x74, 0x43, 0x6c,
+	0x75, 0x73, 0x74, 0x65, 0x72, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x73, 0x12, 0x28, 0x2e, 0x6d,
+	0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x52, 0x61, 0x66, 0x74, 0x4c, 0x69, 0x73,
+	0x74, 0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x73, 0x52,
+	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x29, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f,
+	0x70, 0x62, 0x2e, 0x52, 0x61, 0x66, 0x74, 0x4c, 0x69, 0x73, 0x74, 0x43, 0x6c, 0x75, 0x73, 0x74,
+	0x65, 0x72, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
+	0x65, 0x22, 0x00, 0x12, 0x54, 0x0a, 0x0d, 0x52, 0x61, 0x66, 0x74, 0x41, 0x64, 0x64, 0x53, 0x65,
+	0x72, 0x76, 0x65, 0x72, 0x12, 0x1f, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62,
+	0x2e, 0x52, 0x61, 0x66, 0x74, 0x41, 0x64, 0x64, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x52, 0x65,
+	0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x20, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70,
+	0x62, 0x2e, 0x52, 0x61, 0x66, 0x74, 0x41, 0x64, 0x64, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x5d, 0x0a, 0x10, 0x52, 0x61, 0x66,
+	0x74, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x12, 0x22, 0x2e,
+	0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x52, 0x61, 0x66, 0x74, 0x52, 0x65,
+	0x6d, 0x6f, 0x76, 0x65, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x1a, 0x23, 0x2e, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x2e, 0x52, 0x61,
+	0x66, 0x74, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x52, 0x65,
+	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x32, 0x5a, 0x30, 0x67, 0x69, 0x74, 0x68,
+	0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x73, 0x65, 0x61, 0x77, 0x65, 0x65, 0x64, 0x66, 0x73,
+	0x2f, 0x73, 0x65, 0x61, 0x77, 0x65, 0x65, 0x64, 0x66, 0x73, 0x2f, 0x77, 0x65, 0x65, 0x64, 0x2f,
+	0x70, 0x62, 0x2f, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x70, 0x62, 0x62, 0x06, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -5178,7 +5274,7 @@ func file_master_proto_rawDescGZIP() []byte {
 	return file_master_proto_rawDescData
 }
 
-var file_master_proto_msgTypes = make([]protoimpl.MessageInfo, 74)
+var file_master_proto_msgTypes = make([]protoimpl.MessageInfo, 76)
 var file_master_proto_goTypes = []interface{}{
 	(*Heartbeat)(nil),                             // 0: master_pb.Heartbeat
 	(*HeartbeatResponse)(nil),                     // 1: master_pb.HeartbeatResponse
@@ -5220,40 +5316,42 @@ var file_master_proto_goTypes = []interface{}{
 	(*LookupEcVolumeResponse)(nil),                // 37: master_pb.LookupEcVolumeResponse
 	(*VacuumVolumeRequest)(nil),                   // 38: master_pb.VacuumVolumeRequest
 	(*VacuumVolumeResponse)(nil),                  // 39: master_pb.VacuumVolumeResponse
-	(*DisableVacuumRequest)(nil),                  // 40: master_pb.DisableVacuumRequest
-	(*DisableVacuumResponse)(nil),                 // 41: master_pb.DisableVacuumResponse
-	(*EnableVacuumRequest)(nil),                   // 42: master_pb.EnableVacuumRequest
-	(*EnableVacuumResponse)(nil),                  // 43: master_pb.EnableVacuumResponse
-	(*VolumeMarkReadonlyRequest)(nil),             // 44: master_pb.VolumeMarkReadonlyRequest
-	(*VolumeMarkReadonlyResponse)(nil),            // 45: master_pb.VolumeMarkReadonlyResponse
-	(*GetMasterConfigurationRequest)(nil),         // 46: master_pb.GetMasterConfigurationRequest
-	(*GetMasterConfigurationResponse)(nil),        // 47: master_pb.GetMasterConfigurationResponse
-	(*ListClusterNodesRequest)(nil),               // 48: master_pb.ListClusterNodesRequest
-	(*ListClusterNodesResponse)(nil),              // 49: master_pb.ListClusterNodesResponse
-	(*LeaseAdminTokenRequest)(nil),                // 50: master_pb.LeaseAdminTokenRequest
-	(*LeaseAdminTokenResponse)(nil),               // 51: master_pb.LeaseAdminTokenResponse
-	(*ReleaseAdminTokenRequest)(nil),              // 52: master_pb.ReleaseAdminTokenRequest
-	(*ReleaseAdminTokenResponse)(nil),             // 53: master_pb.ReleaseAdminTokenResponse
-	(*PingRequest)(nil),                           // 54: master_pb.PingRequest
-	(*PingResponse)(nil),                          // 55: master_pb.PingResponse
-	(*RaftAddServerRequest)(nil),                  // 56: master_pb.RaftAddServerRequest
-	(*RaftAddServerResponse)(nil),                 // 57: master_pb.RaftAddServerResponse
-	(*RaftRemoveServerRequest)(nil),               // 58: master_pb.RaftRemoveServerRequest
-	(*RaftRemoveServerResponse)(nil),              // 59: master_pb.RaftRemoveServerResponse
-	(*RaftListClusterServersRequest)(nil),         // 60: master_pb.RaftListClusterServersRequest
-	(*RaftListClusterServersResponse)(nil),        // 61: master_pb.RaftListClusterServersResponse
-	nil,                                           // 62: master_pb.Heartbeat.MaxVolumeCountsEntry
-	nil,                                           // 63: master_pb.StorageBackend.PropertiesEntry
-	(*SuperBlockExtra_ErasureCoding)(nil),         // 64: master_pb.SuperBlockExtra.ErasureCoding
-	(*LookupVolumeResponse_VolumeIdLocation)(nil), // 65: master_pb.LookupVolumeResponse.VolumeIdLocation
-	nil, // 66: master_pb.DataNodeInfo.DiskInfosEntry
-	nil, // 67: master_pb.RackInfo.DiskInfosEntry
-	nil, // 68: master_pb.DataCenterInfo.DiskInfosEntry
-	nil, // 69: master_pb.TopologyInfo.DiskInfosEntry
-	nil, // 70: master_pb.EcNodeInfo.EcNodeDiskInfosEntry
-	(*LookupEcVolumeResponse_EcShardIdLocation)(nil),      // 71: master_pb.LookupEcVolumeResponse.EcShardIdLocation
-	(*ListClusterNodesResponse_ClusterNode)(nil),          // 72: master_pb.ListClusterNodesResponse.ClusterNode
-	(*RaftListClusterServersResponse_ClusterServers)(nil), // 73: master_pb.RaftListClusterServersResponse.ClusterServers
+	(*VacuumEcVolumeRequest)(nil),                 // 40: master_pb.VacuumEcVolumeRequest
+	(*VacuumEcVolumeResponse)(nil),                // 41: master_pb.VacuumEcVolumeResponse
+	(*DisableVacuumRequest)(nil),                  // 42: master_pb.DisableVacuumRequest
+	(*DisableVacuumResponse)(nil),                 // 43: master_pb.DisableVacuumResponse
+	(*EnableVacuumRequest)(nil),                   // 44: master_pb.EnableVacuumRequest
+	(*EnableVacuumResponse)(nil),                  // 45: master_pb.EnableVacuumResponse
+	(*VolumeMarkReadonlyRequest)(nil),             // 46: master_pb.VolumeMarkReadonlyRequest
+	(*VolumeMarkReadonlyResponse)(nil),            // 47: master_pb.VolumeMarkReadonlyResponse
+	(*GetMasterConfigurationRequest)(nil),         // 48: master_pb.GetMasterConfigurationRequest
+	(*GetMasterConfigurationResponse)(nil),        // 49: master_pb.GetMasterConfigurationResponse
+	(*ListClusterNodesRequest)(nil),               // 50: master_pb.ListClusterNodesRequest
+	(*ListClusterNodesResponse)(nil),              // 51: master_pb.ListClusterNodesResponse
+	(*LeaseAdminTokenRequest)(nil),                // 52: master_pb.LeaseAdminTokenRequest
+	(*LeaseAdminTokenResponse)(nil),               // 53: master_pb.LeaseAdminTokenResponse
+	(*ReleaseAdminTokenRequest)(nil),              // 54: master_pb.ReleaseAdminTokenRequest
+	(*ReleaseAdminTokenResponse)(nil),             // 55: master_pb.ReleaseAdminTokenResponse
+	(*PingRequest)(nil),                           // 56: master_pb.PingRequest
+	(*PingResponse)(nil),                          // 57: master_pb.PingResponse
+	(*RaftAddServerRequest)(nil),                  // 58: master_pb.RaftAddServerRequest
+	(*RaftAddServerResponse)(nil),                 // 59: master_pb.RaftAddServerResponse
+	(*RaftRemoveServerRequest)(nil),               // 60: master_pb.RaftRemoveServerRequest
+	(*RaftRemoveServerResponse)(nil),              // 61: master_pb.RaftRemoveServerResponse
+	(*RaftListClusterServersRequest)(nil),         // 62: master_pb.RaftListClusterServersRequest
+	(*RaftListClusterServersResponse)(nil),        // 63: master_pb.RaftListClusterServersResponse
+	nil,                                           // 64: master_pb.Heartbeat.MaxVolumeCountsEntry
+	nil,                                           // 65: master_pb.StorageBackend.PropertiesEntry
+	(*SuperBlockExtra_ErasureCoding)(nil),         // 66: master_pb.SuperBlockExtra.ErasureCoding
+	(*LookupVolumeResponse_VolumeIdLocation)(nil), // 67: master_pb.LookupVolumeResponse.VolumeIdLocation
+	nil, // 68: master_pb.DataNodeInfo.DiskInfosEntry
+	nil, // 69: master_pb.RackInfo.DiskInfosEntry
+	nil, // 70: master_pb.DataCenterInfo.DiskInfosEntry
+	nil, // 71: master_pb.TopologyInfo.DiskInfosEntry
+	nil, // 72: master_pb.EcNodeInfo.EcNodeDiskInfosEntry
+	(*LookupEcVolumeResponse_EcShardIdLocation)(nil),      // 73: master_pb.LookupEcVolumeResponse.EcShardIdLocation
+	(*ListClusterNodesResponse_ClusterNode)(nil),          // 74: master_pb.ListClusterNodesResponse.ClusterNode
+	(*RaftListClusterServersResponse_ClusterServers)(nil), // 75: master_pb.RaftListClusterServersResponse.ClusterServers
 }
 var file_master_proto_depIdxs = []int32{
 	2,  // 0: master_pb.Heartbeat.volumes:type_name -> master_pb.VolumeInformationMessage
@@ -5262,32 +5360,32 @@ var file_master_proto_depIdxs = []int32{
 	4,  // 3: master_pb.Heartbeat.ec_shards:type_name -> master_pb.VolumeEcShardInformationMessage
 	4,  // 4: master_pb.Heartbeat.new_ec_shards:type_name -> master_pb.VolumeEcShardInformationMessage
 	4,  // 5: master_pb.Heartbeat.deleted_ec_shards:type_name -> master_pb.VolumeEcShardInformationMessage
-	62, // 6: master_pb.Heartbeat.max_volume_counts:type_name -> master_pb.Heartbeat.MaxVolumeCountsEntry
+	64, // 6: master_pb.Heartbeat.max_volume_counts:type_name -> master_pb.Heartbeat.MaxVolumeCountsEntry
 	5,  // 7: master_pb.HeartbeatResponse.storage_backends:type_name -> master_pb.StorageBackend
-	63, // 8: master_pb.StorageBackend.properties:type_name -> master_pb.StorageBackend.PropertiesEntry
-	64, // 9: master_pb.SuperBlockExtra.erasure_coding:type_name -> master_pb.SuperBlockExtra.ErasureCoding
+	65, // 8: master_pb.StorageBackend.properties:type_name -> master_pb.StorageBackend.PropertiesEntry
+	66, // 9: master_pb.SuperBlockExtra.erasure_coding:type_name -> master_pb.SuperBlockExtra.ErasureCoding
 	9,  // 10: master_pb.KeepConnectedResponse.volume_location:type_name -> master_pb.VolumeLocation
 	10, // 11: master_pb.KeepConnectedResponse.cluster_node_update:type_name -> master_pb.ClusterNodeUpdate
-	65, // 12: master_pb.LookupVolumeResponse.volume_id_locations:type_name -> master_pb.LookupVolumeResponse.VolumeIdLocation
+	67, // 12: master_pb.LookupVolumeResponse.volume_id_locations:type_name -> master_pb.LookupVolumeResponse.VolumeIdLocation
 	14, // 13: master_pb.AssignResponse.replicas:type_name -> master_pb.Location
 	14, // 14: master_pb.AssignResponse.location:type_name -> master_pb.Location
 	19, // 15: master_pb.CollectionListResponse.collections:type_name -> master_pb.Collection
 	2,  // 16: master_pb.DiskInfo.volume_infos:type_name -> master_pb.VolumeInformationMessage
 	4,  // 17: master_pb.DiskInfo.ec_shard_infos:type_name -> master_pb.VolumeEcShardInformationMessage
-	66, // 18: master_pb.DataNodeInfo.diskInfos:type_name -> master_pb.DataNodeInfo.DiskInfosEntry
+	68, // 18: master_pb.DataNodeInfo.diskInfos:type_name -> master_pb.DataNodeInfo.DiskInfosEntry
 	25, // 19: master_pb.RackInfo.data_node_infos:type_name -> master_pb.DataNodeInfo
-	67, // 20: master_pb.RackInfo.diskInfos:type_name -> master_pb.RackInfo.DiskInfosEntry
+	69, // 20: master_pb.RackInfo.diskInfos:type_name -> master_pb.RackInfo.DiskInfosEntry
 	26, // 21: master_pb.DataCenterInfo.rack_infos:type_name -> master_pb.RackInfo
-	68, // 22: master_pb.DataCenterInfo.diskInfos:type_name -> master_pb.DataCenterInfo.DiskInfosEntry
+	70, // 22: master_pb.DataCenterInfo.diskInfos:type_name -> master_pb.DataCenterInfo.DiskInfosEntry
 	27, // 23: master_pb.TopologyInfo.data_center_infos:type_name -> master_pb.DataCenterInfo
-	69, // 24: master_pb.TopologyInfo.diskInfos:type_name -> master_pb.TopologyInfo.DiskInfosEntry
+	71, // 24: master_pb.TopologyInfo.diskInfos:type_name -> master_pb.TopologyInfo.DiskInfosEntry
 	28, // 25: master_pb.VolumeListResponse.topology_info:type_name -> master_pb.TopologyInfo
 	33, // 26: master_pb.EcCollectResponse.ecNodeInfo:type_name -> master_pb.EcNodeInfo
-	70, // 27: master_pb.EcNodeInfo.ecNodeDiskInfos:type_name -> master_pb.EcNodeInfo.EcNodeDiskInfosEntry
-	71, // 28: master_pb.LookupEcVolumeResponse.shard_id_locations:type_name -> master_pb.LookupEcVolumeResponse.EcShardIdLocation
+	72, // 27: master_pb.EcNodeInfo.ecNodeDiskInfos:type_name -> master_pb.EcNodeInfo.EcNodeDiskInfosEntry
+	73, // 28: master_pb.LookupEcVolumeResponse.shard_id_locations:type_name -> master_pb.LookupEcVolumeResponse.EcShardIdLocation
 	5,  // 29: master_pb.GetMasterConfigurationResponse.storage_backends:type_name -> master_pb.StorageBackend
-	72, // 30: master_pb.ListClusterNodesResponse.cluster_nodes:type_name -> master_pb.ListClusterNodesResponse.ClusterNode
-	73, // 31: master_pb.RaftListClusterServersResponse.cluster_servers:type_name -> master_pb.RaftListClusterServersResponse.ClusterServers
+	74, // 30: master_pb.ListClusterNodesResponse.cluster_nodes:type_name -> master_pb.ListClusterNodesResponse.ClusterNode
+	75, // 31: master_pb.RaftListClusterServersResponse.cluster_servers:type_name -> master_pb.RaftListClusterServersResponse.ClusterServers
 	14, // 32: master_pb.LookupVolumeResponse.VolumeIdLocation.locations:type_name -> master_pb.Location
 	24, // 33: master_pb.DataNodeInfo.DiskInfosEntry.value:type_name -> master_pb.DiskInfo
 	24, // 34: master_pb.RackInfo.DiskInfosEntry.value:type_name -> master_pb.DiskInfo
@@ -5308,43 +5406,45 @@ var file_master_proto_depIdxs = []int32{
 	35, // 49: master_pb.Seaweed.VolumeListWithoutECVolume:input_type -> master_pb.VolumeListWithoutECVolumeRequest
 	36, // 50: master_pb.Seaweed.LookupEcVolume:input_type -> master_pb.LookupEcVolumeRequest
 	38, // 51: master_pb.Seaweed.VacuumVolume:input_type -> master_pb.VacuumVolumeRequest
-	40, // 52: master_pb.Seaweed.DisableVacuum:input_type -> master_pb.DisableVacuumRequest
-	42, // 53: master_pb.Seaweed.EnableVacuum:input_type -> master_pb.EnableVacuumRequest
-	44, // 54: master_pb.Seaweed.VolumeMarkReadonly:input_type -> master_pb.VolumeMarkReadonlyRequest
-	46, // 55: master_pb.Seaweed.GetMasterConfiguration:input_type -> master_pb.GetMasterConfigurationRequest
-	48, // 56: master_pb.Seaweed.ListClusterNodes:input_type -> master_pb.ListClusterNodesRequest
-	50, // 57: master_pb.Seaweed.LeaseAdminToken:input_type -> master_pb.LeaseAdminTokenRequest
-	52, // 58: master_pb.Seaweed.ReleaseAdminToken:input_type -> master_pb.ReleaseAdminTokenRequest
-	54, // 59: master_pb.Seaweed.Ping:input_type -> master_pb.PingRequest
-	60, // 60: master_pb.Seaweed.RaftListClusterServers:input_type -> master_pb.RaftListClusterServersRequest
-	56, // 61: master_pb.Seaweed.RaftAddServer:input_type -> master_pb.RaftAddServerRequest
-	58, // 62: master_pb.Seaweed.RaftRemoveServer:input_type -> master_pb.RaftRemoveServerRequest
-	1,  // 63: master_pb.Seaweed.SendHeartbeat:output_type -> master_pb.HeartbeatResponse
-	11, // 64: master_pb.Seaweed.KeepConnected:output_type -> master_pb.KeepConnectedResponse
-	13, // 65: master_pb.Seaweed.LookupVolume:output_type -> master_pb.LookupVolumeResponse
-	16, // 66: master_pb.Seaweed.Assign:output_type -> master_pb.AssignResponse
-	16, // 67: master_pb.Seaweed.StreamAssign:output_type -> master_pb.AssignResponse
-	18, // 68: master_pb.Seaweed.Statistics:output_type -> master_pb.StatisticsResponse
-	21, // 69: master_pb.Seaweed.CollectionList:output_type -> master_pb.CollectionListResponse
-	23, // 70: master_pb.Seaweed.CollectionDelete:output_type -> master_pb.CollectionDeleteResponse
-	30, // 71: master_pb.Seaweed.VolumeList:output_type -> master_pb.VolumeListResponse
-	32, // 72: master_pb.Seaweed.EcCollectList:output_type -> master_pb.EcCollectResponse
-	30, // 73: master_pb.Seaweed.VolumeListWithoutECVolume:output_type -> master_pb.VolumeListResponse
-	37, // 74: master_pb.Seaweed.LookupEcVolume:output_type -> master_pb.LookupEcVolumeResponse
-	39, // 75: master_pb.Seaweed.VacuumVolume:output_type -> master_pb.VacuumVolumeResponse
-	41, // 76: master_pb.Seaweed.DisableVacuum:output_type -> master_pb.DisableVacuumResponse
-	43, // 77: master_pb.Seaweed.EnableVacuum:output_type -> master_pb.EnableVacuumResponse
-	45, // 78: master_pb.Seaweed.VolumeMarkReadonly:output_type -> master_pb.VolumeMarkReadonlyResponse
-	47, // 79: master_pb.Seaweed.GetMasterConfiguration:output_type -> master_pb.GetMasterConfigurationResponse
-	49, // 80: master_pb.Seaweed.ListClusterNodes:output_type -> master_pb.ListClusterNodesResponse
-	51, // 81: master_pb.Seaweed.LeaseAdminToken:output_type -> master_pb.LeaseAdminTokenResponse
-	53, // 82: master_pb.Seaweed.ReleaseAdminToken:output_type -> master_pb.ReleaseAdminTokenResponse
-	55, // 83: master_pb.Seaweed.Ping:output_type -> master_pb.PingResponse
-	61, // 84: master_pb.Seaweed.RaftListClusterServers:output_type -> master_pb.RaftListClusterServersResponse
-	57, // 85: master_pb.Seaweed.RaftAddServer:output_type -> master_pb.RaftAddServerResponse
-	59, // 86: master_pb.Seaweed.RaftRemoveServer:output_type -> master_pb.RaftRemoveServerResponse
-	63, // [63:87] is the sub-list for method output_type
-	39, // [39:63] is the sub-list for method input_type
+	40, // 52: master_pb.Seaweed.VacuumEcVolume:input_type -> master_pb.VacuumEcVolumeRequest
+	42, // 53: master_pb.Seaweed.DisableVacuum:input_type -> master_pb.DisableVacuumRequest
+	44, // 54: master_pb.Seaweed.EnableVacuum:input_type -> master_pb.EnableVacuumRequest
+	46, // 55: master_pb.Seaweed.VolumeMarkReadonly:input_type -> master_pb.VolumeMarkReadonlyRequest
+	48, // 56: master_pb.Seaweed.GetMasterConfiguration:input_type -> master_pb.GetMasterConfigurationRequest
+	50, // 57: master_pb.Seaweed.ListClusterNodes:input_type -> master_pb.ListClusterNodesRequest
+	52, // 58: master_pb.Seaweed.LeaseAdminToken:input_type -> master_pb.LeaseAdminTokenRequest
+	54, // 59: master_pb.Seaweed.ReleaseAdminToken:input_type -> master_pb.ReleaseAdminTokenRequest
+	56, // 60: master_pb.Seaweed.Ping:input_type -> master_pb.PingRequest
+	62, // 61: master_pb.Seaweed.RaftListClusterServers:input_type -> master_pb.RaftListClusterServersRequest
+	58, // 62: master_pb.Seaweed.RaftAddServer:input_type -> master_pb.RaftAddServerRequest
+	60, // 63: master_pb.Seaweed.RaftRemoveServer:input_type -> master_pb.RaftRemoveServerRequest
+	1,  // 64: master_pb.Seaweed.SendHeartbeat:output_type -> master_pb.HeartbeatResponse
+	11, // 65: master_pb.Seaweed.KeepConnected:output_type -> master_pb.KeepConnectedResponse
+	13, // 66: master_pb.Seaweed.LookupVolume:output_type -> master_pb.LookupVolumeResponse
+	16, // 67: master_pb.Seaweed.Assign:output_type -> master_pb.AssignResponse
+	16, // 68: master_pb.Seaweed.StreamAssign:output_type -> master_pb.AssignResponse
+	18, // 69: master_pb.Seaweed.Statistics:output_type -> master_pb.StatisticsResponse
+	21, // 70: master_pb.Seaweed.CollectionList:output_type -> master_pb.CollectionListResponse
+	23, // 71: master_pb.Seaweed.CollectionDelete:output_type -> master_pb.CollectionDeleteResponse
+	30, // 72: master_pb.Seaweed.VolumeList:output_type -> master_pb.VolumeListResponse
+	32, // 73: master_pb.Seaweed.EcCollectList:output_type -> master_pb.EcCollectResponse
+	30, // 74: master_pb.Seaweed.VolumeListWithoutECVolume:output_type -> master_pb.VolumeListResponse
+	37, // 75: master_pb.Seaweed.LookupEcVolume:output_type -> master_pb.LookupEcVolumeResponse
+	39, // 76: master_pb.Seaweed.VacuumVolume:output_type -> master_pb.VacuumVolumeResponse
+	41, // 77: master_pb.Seaweed.VacuumEcVolume:output_type -> master_pb.VacuumEcVolumeResponse
+	43, // 78: master_pb.Seaweed.DisableVacuum:output_type -> master_pb.DisableVacuumResponse
+	45, // 79: master_pb.Seaweed.EnableVacuum:output_type -> master_pb.EnableVacuumResponse
+	47, // 80: master_pb.Seaweed.VolumeMarkReadonly:output_type -> master_pb.VolumeMarkReadonlyResponse
+	49, // 81: master_pb.Seaweed.GetMasterConfiguration:output_type -> master_pb.GetMasterConfigurationResponse
+	51, // 82: master_pb.Seaweed.ListClusterNodes:output_type -> master_pb.ListClusterNodesResponse
+	53, // 83: master_pb.Seaweed.LeaseAdminToken:output_type -> master_pb.LeaseAdminTokenResponse
+	55, // 84: master_pb.Seaweed.ReleaseAdminToken:output_type -> master_pb.ReleaseAdminTokenResponse
+	57, // 85: master_pb.Seaweed.Ping:output_type -> master_pb.PingResponse
+	63, // 86: master_pb.Seaweed.RaftListClusterServers:output_type -> master_pb.RaftListClusterServersResponse
+	59, // 87: master_pb.Seaweed.RaftAddServer:output_type -> master_pb.RaftAddServerResponse
+	61, // 88: master_pb.Seaweed.RaftRemoveServer:output_type -> master_pb.RaftRemoveServerResponse
+	64, // [64:89] is the sub-list for method output_type
+	39, // [39:64] is the sub-list for method input_type
 	39, // [39:39] is the sub-list for extension type_name
 	39, // [39:39] is the sub-list for extension extendee
 	0,  // [0:39] is the sub-list for field type_name
@@ -5837,7 +5937,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[40].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*DisableVacuumRequest); i {
+			switch v := v.(*VacuumEcVolumeRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5849,7 +5949,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[41].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*DisableVacuumResponse); i {
+			switch v := v.(*VacuumEcVolumeResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5861,7 +5961,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[42].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*EnableVacuumRequest); i {
+			switch v := v.(*DisableVacuumRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5873,7 +5973,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[43].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*EnableVacuumResponse); i {
+			switch v := v.(*DisableVacuumResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5885,7 +5985,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[44].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*VolumeMarkReadonlyRequest); i {
+			switch v := v.(*EnableVacuumRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5897,7 +5997,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[45].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*VolumeMarkReadonlyResponse); i {
+			switch v := v.(*EnableVacuumResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5909,7 +6009,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[46].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*GetMasterConfigurationRequest); i {
+			switch v := v.(*VolumeMarkReadonlyRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5921,7 +6021,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[47].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*GetMasterConfigurationResponse); i {
+			switch v := v.(*VolumeMarkReadonlyResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5933,7 +6033,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[48].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ListClusterNodesRequest); i {
+			switch v := v.(*GetMasterConfigurationRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5945,7 +6045,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[49].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ListClusterNodesResponse); i {
+			switch v := v.(*GetMasterConfigurationResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5957,7 +6057,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[50].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*LeaseAdminTokenRequest); i {
+			switch v := v.(*ListClusterNodesRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5969,7 +6069,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[51].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*LeaseAdminTokenResponse); i {
+			switch v := v.(*ListClusterNodesResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5981,7 +6081,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[52].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ReleaseAdminTokenRequest); i {
+			switch v := v.(*LeaseAdminTokenRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -5993,7 +6093,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[53].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ReleaseAdminTokenResponse); i {
+			switch v := v.(*LeaseAdminTokenResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -6005,7 +6105,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[54].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*PingRequest); i {
+			switch v := v.(*ReleaseAdminTokenRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -6017,7 +6117,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[55].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*PingResponse); i {
+			switch v := v.(*ReleaseAdminTokenResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -6029,7 +6129,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[56].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RaftAddServerRequest); i {
+			switch v := v.(*PingRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -6041,7 +6141,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[57].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RaftAddServerResponse); i {
+			switch v := v.(*PingResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -6053,7 +6153,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[58].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RaftRemoveServerRequest); i {
+			switch v := v.(*RaftAddServerRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -6065,7 +6165,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[59].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RaftRemoveServerResponse); i {
+			switch v := v.(*RaftAddServerResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -6077,7 +6177,7 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[60].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RaftListClusterServersRequest); i {
+			switch v := v.(*RaftRemoveServerRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -6089,6 +6189,30 @@ func file_master_proto_init() {
 			}
 		}
 		file_master_proto_msgTypes[61].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*RaftRemoveServerResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_master_proto_msgTypes[62].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*RaftListClusterServersRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_master_proto_msgTypes[63].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*RaftListClusterServersResponse); i {
 			case 0:
 				return &v.state
@@ -6100,7 +6224,7 @@ func file_master_proto_init() {
 				return nil
 			}
 		}
-		file_master_proto_msgTypes[64].Exporter = func(v interface{}, i int) interface{} {
+		file_master_proto_msgTypes[66].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SuperBlockExtra_ErasureCoding); i {
 			case 0:
 				return &v.state
@@ -6112,7 +6236,7 @@ func file_master_proto_init() {
 				return nil
 			}
 		}
-		file_master_proto_msgTypes[65].Exporter = func(v interface{}, i int) interface{} {
+		file_master_proto_msgTypes[67].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*LookupVolumeResponse_VolumeIdLocation); i {
 			case 0:
 				return &v.state
@@ -6124,7 +6248,7 @@ func file_master_proto_init() {
 				return nil
 			}
 		}
-		file_master_proto_msgTypes[71].Exporter = func(v interface{}, i int) interface{} {
+		file_master_proto_msgTypes[73].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*LookupEcVolumeResponse_EcShardIdLocation); i {
 			case 0:
 				return &v.state
@@ -6136,7 +6260,7 @@ func file_master_proto_init() {
 				return nil
 			}
 		}
-		file_master_proto_msgTypes[72].Exporter = func(v interface{}, i int) interface{} {
+		file_master_proto_msgTypes[74].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ListClusterNodesResponse_ClusterNode); i {
 			case 0:
 				return &v.state
@@ -6148,7 +6272,7 @@ func file_master_proto_init() {
 				return nil
 			}
 		}
-		file_master_proto_msgTypes[73].Exporter = func(v interface{}, i int) interface{} {
+		file_master_proto_msgTypes[75].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*RaftListClusterServersResponse_ClusterServers); i {
 			case 0:
 				return &v.state
@@ -6167,7 +6291,7 @@ func file_master_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_master_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   74,
+			NumMessages:   76,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

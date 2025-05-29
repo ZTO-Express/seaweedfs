@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
@@ -96,6 +98,51 @@ func (cm *ChunkManifest) DeleteChunks(masterFn GetMasterFn, usePublicUrl bool, g
 			return fmt.Errorf("chunk delete %v: %v", result.FileId, result.Error)
 		}
 	}
+
+	// 删除成功后，异步触发EC卷的垃圾回收
+	go func() {
+		// 从fileIds中提取所有volumeId
+		volumeIdMap := make(map[uint32]bool)
+		for _, fileId := range fileIds {
+			vid, _, parseErr := ParseFileId(fileId)
+			if parseErr == nil {
+				if volumeId, convErr := strconv.ParseUint(vid, 10, 32); convErr == nil {
+					volumeIdMap[uint32(volumeId)] = true
+				}
+			}
+		}
+
+		// 并发调用master的vacuum方法处理每个volumeId
+		var wg sync.WaitGroup
+		semaphore := make(chan struct{}, 50) // 限制并发数量为50
+		for volumeId := range volumeIdMap {
+			wg.Add(1)
+			go func(vid uint32) {
+				defer wg.Done()
+				semaphore <- struct{}{}        // 获取信号量
+				defer func() { <-semaphore }() // 释放信号量
+				// 通过gRPC调用master的VacuumVolume方法
+				masterAddress := masterFn(context.Background())
+				if masterAddress == "" {
+					glog.V(0).Infof("无法获取master地址，跳过EC卷 %d 的垃圾回收", vid)
+					return
+				}
+				err := pb.WithMasterClient(false, masterAddress, grpcDialOption, false, func(client master_pb.SeaweedClient) error {
+					_, vacuumErr := client.VacuumEcVolume(context.Background(), &master_pb.VacuumEcVolumeRequest{
+						VolumeId: vid,
+					})
+					return vacuumErr
+				})
+				if err != nil {
+					glog.V(0).Infof("EC卷 %d 垃圾回收失败: %v", vid, err)
+				} else {
+					glog.V(1).Infof("EC卷 %d 垃圾回收已触发", vid)
+				}
+			}(volumeId)
+		}
+		wg.Wait()
+		glog.V(1).Infof("chunks文件删除后的EC卷垃圾回收处理完成，处理的卷数量: %d", len(volumeIdMap))
+	}()
 
 	glog.V(4).Infof("分块文件删除完成，总数量: %d，成功: %d，失败: %d，总耗时: %v",
 		len(fileIds), len(results)-errorCount, errorCount, time.Since(startTime))

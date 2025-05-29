@@ -33,6 +33,8 @@ service Seaweed {
   }
   rpc VacuumVolume (VacuumVolumeRequest) returns (VacuumVolumeResponse) {
   }
+  rpc VacuumEcVolume (VacuumEcVolumeRequest) returns (VacuumEcVolumeResponse) {
+  }
   rpc DisableVacuum (DisableVacuumRequest) returns (DisableVacuumResponse) {
   }
   rpc EnableVacuum (EnableVacuumRequest) returns (EnableVacuumResponse) {
@@ -347,6 +349,12 @@ message VacuumVolumeRequest {
   string collection = 3;
 }
 message VacuumVolumeResponse {
+}
+
+message VacuumEcVolumeRequest {
+  uint32 volume_id = 1;
+}
+message VacuumEcVolumeResponse {
 }
 
 message DisableVacuumRequest {
