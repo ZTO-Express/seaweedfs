@@ -138,8 +138,8 @@ func (t *Topology) checkEcVolumeNeedVacuum(grpcDialOption grpc.DialOption, vid n
 		}(dn.ServerAddress(), vid)
 	}
 
-	// 等待所有检查完成
-	waitTimeout := time.NewTimer(time.Minute)
+	// 等待所有检查完成,10分钟
+	waitTimeout := time.NewTimer(10 * time.Minute)
 	defer waitTimeout.Stop()
 
 	needVacuum := true

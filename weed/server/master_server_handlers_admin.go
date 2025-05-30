@@ -77,6 +77,31 @@ func (ms *MasterServer) volumeVacuumHandler(w http.ResponseWriter, r *http.Reque
 	ms.dirStatusHandler(w, r)
 }
 
+func (ms *MasterServer) volumeVacuumEcHandler(w http.ResponseWriter, r *http.Request) {
+	collection := r.FormValue("collection")
+	volumeIdString := r.FormValue("volumeId")
+
+	var volumeId uint32 = 0
+	if volumeIdString != "" {
+		parsedVolumeId, err := strconv.ParseUint(volumeIdString, 10, 32)
+		if err != nil {
+			glog.V(0).Infof("volumeId %s is not a valid number: %v", volumeIdString, err)
+			writeJsonError(w, r, http.StatusNotAcceptable, fmt.Errorf("volumeId %s is not a valid number", volumeIdString))
+			return
+		}
+		volumeId = uint32(parsedVolumeId)
+	}
+
+	glog.V(0).Infof("开始EC卷垃圾回收: collection=%s, volumeId=%d", collection, volumeId)
+	ms.Topo.VacuumEcVolumes(ms.grpcDialOption, collection, volumeId)
+
+	m := make(map[string]interface{})
+	m["message"] = "EC卷垃圾回收已触发"
+	m["collection"] = collection
+	m["volumeId"] = volumeId
+	writeJsonQuiet(w, r, http.StatusOK, m)
+}
+
 func (ms *MasterServer) volumeGrowHandler(w http.ResponseWriter, r *http.Request) {
 	count := 0
 	option, err := ms.getVolumeGrowOption(r)

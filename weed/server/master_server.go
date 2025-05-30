@@ -149,6 +149,7 @@ func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.Se
 		r.HandleFunc("/vol/grow", ms.proxyToLeader(ms.guard.WhiteList(ms.volumeGrowHandler)))
 		r.HandleFunc("/vol/status", ms.proxyToLeader(ms.guard.WhiteList(ms.volumeStatusHandler)))
 		r.HandleFunc("/vol/vacuum", ms.proxyToLeader(ms.guard.WhiteList(ms.volumeVacuumHandler)))
+		r.HandleFunc("/vol/vacuum_ec", ms.proxyToLeader(ms.guard.WhiteList(ms.volumeVacuumEcHandler)))
 		r.HandleFunc("/submit", ms.guard.WhiteList(ms.submitFromMasterServerHandler))
 		/*
 			r.HandleFunc("/stats/health", ms.guard.WhiteList(statsHealthHandler))
