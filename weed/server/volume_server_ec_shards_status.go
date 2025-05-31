@@ -63,6 +63,7 @@ func (vs *VolumeServer) VolumeEcShardsStatus(ctx context.Context, req *volume_se
 			if isDeleted {
 				glog.V(4).Infof("EC卷 %d 中的文件 %d 的分片 %d 已删除", vid, needleId, j)
 				fileIsDeleted = true
+				continue
 			} else {
 				glog.V(4).Infof("EC卷 %d 中的文件 %d 的分片 %d 未被删除", vid, needleId, j)
 				// 仿照store_ec.go中的逻辑，收集未删除文件的数据
