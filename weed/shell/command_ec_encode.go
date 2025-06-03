@@ -105,23 +105,25 @@ func (c *commandEcEncode) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 	}
 
 	// apply to all volumes in the collection
-	volumeIds, err := collectVolumeIdsForEcEncode(commandEnv, *collection, *fullPercentage, *quietPeriod)
+	collectionVidsMap, err := collectVolumeIdsForEcEncode(commandEnv, *collection, *fullPercentage, *quietPeriod)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("ec encode volumes: %v\n", volumeIds)
+	fmt.Printf("ec encode volumes by collection: %v\n", collectionVidsMap)
 	wg := sync.WaitGroup{}
 	ch := make(chan struct{}, *parallelExec)
-	for _, vid := range volumeIds {
-		ch <- struct{}{}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err = doEcEncode(commandEnv, *collection, vid, *parallelCopy, toDiskType); err != nil {
-				fmt.Errorf("ec encode volume %d error %v", vid, err)
-			}
-			<-ch
-		}()
+	for collectionName, volumeIds := range collectionVidsMap {
+		for _, vid := range volumeIds {
+			ch <- struct{}{}
+			wg.Add(1)
+			go func(coll string, volumeId needle.VolumeId) {
+				defer wg.Done()
+				if err = doEcEncode(commandEnv, coll, volumeId, *parallelCopy, toDiskType); err != nil {
+					fmt.Errorf("ec encode volume %d in collection %s error %v", volumeId, coll, err)
+				}
+				<-ch
+			}(collectionName, vid)
+		}
 	}
 	wg.Wait()
 
@@ -348,7 +350,7 @@ func balancedEcDistribution(servers []*EcNode) (allocated [][]uint32) {
 	return allocated
 }
 
-func collectVolumeIdsForEcEncode(commandEnv *CommandEnv, selectedCollection string, fullPercentage float64, quietPeriod time.Duration) (vids []needle.VolumeId, err error) {
+func collectVolumeIdsForEcEncode(commandEnv *CommandEnv, selectedCollection string, fullPercentage float64, quietPeriod time.Duration) (collectionVidsMap map[string][]needle.VolumeId, err error) {
 
 	// collect topology information
 	topologyInfo, volumeSizeLimitMb, err := collectTopologyInfo(commandEnv, 0)
@@ -361,7 +363,7 @@ func collectVolumeIdsForEcEncode(commandEnv *CommandEnv, selectedCollection stri
 
 	fmt.Printf("collect volumes quiet for: %d seconds and %.1f%% full\n", quietSeconds, fullPercentage)
 
-	vidMap := make(map[uint32]bool)
+	collectionVidsMap = make(map[string][]needle.VolumeId)
 	eachDataNode(topologyInfo, func(dc string, rack RackId, dn *master_pb.DataNodeInfo) {
 		for _, diskInfo := range dn.DiskInfos {
 			for _, v := range diskInfo.VolumeInfos {
@@ -373,18 +375,15 @@ func collectVolumeIdsForEcEncode(commandEnv *CommandEnv, selectedCollection stri
 					//fmt.Printf("volume:%d,diskType is [%s], cannot do ec, skip \n", v.Id, v.DiskType)
 					continue
 				}
-				if v.Collection == selectedCollection && v.ModifiedAtSecond+quietSeconds < nowUnixSeconds {
+				if (selectedCollection == "" || v.Collection == selectedCollection) && v.ModifiedAtSecond+quietSeconds < nowUnixSeconds {
 					if float64(v.Size) > fullPercentage/100*float64(volumeSizeLimitMb)*1024*1024 {
-						vidMap[v.Id] = true
+						collection := v.Collection
+						collectionVidsMap[collection] = append(collectionVidsMap[collection], needle.VolumeId(v.Id))
 					}
 				}
 			}
 		}
 	})
-
-	for vid := range vidMap {
-		vids = append(vids, needle.VolumeId(vid))
-	}
 
 	return
 }

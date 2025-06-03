@@ -81,14 +81,16 @@ func (c *commandVolumeTierUpload) Do(args []string, commandEnv *CommandEnv, writ
 
 	// apply to all volumes in the collection
 	// reusing collectVolumeIdsForEcEncode for now
-	volumeIds, err := collectVolumeIdsForEcEncode(commandEnv, *collection, *fullPercentage, *quietPeriod)
+	collectionVidsMap, err := collectVolumeIdsForEcEncode(commandEnv, *collection, *fullPercentage, *quietPeriod)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("tier upload volumes: %v\n", volumeIds)
-	for _, vid := range volumeIds {
-		if err = doVolumeTierUpload(commandEnv, writer, *collection, vid, *dest, *keepLocalDatFile); err != nil {
-			return err
+	fmt.Printf("tier upload volumes by collection: %v\n", collectionVidsMap)
+	for collectionName, volumeIds := range collectionVidsMap {
+		for _, vid := range volumeIds {
+			if err = doVolumeTierUpload(commandEnv, writer, collectionName, vid, *dest, *keepLocalDatFile); err != nil {
+				return err
+			}
 		}
 	}
 
