@@ -119,7 +119,7 @@ func (c *commandEcEncode) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 			go func(coll string, volumeId needle.VolumeId) {
 				defer wg.Done()
 				if err = doEcEncode(commandEnv, coll, volumeId, *parallelCopy, toDiskType); err != nil {
-					fmt.Errorf("ec encode volume %d in collection %s error %v", volumeId, coll, err)
+					glog.V(0).Infof("ec encode volume %d in collection %s error %v", volumeId, coll, err)
 				}
 				<-ch
 			}(collectionName, vid)
