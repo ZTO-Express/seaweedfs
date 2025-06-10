@@ -92,12 +92,19 @@ func (vg *VolumeGrowth) findVolumeCount(copyCount int) (count int) {
 }
 
 func (vg *VolumeGrowth) AutomaticGrowByType(option *VolumeGrowOption, grpcDialOption grpc.DialOption, topo *Topology, targetCount int) (result []*master_pb.VolumeLocation, err error) {
+	glog.V(1).Infof("AutomaticGrowByType: starting volume growth for option: %+v, targetCount: %d", option, targetCount)
 	if targetCount == 0 {
 		targetCount = vg.findVolumeCount(option.ReplicaPlacement.GetCopyCount())
+		glog.V(2).Infof("AutomaticGrowByType: calculated targetCount: %d based on replica count: %d", targetCount, option.ReplicaPlacement.GetCopyCount())
 	}
 	result, err = vg.GrowByCountAndType(grpcDialOption, targetCount, option, topo)
+	glog.V(1).Infof("AutomaticGrowByType: GrowByCountAndType completed, created: %d volumes, err: %v", len(result), err)
 	if len(result) > 0 && len(result)%option.ReplicaPlacement.GetCopyCount() == 0 {
+		glog.V(1).Infof("AutomaticGrowByType: volume growth successful, created %d volumes with proper replica count", len(result))
 		return result, nil
+	}
+	if len(result) > 0 {
+		glog.Warningf("AutomaticGrowByType: partial volume growth, created %d volumes but expected multiple of %d", len(result), option.ReplicaPlacement.GetCopyCount())
 	}
 	return result, err
 }

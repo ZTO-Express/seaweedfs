@@ -122,6 +122,15 @@ service VolumeServer {
 
     }
 
+    rpc GetAllNeedleIds (GetAllNeedleIdsRequest) returns (GetAllNeedleIdsResponse) {
+    }
+
+    rpc FastNeedleIdStatus (FastNeedleIdStatusRequest) returns (FastNeedleIdStatusResponse) {
+    }
+
+    rpc FastBatchDeleteEc (FastBatchDeleteEcRequest) returns (FastBatchDeleteEcResponse) {
+    }
+
 }
 
 //////////////////////////////////////////////////
@@ -134,6 +143,16 @@ message BatchDeleteRequest {
 message BatchDeleteResponse {
     repeated DeleteResult results = 1;
 }
+
+message FastBatchDeleteEcRequest {
+    repeated string file_ids = 1;
+    bool skip_cookie_check = 2;
+}
+
+message FastBatchDeleteEcResponse {
+    repeated DeleteResult results = 1;
+}
+
 message DeleteResult {
     string file_id = 1;
     int32 status = 2;
@@ -244,10 +263,28 @@ message EcVolumeDeleteResponse {
 
 message VolumeEcShardsStatusRequest {
     uint32 volume_id = 1;
+    uint64 needle_id = 2;
 }
 
 message VolumeEcShardsStatusResponse {
     bool is_all_needles_deleted = 1;
+}
+
+message GetAllNeedleIdsRequest {
+    uint32 volume_id = 1;
+}
+
+message GetAllNeedleIdsResponse {
+    map<uint64,Shards> needle_id_map = 1;
+}
+
+message FastNeedleIdStatusRequest {
+    uint32 volume_id = 1;
+    uint64 needle_id = 2;
+}
+
+message FastNeedleIdStatusResponse {
+    bool is_deleted = 1;
 }
 
 message VolumeMarkReadonlyRequest {

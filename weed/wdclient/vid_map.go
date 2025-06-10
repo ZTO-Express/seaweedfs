@@ -170,7 +170,7 @@ func (vc *vidMap) addLocation(vid uint32, location Location) {
 	vc.Lock()
 	defer vc.Unlock()
 
-	glog.V(4).Infof("+ volume id %d: %+v", vid, location)
+	glog.V(3).Infof("+ volume id %d: %+v", vid, location)
 
 	locations, found := vc.vid2Locations[vid]
 	if !found {

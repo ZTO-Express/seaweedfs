@@ -180,13 +180,13 @@ func DeleteFilesAtOneVolumeServer(volumeServer pb.ServerAddress, grpcDialOption 
 	err = WithVolumeServerClient(false, volumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
 		glog.V(4).Infof("DeleteFilesAtOneVolumeServer: 已连接到服务器 %s，准备发送删除请求，连接耗时: %v", volumeServer, time.Since(startTime))
 
-		req := &volume_server_pb.BatchDeleteRequest{
+		req := &volume_server_pb.FastBatchDeleteEcRequest{
 			FileIds:         fileIds,
 			SkipCookieCheck: !includeCookie,
 		}
 
 		rpcStartTime := time.Now()
-		resp, err := volumeServerClient.BatchDelete(context.Background(), req)
+		resp, err := volumeServerClient.FastBatchDeleteEc(context.Background(), req)
 		rpcTime := time.Since(rpcStartTime)
 
 		// fmt.Printf("deleted %v %v: %v\n", fileIds, err, resp)

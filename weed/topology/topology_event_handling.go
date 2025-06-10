@@ -45,6 +45,19 @@ func (t *Topology) StartRefreshWritableVolumes(grpcDialOption grpc.DialOption, g
 			}
 		}
 	}()
+	//
+	go func() {
+		for {
+			if t.IsLeader() {
+				if !t.isDisableEcVacuum {
+					t.VacuumEcVolumes(grpcDialOption, "", 0)
+				}
+			} else {
+				stats.MasterReplicaPlacementMismatch.Reset()
+			}
+			time.Sleep(14*time.Minute + time.Duration(120*rand.Float32())*time.Second)
+		}
+	}()
 }
 func (t *Topology) SetVolumeCapacityFull(volumeInfo storage.VolumeInfo) bool {
 	diskType := types.ToDiskType(volumeInfo.DiskType)

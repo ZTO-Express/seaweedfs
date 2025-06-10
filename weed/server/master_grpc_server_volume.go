@@ -53,23 +53,31 @@ func (ms *MasterServer) ProcessGrowRequest() {
 				filter.Store(req, nil)
 				// we have lock called inside vg
 				go func() {
-					glog.V(1).Infoln("starting automatic volume grow")
+					glog.V(1).Infof("ProcessGrowRequest: starting automatic volume grow for option: %+v, count: %d", req.Option, req.Count)
 					start := time.Now()
 					newVidLocations, err := ms.vg.AutomaticGrowByType(req.Option, ms.grpcDialOption, ms.Topo, req.Count)
-					glog.V(1).Infoln("finished automatic volume grow, cost ", time.Now().Sub(start))
+					elapsed := time.Now().Sub(start)
+					glog.V(1).Infof("ProcessGrowRequest: finished automatic volume grow, cost: %v, created volumes: %d, err: %v", elapsed, len(newVidLocations), err)
 					vl.DoneGrowRequest()
 					if err == nil {
+						glog.V(1).Infof("ProcessGrowRequest: successfully created %d volumes, broadcasting to clients", len(newVidLocations))
 						for _, newVidLocation := range newVidLocations {
+							glog.V(2).Infof("ProcessGrowRequest: broadcasting new volume location: %+v", newVidLocation)
 							ms.broadcastToClients(&master_pb.KeepConnectedResponse{VolumeLocation: newVidLocation})
 						}
+						glog.V(1).Infof("ProcessGrowRequest: volume grow completed successfully")
 					} else {
-						glog.V(1).Infof("automatic volume grow failed: %+v", err)
+						glog.Errorf("ProcessGrowRequest: automatic volume grow failed for option %+v: %v", req.Option, err)
 					}
 					filter.Delete(req)
 				}()
 
 			} else {
-				glog.V(3).Infoln("discard volume grow request: ", req)
+				if found {
+					glog.V(3).Infof("ProcessGrowRequest: discarding duplicate volume grow request: %+v", req)
+				} else {
+					glog.V(3).Infof("ProcessGrowRequest: discarding volume grow request (should not grow): %+v", req)
+				}
 				time.Sleep(time.Millisecond * 211)
 				vl.DoneGrowRequest()
 			}

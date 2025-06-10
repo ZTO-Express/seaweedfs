@@ -82,19 +82,32 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 	)
 
 	for time.Now().Sub(startTime) < maxTimeout {
+		glog.V(2).Infof("Assign: attempting to pick volume for write, elapsed: %v, option: %+v", time.Now().Sub(startTime), option)
 		fid, count, dnList, shouldGrow, err := ms.Topo.PickForWrite(req.Count, option, vl)
+		glog.V(2).Infof("Assign: PickForWrite result - fid: %s, count: %d, shouldGrow: %v, err: %v", fid, count, shouldGrow, err)
+
 		if shouldGrow && !vl.HasGrowRequest() {
 			// if picked volume is almost full, trigger a volume-grow request
-			if ms.Topo.AvailableSpaceFor(option) <= 0 {
+			glog.V(1).Infof("Assign: volume needs to grow, checking available space for option: %+v", option)
+			availableSpace := ms.Topo.AvailableSpaceFor(option)
+			glog.V(1).Infof("Assign: available space: %d", availableSpace)
+
+			if availableSpace <= 0 {
+				glog.Errorf("Assign: No more writable volumes! No free volumes left for %s, available space: %d", option.String(), availableSpace)
 				return nil, fmt.Errorf("no free volumes left for " + option.String())
 			}
+
 			vl.AddGrowRequest()
-			ms.volumeGrowthRequestChan <- &topology.VolumeGrowRequest{
+			growRequest := &topology.VolumeGrowRequest{
 				Option: option,
 				Count:  int(req.WritableVolumeCount),
 			}
+			glog.V(1).Infof("Assign: sending volume grow request: %+v", growRequest)
+			ms.volumeGrowthRequestChan <- growRequest
+			glog.V(1).Infof("Assign: volume grow request sent successfully")
 		}
 		if err != nil {
+			glog.V(2).Infof("Assign: PickForWrite failed, will retry: %v", err)
 			// glog.Warningf("PickForWrite %+v: %v", req, err)
 			lastErr = err
 			time.Sleep(200 * time.Millisecond)
@@ -102,6 +115,7 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 		}
 		dn := dnList.Head()
 		if dn == nil {
+			glog.V(2).Infof("Assign: no data node available, will retry")
 			continue
 		}
 		var replicas []*master_pb.Location

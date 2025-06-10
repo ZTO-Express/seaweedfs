@@ -37,9 +37,10 @@ type Topology struct {
 
 	pulse int64
 
-	volumeSizeLimit  uint64
-	replicationAsMin bool
-	isDisableVacuum  bool
+	volumeSizeLimit   uint64
+	replicationAsMin  bool
+	isDisableVacuum   bool
+	isDisableEcVacuum bool
 
 	Sequence sequence.Sequencer
 
@@ -68,6 +69,7 @@ func NewTopology(id string, seq sequence.Sequencer, volumeSizeLimit uint64, puls
 	t.pulse = int64(pulse)
 	t.volumeSizeLimit = volumeSizeLimit
 	t.replicationAsMin = replicationAsMin
+	t.isDisableEcVacuum = true // 默认关闭EC卷回收
 
 	t.Sequence = seq
 
@@ -395,4 +397,14 @@ func (t *Topology) DisableVacuum() {
 func (t *Topology) EnableVacuum() {
 	glog.V(0).Infof("EnableVacuum")
 	t.isDisableVacuum = false
+}
+
+func (t *Topology) DisableEcVacuum() {
+	glog.V(0).Infof("DisableEcVacuum")
+	t.isDisableEcVacuum = true
+}
+
+func (t *Topology) EnableEcVacuum() {
+	glog.V(0).Infof("EnableEcVacuum")
+	t.isDisableEcVacuum = false
 }

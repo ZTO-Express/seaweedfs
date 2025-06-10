@@ -277,6 +277,18 @@ func (ev *EcVolume) LocateEcShardNeedle(needleId types.NeedleId, version needle.
 	return
 }
 
+func (ev *EcVolume) LocateEcShardNeedleByNeedleIdStatus(needleId types.NeedleId) (offset types.Offset, size types.Size, err error) {
+
+	// find the needle from ecx file
+	// 每次都关闭
+	offset, size, err = ev.FindNeedleFromEcxAndClose(needleId)
+	if err != nil {
+		return types.Offset{}, 0, fmt.Errorf("FindNeedleFromEcx: %v", err)
+	}
+	ev.lastReadAt = time.Now()
+	return
+}
+
 func (ev *EcVolume) LocateEcShardNeedleInterval(version needle.Version, offset int64, size types.Size) (intervals []Interval) {
 	shard := ev.Shards[0]
 	// calculate the locations in the ec shards
@@ -293,6 +305,22 @@ func (ev *EcVolume) FindNeedleFromEcx(needleId types.NeedleId) (offset types.Off
 	ev.ecxFileAccessLock.RLock()
 	defer ev.ecxFileAccessLock.RUnlock()
 
+	if err != nil {
+		return types.Offset{}, types.TombstoneFileSize, err
+	}
+
+	return SearchNeedleFromSortedIndex(ev.ecxFile, ev.ecxFileSize, needleId, nil)
+}
+
+func (ev *EcVolume) FindNeedleFromEcxAndClose(needleId types.NeedleId) (offset types.Offset, size types.Size, err error) {
+
+	// 如果文件已关闭，则先打开，这里涉及读锁 升级 写锁
+	err = ev.tryOpenEcxFile()
+
+	ev.ecxFileAccessLock.RLock()
+	defer ev.Close()
+	// 后声明RUnlock，会先执行
+	defer ev.ecxFileAccessLock.RUnlock()
 	if err != nil {
 		return types.Offset{}, types.TombstoneFileSize, err
 	}

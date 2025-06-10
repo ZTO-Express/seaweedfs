@@ -48,6 +48,14 @@ func (s *Store) DeleteEcShardNeedleSkipCookieCheck(ecVolume *erasure_coding.EcVo
 	return int64(count), nil
 }
 
+func (s *Store) FastDeleteEcShardNeedleSkipCookieCheck(ecVolume *erasure_coding.EcVolume, n *needle.Needle) (int64, error) {
+	// 不进行cookie校验
+	if err := s.doDeleteNeedleFromAtLeastOneRemoteEcShards(ecVolume, n.Id); err != nil {
+		return 0, err
+	}
+	return 0, nil
+}
+
 func (s *Store) doDeleteNeedleFromAtLeastOneRemoteEcShards(ecVolume *erasure_coding.EcVolume, needleId types.NeedleId) error {
 
 	_, _, intervals, err := ecVolume.LocateEcShardNeedle(needleId, ecVolume.Version)

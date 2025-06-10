@@ -65,6 +65,9 @@ const (
 	VolumeServer_VolumeNeedleStatus_FullMethodName          = "/volume_server_pb.VolumeServer/VolumeNeedleStatus"
 	VolumeServer_Ping_FullMethodName                        = "/volume_server_pb.VolumeServer/Ping"
 	VolumeServer_VolumeEcShardsMove_FullMethodName          = "/volume_server_pb.VolumeServer/VolumeEcShardsMove"
+	VolumeServer_GetAllNeedleIds_FullMethodName             = "/volume_server_pb.VolumeServer/GetAllNeedleIds"
+	VolumeServer_FastNeedleIdStatus_FullMethodName          = "/volume_server_pb.VolumeServer/FastNeedleIdStatus"
+	VolumeServer_FastBatchDeleteEc_FullMethodName           = "/volume_server_pb.VolumeServer/FastBatchDeleteEc"
 )
 
 // VolumeServerClient is the client API for VolumeServer service.
@@ -123,6 +126,9 @@ type VolumeServerClient interface {
 	VolumeNeedleStatus(ctx context.Context, in *VolumeNeedleStatusRequest, opts ...grpc.CallOption) (*VolumeNeedleStatusResponse, error)
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 	VolumeEcShardsMove(ctx context.Context, in *VolumeEcShardsMoveRequest, opts ...grpc.CallOption) (*VolumeEcShardsMoveResponse, error)
+	GetAllNeedleIds(ctx context.Context, in *GetAllNeedleIdsRequest, opts ...grpc.CallOption) (*GetAllNeedleIdsResponse, error)
+	FastNeedleIdStatus(ctx context.Context, in *FastNeedleIdStatusRequest, opts ...grpc.CallOption) (*FastNeedleIdStatusResponse, error)
+	FastBatchDeleteEc(ctx context.Context, in *FastBatchDeleteEcRequest, opts ...grpc.CallOption) (*FastBatchDeleteEcResponse, error)
 }
 
 type volumeServerClient struct {
@@ -777,6 +783,33 @@ func (c *volumeServerClient) VolumeEcShardsMove(ctx context.Context, in *VolumeE
 	return out, nil
 }
 
+func (c *volumeServerClient) GetAllNeedleIds(ctx context.Context, in *GetAllNeedleIdsRequest, opts ...grpc.CallOption) (*GetAllNeedleIdsResponse, error) {
+	out := new(GetAllNeedleIdsResponse)
+	err := c.cc.Invoke(ctx, VolumeServer_GetAllNeedleIds_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *volumeServerClient) FastNeedleIdStatus(ctx context.Context, in *FastNeedleIdStatusRequest, opts ...grpc.CallOption) (*FastNeedleIdStatusResponse, error) {
+	out := new(FastNeedleIdStatusResponse)
+	err := c.cc.Invoke(ctx, VolumeServer_FastNeedleIdStatus_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *volumeServerClient) FastBatchDeleteEc(ctx context.Context, in *FastBatchDeleteEcRequest, opts ...grpc.CallOption) (*FastBatchDeleteEcResponse, error) {
+	out := new(FastBatchDeleteEcResponse)
+	err := c.cc.Invoke(ctx, VolumeServer_FastBatchDeleteEc_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // VolumeServerServer is the server API for VolumeServer service.
 // All implementations must embed UnimplementedVolumeServerServer
 // for forward compatibility
@@ -833,6 +866,9 @@ type VolumeServerServer interface {
 	VolumeNeedleStatus(context.Context, *VolumeNeedleStatusRequest) (*VolumeNeedleStatusResponse, error)
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	VolumeEcShardsMove(context.Context, *VolumeEcShardsMoveRequest) (*VolumeEcShardsMoveResponse, error)
+	GetAllNeedleIds(context.Context, *GetAllNeedleIdsRequest) (*GetAllNeedleIdsResponse, error)
+	FastNeedleIdStatus(context.Context, *FastNeedleIdStatusRequest) (*FastNeedleIdStatusResponse, error)
+	FastBatchDeleteEc(context.Context, *FastBatchDeleteEcRequest) (*FastBatchDeleteEcResponse, error)
 	mustEmbedUnimplementedVolumeServerServer()
 }
 
@@ -977,6 +1013,15 @@ func (UnimplementedVolumeServerServer) Ping(context.Context, *PingRequest) (*Pin
 }
 func (UnimplementedVolumeServerServer) VolumeEcShardsMove(context.Context, *VolumeEcShardsMoveRequest) (*VolumeEcShardsMoveResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VolumeEcShardsMove not implemented")
+}
+func (UnimplementedVolumeServerServer) GetAllNeedleIds(context.Context, *GetAllNeedleIdsRequest) (*GetAllNeedleIdsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAllNeedleIds not implemented")
+}
+func (UnimplementedVolumeServerServer) FastNeedleIdStatus(context.Context, *FastNeedleIdStatusRequest) (*FastNeedleIdStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FastNeedleIdStatus not implemented")
+}
+func (UnimplementedVolumeServerServer) FastBatchDeleteEc(context.Context, *FastBatchDeleteEcRequest) (*FastBatchDeleteEcResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FastBatchDeleteEc not implemented")
 }
 func (UnimplementedVolumeServerServer) mustEmbedUnimplementedVolumeServerServer() {}
 
@@ -1849,6 +1894,60 @@ func _VolumeServer_VolumeEcShardsMove_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VolumeServer_GetAllNeedleIds_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAllNeedleIdsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumeServerServer).GetAllNeedleIds(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumeServer_GetAllNeedleIds_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumeServerServer).GetAllNeedleIds(ctx, req.(*GetAllNeedleIdsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VolumeServer_FastNeedleIdStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FastNeedleIdStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumeServerServer).FastNeedleIdStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumeServer_FastNeedleIdStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumeServerServer).FastNeedleIdStatus(ctx, req.(*FastNeedleIdStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VolumeServer_FastBatchDeleteEc_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FastBatchDeleteEcRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumeServerServer).FastBatchDeleteEc(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumeServer_FastBatchDeleteEc_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumeServerServer).FastBatchDeleteEc(ctx, req.(*FastBatchDeleteEcRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // VolumeServer_ServiceDesc is the grpc.ServiceDesc for VolumeServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1999,6 +2098,18 @@ var VolumeServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VolumeEcShardsMove",
 			Handler:    _VolumeServer_VolumeEcShardsMove_Handler,
+		},
+		{
+			MethodName: "GetAllNeedleIds",
+			Handler:    _VolumeServer_GetAllNeedleIds_Handler,
+		},
+		{
+			MethodName: "FastNeedleIdStatus",
+			Handler:    _VolumeServer_FastNeedleIdStatus_Handler,
+		},
+		{
+			MethodName: "FastBatchDeleteEc",
+			Handler:    _VolumeServer_FastBatchDeleteEc_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
