@@ -52,6 +52,7 @@ type MasterOption struct {
 	IsFollower              bool
 	Username                string
 	Password                string
+	DisableEcVacuum         bool
 }
 
 type MasterServer struct {
@@ -78,6 +79,15 @@ type MasterServer struct {
 	adminLocks *AdminLocks
 
 	Cluster *cluster.Cluster
+
+	// EC卷垃圾回收去重队列
+	vacuumEcQueue       map[uint32]bool
+	vacuumEcQueueLock   sync.Mutex
+	vacuumEcWorkerCount int
+	vacuumEcMaxWorkers  int
+	vacuumEcTaskChan    chan uint32
+	vacuumEcStopChan    chan struct{}
+	vacuumEcStarted     bool
 }
 
 func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.ServerAddress) *MasterServer {
@@ -122,6 +132,12 @@ func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.Se
 		MasterClient:            wdclient.NewMasterClient(grpcDialOption, "", cluster.MasterType, option.Master, "", "", *pb.NewServiceDiscoveryFromMap(peers)),
 		adminLocks:              NewAdminLocks(),
 		Cluster:                 cluster.NewCluster(),
+		vacuumEcQueue:           make(map[uint32]bool),
+		vacuumEcWorkerCount:     0,
+		vacuumEcMaxWorkers:      30, // 默认30个工作协程
+		vacuumEcTaskChan:        make(chan uint32, 100),
+		vacuumEcStopChan:        make(chan struct{}),
+		vacuumEcStarted:         false,
 	}
 	ms.boundedLeaderChan = make(chan int, 16)
 
@@ -132,6 +148,11 @@ func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.Se
 		glog.Fatalf("create sequencer failed.")
 	}
 	ms.Topo = topology.NewTopology("topo", seq, uint64(ms.option.VolumeSizeLimitMB)*1024*1024, 5, replicationAsMin)
+	if ms.option.DisableEcVacuum {
+		ms.Topo.DisableEcVacuum()
+	} else {
+		ms.Topo.EnableEcVacuum()
+	}
 	ms.vg = topology.NewDefaultVolumeGrowth()
 	glog.V(0).Infoln("Volume Size Limit is", ms.option.VolumeSizeLimitMB, "MB")
 

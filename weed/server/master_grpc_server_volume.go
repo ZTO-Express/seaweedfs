@@ -246,8 +246,8 @@ func (ms *MasterServer) VacuumEcVolume(ctx context.Context, req *master_pb.Vacuu
 
 	resp := &master_pb.VacuumEcVolumeResponse{}
 
-	// 调用专门的EC卷垃圾回收方法
-	ms.Topo.VacuumEcVolumes(ms.grpcDialOption, "", req.VolumeId)
+	// 使用去重队列机制
+	ms.addToVacuumEcQueue(req.VolumeId)
 
 	return resp, nil
 }
@@ -257,6 +257,91 @@ func (ms *MasterServer) DisableVacuum(ctx context.Context, req *master_pb.Disabl
 	ms.Topo.DisableVacuum()
 	resp := &master_pb.DisableVacuumResponse{}
 	return resp, nil
+}
+
+// addToVacuumEcQueue 添加卷ID到去重队列，并确保协程池正在运行
+func (ms *MasterServer) addToVacuumEcQueue(volumeId uint32) {
+	ms.vacuumEcQueueLock.Lock()
+	defer ms.vacuumEcQueueLock.Unlock()
+
+	// 检查是否已经在队列中
+	if _, exists := ms.vacuumEcQueue[volumeId]; exists {
+		return // 已存在，无需重复添加
+	}
+
+	// 添加到队列中
+	ms.vacuumEcQueue[volumeId] = true
+
+	// 启动协程池（如果还没启动）
+	if !ms.vacuumEcStarted {
+		ms.vacuumEcStarted = true
+		ms.startVacuumEcWorkerPool()
+	}
+
+	// 发送任务到通道
+	select {
+	case ms.vacuumEcTaskChan <- volumeId:
+		// 任务已发送
+	default:
+		// 通道满了，任务会在队列中等待
+	}
+}
+
+// startVacuumEcWorkerPool 启动EC卷垃圾回收协程池
+func (ms *MasterServer) startVacuumEcWorkerPool() {
+	for i := 0; i < ms.vacuumEcMaxWorkers; i++ {
+		go ms.vacuumEcWorker()
+	}
+}
+
+// vacuumEcWorker EC卷垃圾回收工作协程
+func (ms *MasterServer) vacuumEcWorker() {
+	ms.vacuumEcQueueLock.Lock()
+	ms.vacuumEcWorkerCount++
+	ms.vacuumEcQueueLock.Unlock()
+
+	defer func() {
+		ms.vacuumEcQueueLock.Lock()
+		ms.vacuumEcWorkerCount--
+		if ms.vacuumEcWorkerCount == 0 {
+			ms.vacuumEcStarted = false
+		}
+		ms.vacuumEcQueueLock.Unlock()
+	}()
+
+	for {
+		select {
+		case volumeId := <-ms.vacuumEcTaskChan:
+			// 从队列中移除该卷ID
+			ms.vacuumEcQueueLock.Lock()
+			delete(ms.vacuumEcQueue, volumeId)
+			ms.vacuumEcQueueLock.Unlock()
+
+			// 执行垃圾回收
+			ms.Topo.VacuumEcVolumes(ms.grpcDialOption, "", volumeId)
+
+		case <-ms.vacuumEcStopChan:
+			return
+		}
+	}
+}
+
+// SetVacuumEcMaxWorkers 设置EC卷垃圾回收最大工作协程数
+func (ms *MasterServer) SetVacuumEcMaxWorkers(maxWorkers int) {
+	ms.vacuumEcQueueLock.Lock()
+	defer ms.vacuumEcQueueLock.Unlock()
+	ms.vacuumEcMaxWorkers = maxWorkers
+}
+
+// StopVacuumEcWorkers 停止所有EC卷垃圾回收工作协程
+func (ms *MasterServer) StopVacuumEcWorkers() {
+	ms.vacuumEcQueueLock.Lock()
+	defer ms.vacuumEcQueueLock.Unlock()
+
+	if ms.vacuumEcStarted {
+		close(ms.vacuumEcStopChan)
+		ms.vacuumEcStarted = false
+	}
 }
 
 func (ms *MasterServer) EnableVacuum(ctx context.Context, req *master_pb.EnableVacuumRequest) (*master_pb.EnableVacuumResponse, error) {

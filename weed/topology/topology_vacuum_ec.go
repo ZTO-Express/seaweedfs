@@ -2,6 +2,7 @@ package topology
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -29,21 +30,11 @@ func (t *Topology) VacuumEcVolumes(grpcDialOption grpc.DialOption, collection st
 
 	// 处理所有EC卷 - 使用无锁设计，复制ecShardMap后处理
 	// 短暂加锁复制ecShardMap
-	// todo 暂时使用深copy来处理
+	// 无并发问题 因为当ecLocations需要更新时都是创建新的 EcShardLocations 对象并原子性地替换整个 map 条目
 	t.ecShardMapLock.RLock()
 	ecShardMapCopy := make(map[needle.VolumeId]*EcShardLocations, len(t.ecShardMap))
 	for vid, ecLocations := range t.ecShardMap {
-		// 深拷贝EcShardLocations
-		locationsCopy := &EcShardLocations{
-			Collection: ecLocations.Collection,
-			Locations:  ecLocations.Locations, // 这里也需要深拷贝数组
-		}
-		// 深拷贝Locations数组
-		for i := range ecLocations.Locations {
-			locationsCopy.Locations[i] = make([]*DataNode, len(ecLocations.Locations[i]))
-			copy(locationsCopy.Locations[i], ecLocations.Locations[i])
-		}
-		ecShardMapCopy[vid] = locationsCopy
+		ecShardMapCopy[vid] = ecLocations
 	}
 	t.ecShardMapLock.RUnlock()
 	// 在无锁状态下处理复制的数据
@@ -127,56 +118,112 @@ func (t *Topology) checkEcVolumeNeedVacuum(grpcDialOption grpc.DialOption, vid n
 		return false
 	}
 
-	// 检查每个文件的删除状态
+	// 检查每个文件的删除状态 - 使用并发检查提高性能，支持提前退出
+	type needleCheckResult struct {
+		needleId    uint64
+		fileDeleted bool
+		err         error
+	}
+
+	resultChan := make(chan needleCheckResult, len(allNeedleIdMap))
+	doneChan := make(chan struct{}) // 用于提前退出信号
+	var wg sync.WaitGroup
+
+	// 控制并发数，避免创建过多goroutine
+	maxConcurrency := 50
+	semaphore := make(chan struct{}, maxConcurrency)
+
+	// 并发检查每个needle的删除状态
 	for needleId, shards := range allNeedleIdMap {
-		fileDeleted := false
-		// 先遍历所有shardIds去重并获取所有节点
-		var dataNodes []*DataNode
-		for _, shardId := range shards.ShardIds {
-			shardNodes := ecLocations.Locations[shardId]
-			for _, dn := range shardNodes {
-				// 检查数据节点是否已经在列表中
-				found := false
-				for _, existingDn := range dataNodes {
-					if existingDn.Id() == dn.Id() {
-						found = true
-						break
+		wg.Add(1)
+		go func(nid uint64, sds *volume_server_pb.Shards) {
+			defer wg.Done()
+
+			// 获取信号量，控制并发数
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			fileDeleted := false
+			// 先遍历所有shardIds去重并获取所有节点
+			var dataNodes []*DataNode
+			for _, shardId := range sds.ShardIds {
+				shardNodes := ecLocations.Locations[shardId]
+				for _, dn := range shardNodes {
+					// 检查数据节点是否已经在列表中
+					found := false
+					for _, existingDn := range dataNodes {
+						if existingDn.Id() == dn.Id() {
+							found = true
+							break
+						}
+					}
+					if !found {
+						dataNodes = append(dataNodes, dn)
 					}
 				}
-				if !found {
-					dataNodes = append(dataNodes, dn)
-				}
 			}
-		}
-		// 循环调用所有节点的FastNeedleIdStatus
-		for _, dn := range dataNodes {
-			err := operation.WithVolumeServerClient(false, dn.ServerAddress(), grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
-				resp, err := volumeServerClient.FastNeedleIdStatus(context.Background(), &volume_server_pb.FastNeedleIdStatusRequest{
-					VolumeId: uint32(vid),
-					NeedleId: needleId,
+
+			// 循环调用所有节点的FastNeedleIdStatus
+			for _, dn := range dataNodes {
+				// 检查是否收到提前退出信号
+				select {
+				case <-doneChan:
+					return // 提前退出
+				default:
+				}
+
+				err := operation.WithVolumeServerClient(false, dn.ServerAddress(), grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
+					resp, err := volumeServerClient.FastNeedleIdStatus(context.Background(), &volume_server_pb.FastNeedleIdStatusRequest{
+						VolumeId: uint32(vid),
+						NeedleId: nid,
+					})
+					if err != nil {
+						glog.V(0).Infof("Failed to check needle %d status for EC volume:%d on %s: %v", nid, vid, dn.ServerAddress(), err)
+						return err
+					}
+					if resp.IsDeleted {
+						glog.V(3).Infof("Needle %d in EC volume:%d is deleted on %s", nid, vid, dn.ServerAddress())
+						fileDeleted = true
+					}
+					return nil
 				})
 				if err != nil {
-					glog.V(0).Infof("Failed to check needle %d status for EC volume:%d on %s: %v", needleId, vid, dn.ServerAddress(), err)
-					return err
+					glog.V(0).Infof("Failed to check needle %d status for EC volume:%d on %s: %v", nid, vid, dn.ServerAddress(), err)
+					select {
+					case resultChan <- needleCheckResult{needleId: nid, fileDeleted: false, err: err}:
+					case <-doneChan:
+					}
+					return
 				}
-				if resp.IsDeleted {
-					glog.V(3).Infof("Needle %d in EC volume:%d is deleted on %s", needleId, vid, dn.ServerAddress())
-					fileDeleted = true
+				// 如果有一个节点返回被删除，则认为文件被删除
+				if fileDeleted {
+					break
 				}
-				return nil
-			})
-			if err != nil {
-				glog.V(0).Infof("Failed to check needle %d status for EC volume:%d on %s: %v", needleId, vid, dn.ServerAddress(), err)
-				continue
 			}
-			// 如果有一个节点返回被删除，则认为文件被删除
-			if fileDeleted {
-				break
+
+			select {
+			case resultChan <- needleCheckResult{needleId: nid, fileDeleted: fileDeleted, err: nil}:
+			case <-doneChan:
 			}
+		}(needleId, shards)
+	}
+
+	// 等待所有goroutine完成
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// 收集结果并检查是否有未删除的文件
+	for result := range resultChan {
+		if result.err != nil {
+			glog.V(0).Infof("Error checking needle %d for EC volume:%d: %v", result.needleId, vid, result.err)
+			continue
 		}
-		// 如果文件未被删除，则不需要垃圾回收
-		if !fileDeleted {
-			glog.V(3).Infof("Needle %d in EC volume:%d is not deleted, cannot vacuum", needleId, vid)
+		// 如果文件未被删除，则立即停止其他检查并返回false
+		if !result.fileDeleted {
+			glog.V(3).Infof("Needle %d in EC volume:%d is not deleted, cannot vacuum", result.needleId, vid)
+			close(doneChan) // 发送提前退出信号
 			return false
 		}
 	}

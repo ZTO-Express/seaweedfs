@@ -60,6 +60,7 @@ type MasterOptions struct {
 	raftBootstrap      *bool
 	username           *string
 	password           *string
+	disableEcVacuum    *bool
 }
 
 func init() {
@@ -88,6 +89,7 @@ func init() {
 	m.raftBootstrap = cmdMaster.Flag.Bool("raftBootstrap", false, "Whether to bootstrap the Raft cluster")
 	m.username = cmdMaster.Flag.String("username", "", "username for authentication")
 	m.password = cmdMaster.Flag.String("password", "", "password for authentication")
+	m.disableEcVacuum = cmdMaster.Flag.Bool("disableEcVacuum", true, "disable EC volume vacuum and reclaim spaces")
 }
 
 var cmdMaster = &Command{
@@ -329,5 +331,6 @@ func (m *MasterOptions) toMasterOption(whiteList []string) *weed_server.MasterOp
 		MetricsIntervalSec:      *m.metricsIntervalSec,
 		Username:                *m.username,
 		Password:                *m.password,
+		DisableEcVacuum:         *m.disableEcVacuum,
 	}
 }

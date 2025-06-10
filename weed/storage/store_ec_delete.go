@@ -49,11 +49,15 @@ func (s *Store) DeleteEcShardNeedleSkipCookieCheck(ecVolume *erasure_coding.EcVo
 }
 
 func (s *Store) FastDeleteEcShardNeedleSkipCookieCheck(ecVolume *erasure_coding.EcVolume, n *needle.Needle) (int64, error) {
+	// 缓存ShardIdLocations
+	if err := s.CachedLookupEcShardLocations(ecVolume); err != nil {
+		return 0, fmt.Errorf("failed to locate shard via master grpc %s: %v", s.MasterAddress, err)
+	}
 	// 不进行cookie校验
 	if err := s.doDeleteNeedleFromAtLeastOneRemoteEcShards(ecVolume, n.Id); err != nil {
 		return 0, err
 	}
-	return 0, nil
+	return 1, nil
 }
 
 func (s *Store) doDeleteNeedleFromAtLeastOneRemoteEcShards(ecVolume *erasure_coding.EcVolume, needleId types.NeedleId) error {

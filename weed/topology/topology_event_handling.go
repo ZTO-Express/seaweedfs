@@ -45,7 +45,7 @@ func (t *Topology) StartRefreshWritableVolumes(grpcDialOption grpc.DialOption, g
 			}
 		}
 	}()
-	//
+	// 被删除的ecVolumes回收
 	go func() {
 		for {
 			if t.IsLeader() {

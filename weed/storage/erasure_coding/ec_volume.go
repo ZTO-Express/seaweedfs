@@ -196,9 +196,15 @@ func (ev *EcVolume) Destroy(soft bool) []ShardId {
 		}
 		return shards
 	}
-	os.Remove(ev.FileName(".ecx"))
-	os.Remove(ev.FileName(".ecj"))
-	os.Remove(ev.FileName(".vif"))
+	if err = os.Remove(ev.FileName(".ecx")); err != nil {
+		glog.Errorf("failed to remove ec volume %s_%d ecx file %s: %v", ev.Collection, ev.VolumeId, ev.FileName(".ecx"), err)
+	}
+	if err = os.Remove(ev.FileName(".ecj")); err != nil {
+		glog.Errorf("failed to remove ec volume %s_%d ecj file %s: %v", ev.Collection, ev.VolumeId, ev.FileName(".ecj"), err)
+	}
+	if err = os.Remove(ev.FileName(".vif")); err != nil {
+		glog.Errorf("failed to remove ec volume %s_%d vif file %s: %v", ev.Collection, ev.VolumeId, ev.FileName(".vif"), err)
+	}
 	return shards
 }
 
@@ -313,11 +319,9 @@ func (ev *EcVolume) FindNeedleFromEcx(needleId types.NeedleId) (offset types.Off
 }
 
 func (ev *EcVolume) FindNeedleFromEcxAndClose(needleId types.NeedleId) (offset types.Offset, size types.Size, err error) {
-
-	// 如果文件已关闭，则先打开，这里涉及读锁 升级 写锁
-	err = ev.tryOpenEcxFile()
-
 	ev.ecxFileAccessLock.RLock()
+	// 如果文件已关闭，则先打开，这里涉及读锁 升级 写锁
+	err = ev.tryOpenEcxFileAndClose()
 	defer ev.Close()
 	// 后声明RUnlock，会先执行
 	defer ev.ecxFileAccessLock.RUnlock()
@@ -343,6 +347,24 @@ func (ev *EcVolume) tryOpenEcxFile() (err error) {
 	}
 
 	return nil
+
+}
+
+func (ev *EcVolume) tryOpenEcxFileAndClose() (err error) {
+	//if ev.ecxFile == nil {
+	//ev.ecxFileAccessLock.Lock()
+	//defer ev.ecxFileAccessLock.Unlock()
+	if ev.ecxFile == nil {
+		indexBaseFileName := EcShardFileName(ev.Collection, ev.dirIdx, int(ev.VolumeId))
+		if ev.ecxFile, err = os.OpenFile(indexBaseFileName+".ecx", os.O_RDWR, 0644); err != nil {
+			return fmt.Errorf("cannot open ec volume index %s.ecx: %v", indexBaseFileName, err)
+		}
+		ev.lastReadAt = time.Now()
+	}
+	return nil
+	//}
+
+	//return nil
 
 }
 
