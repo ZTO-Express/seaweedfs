@@ -130,18 +130,26 @@ func (t *Topology) checkEcVolumeNeedVacuum(grpcDialOption grpc.DialOption, vid n
 	// 检查每个文件的删除状态
 	for needleId, shards := range allNeedleIdMap {
 		fileDeleted := false
-		// 根据shards中的shard对应的节点进行检查
+		// 先遍历所有shardIds去重并获取所有节点
+		var dataNodes []*DataNode
 		for _, shardId := range shards.ShardIds {
-			// 获取该shard对应的节点
-			if int(shardId) >= len(ecLocations.Locations) {
-				continue
-			}
 			shardNodes := ecLocations.Locations[shardId]
-			if len(shardNodes) == 0 {
-				continue
+			for _, dn := range shardNodes {
+				// 检查数据节点是否已经在列表中
+				found := false
+				for _, existingDn := range dataNodes {
+					if existingDn.Id() == dn.Id() {
+						found = true
+						break
+					}
+				}
+				if !found {
+					dataNodes = append(dataNodes, dn)
+				}
 			}
-			// 检查该shard的第一个节点
-			dn := shardNodes[0]
+		}
+		// 循环调用所有节点的FastNeedleIdStatus
+		for _, dn := range dataNodes {
 			err := operation.WithVolumeServerClient(false, dn.ServerAddress(), grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
 				resp, err := volumeServerClient.FastNeedleIdStatus(context.Background(), &volume_server_pb.FastNeedleIdStatusRequest{
 					VolumeId: uint32(vid),
