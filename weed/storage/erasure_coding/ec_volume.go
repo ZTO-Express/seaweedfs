@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/exp/slices"
@@ -45,6 +46,7 @@ type EcVolume struct {
 	lastReadAt                time.Time
 	expireTime                int64
 	DestroyTime               uint64 //ec volume删除时间
+	ecxFileRefCount           int64  // 原子计数器，记录ecx文件的引用次数
 }
 
 func NewEcVolume(diskType types.DiskType, dir string, dirIdx string, collection string, vid needle.VolumeId, ecVolumeExpireClose int64) (ev *EcVolume, err error) {
@@ -147,6 +149,23 @@ func (ev *EcVolume) Close() {
 		_ = ev.ecxFile.Close()
 		ev.ecxFile = nil
 		ev.ecxFileAccessLock.Unlock()
+	}
+}
+
+func (ev *EcVolume) CloseAndNotEcxLock() {
+	for _, s := range ev.Shards {
+		s.Close()
+	}
+	if ev.ecjFile != nil {
+		ev.ecjFileAccessLock.Lock()
+		_ = ev.ecjFile.Close()
+		ev.ecjFile = nil
+		ev.ecjFileAccessLock.Unlock()
+	}
+	if ev.ecxFile != nil {
+		_ = ev.ecxFile.Sync()
+		_ = ev.ecxFile.Close()
+		ev.ecxFile = nil
 	}
 }
 
@@ -286,8 +305,6 @@ func (ev *EcVolume) LocateEcShardNeedle(needleId types.NeedleId, version needle.
 func (ev *EcVolume) LocateEcShardNeedleByNeedleIdStatus(needleId types.NeedleId) (offset types.Offset, size types.Size, err error) {
 
 	// find the needle from ecx file
-	// 每次都关闭
-	// todo 去掉close，ec尝试回收时会频繁调用,如果close会导致部分删除有问题
 	offset, size, err = ev.FindNeedleFromEcx(needleId)
 	if err != nil {
 		return types.Offset{}, 0, fmt.Errorf("FindNeedleFromEcxAndClose: %v", err)
@@ -308,6 +325,7 @@ func (ev *EcVolume) FindNeedleFromEcx(needleId types.NeedleId) (offset types.Off
 
 	// 如果文件已关闭，则先打开，这里涉及读锁 升级 写锁
 	err = ev.tryOpenEcxFile()
+	defer ev.releaseEcxFileRef() // 使用完毕后减少引用计数
 
 	ev.ecxFileAccessLock.RLock()
 	defer ev.ecxFileAccessLock.RUnlock()
@@ -334,21 +352,31 @@ func (ev *EcVolume) FindNeedleFromEcxAndClose(needleId types.NeedleId) (offset t
 }
 
 func (ev *EcVolume) tryOpenEcxFile() (err error) {
+	ev.ecxFileAccessLock.Lock()
+	defer ev.ecxFileAccessLock.Unlock()
+	// 增加引用计数
+	atomic.AddInt64(&ev.ecxFileRefCount, 1)
 	if ev.ecxFile == nil {
-		ev.ecxFileAccessLock.Lock()
-		defer ev.ecxFileAccessLock.Unlock()
-		if ev.ecxFile == nil {
-			indexBaseFileName := EcShardFileName(ev.Collection, ev.dirIdx, int(ev.VolumeId))
-			if ev.ecxFile, err = os.OpenFile(indexBaseFileName+".ecx", os.O_RDWR, 0644); err != nil {
-				return fmt.Errorf("cannot open ec volume index %s.ecx: %v", indexBaseFileName, err)
-			}
+		indexBaseFileName := EcShardFileName(ev.Collection, ev.dirIdx, int(ev.VolumeId))
+		if ev.ecxFile, err = os.OpenFile(indexBaseFileName+".ecx", os.O_RDWR, 0644); err != nil {
+			// 打开失败时减少引用计数
+			atomic.AddInt64(&ev.ecxFileRefCount, -1)
+			return fmt.Errorf("cannot open ec volume index %s.ecx: %v", indexBaseFileName, err)
 		}
-		ev.lastReadAt = time.Now()
-		return nil
 	}
-
+	ev.lastReadAt = time.Now()
 	return nil
+}
 
+// releaseEcxFileRef 减少ecx文件引用计数，当计数为0时关闭文件
+func (ev *EcVolume) releaseEcxFileRef() {
+	ev.ecxFileAccessLock.Lock()
+	defer ev.ecxFileAccessLock.Unlock()
+	refCount := atomic.AddInt64(&ev.ecxFileRefCount, -1)
+	if refCount == 0 {
+		// 当引用计数为0时，关闭ecx文件
+		ev.CloseAndNotEcxLock()
+	}
 }
 
 func (ev *EcVolume) tryOpenEcxFileAndClose() (err error) {
@@ -412,6 +440,7 @@ func (ev *EcVolume) IsTimeToDestroy() bool {
 func (ev *EcVolume) GetAllNeedleIds() ([]types.NeedleId, error) {
 	// 如果文件已关闭，则先打开
 	err := ev.tryOpenEcxFile()
+	defer ev.releaseEcxFileRef() // 使用完毕后减少引用计数
 	if err != nil {
 		return nil, fmt.Errorf("failed to open ecx file: %v", err)
 	}
@@ -441,6 +470,7 @@ func (ev *EcVolume) GetAllNeedleIds() ([]types.NeedleId, error) {
 func (ev *EcVolume) IsAllNeedlesDeleted() (bool, error) {
 	// 如果文件已关闭，则先打开
 	err := ev.tryOpenEcxFile()
+	defer ev.releaseEcxFileRef() // 使用完毕后减少引用计数
 	if err != nil {
 		return false, fmt.Errorf("failed to open ecx file: %v", err)
 	}

@@ -27,6 +27,7 @@ var (
 func (ev *EcVolume) markNeedleDelete(needleId types.NeedleId) (err error) {
 	// 如果文件已关闭，则先打开，这里涉及读锁 升级 写锁
 	err = ev.tryOpenEcxFile()
+	defer ev.releaseEcxFileRef() // 使用完毕后减少引用计数
 
 	ev.ecxFileAccessLock.RLock()
 	defer ev.ecxFileAccessLock.RUnlock()

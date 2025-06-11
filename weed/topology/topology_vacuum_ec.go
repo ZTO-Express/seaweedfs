@@ -85,7 +85,7 @@ func (t *Topology) vacuumOneEcVolumeId(grpcDialOption grpc.DialOption, ecLocatio
 
 // 检查EC卷是否需要垃圾回收
 func (t *Topology) checkEcVolumeNeedVacuum(grpcDialOption grpc.DialOption, vid needle.VolumeId, ecLocations *EcShardLocations) bool {
-	// 分别从三个节点获取所有needleIds
+	// 从所有节点获取所有needleIds,如果有一个返回则完成
 	var allNeedleIdMap map[uint64]*volume_server_pb.Shards
 	for _, dataNodes := range ecLocations.Locations {
 		// 检查该shard的第一个节点
