@@ -50,7 +50,14 @@ type EcVolume struct {
 }
 
 func NewEcVolume(diskType types.DiskType, dir string, dirIdx string, collection string, vid needle.VolumeId, ecVolumeExpireClose int64) (ev *EcVolume, err error) {
-	ev = &EcVolume{dir: dir, dirIdx: dirIdx, Collection: collection, VolumeId: vid, diskType: diskType}
+	ev = &EcVolume{
+		dir:             dir,
+		dirIdx:          dirIdx,
+		Collection:      collection,
+		VolumeId:        vid,
+		diskType:        diskType,
+		ecxFileRefCount: 0, // 显式初始化引用计数为0
+	}
 
 	dataBaseFileName := EcShardFileName(collection, dir, int(vid))
 	indexBaseFileName := EcShardFileName(collection, dirIdx, int(vid))
@@ -373,8 +380,8 @@ func (ev *EcVolume) releaseEcxFileRef() {
 	ev.ecxFileAccessLock.Lock()
 	defer ev.ecxFileAccessLock.Unlock()
 	refCount := atomic.AddInt64(&ev.ecxFileRefCount, -1)
-	if refCount == 0 {
-		// 当引用计数为0时，关闭ecx文件
+	// 防止引用计数小于0的情况
+	if refCount <= 0 {
 		ev.CloseAndNotEcxLock()
 	}
 }
