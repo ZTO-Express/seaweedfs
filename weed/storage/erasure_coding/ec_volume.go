@@ -287,9 +287,10 @@ func (ev *EcVolume) LocateEcShardNeedleByNeedleIdStatus(needleId types.NeedleId)
 
 	// find the needle from ecx file
 	// 每次都关闭
-	offset, size, err = ev.FindNeedleFromEcxAndClose(needleId)
+	// todo 去掉close，ec尝试回收时会频繁调用,如果close会导致部分删除有问题
+	offset, size, err = ev.FindNeedleFromEcx(needleId)
 	if err != nil {
-		return types.Offset{}, 0, fmt.Errorf("FindNeedleFromEcx: %v", err)
+		return types.Offset{}, 0, fmt.Errorf("FindNeedleFromEcxAndClose: %v", err)
 	}
 	ev.lastReadAt = time.Now()
 	return
