@@ -41,16 +41,21 @@ func ReplicatedWrite(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOpt
 	if r.FormValue("fsync") == "true" {
 		fsync = true
 	}
-	if s.GetVolume(volumeId) != nil {
-		start := time.Now()
-		isUnchanged, err = s.WriteVolumeNeedle(volumeId, n, true, fsync)
-		stats.VolumeServerRequestHistogram.WithLabelValues(stats.WriteToLocalDisk).Observe(time.Since(start).Seconds())
-		if err != nil {
-			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorWriteToLocalDisk).Inc()
-			err = fmt.Errorf("failed to write to local disk: %v", err)
-			glog.V(0).Infoln(err)
-			return
-		}
+	v := s.GetVolume(volumeId)
+	if v == nil {
+		// Volume not found, possibly EC encoded or deleted
+		err = fmt.Errorf("volume %d not found, possibly EC encoded", volumeId)
+		glog.V(0).Infoln(err)
+		return
+	}
+	start := time.Now()
+	isUnchanged, err = s.WriteVolumeNeedle(volumeId, n, true, fsync)
+	stats.VolumeServerRequestHistogram.WithLabelValues(stats.WriteToLocalDisk).Observe(time.Since(start).Seconds())
+	if err != nil {
+		stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorWriteToLocalDisk).Inc()
+		err = fmt.Errorf("failed to write to local disk: %v", err)
+		glog.V(0).Infoln(err)
+		return
 	}
 	if len(remoteLocations) > 0 { //send to other replica locations
 		start := time.Now()

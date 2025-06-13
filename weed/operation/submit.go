@@ -62,46 +62,29 @@ func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []F
 	for index, file := range files {
 		results[index].FileName = file.FileName
 	}
-	ar := &VolumeAssignRequest{
-		Count:       uint64(len(files)),
-		Replication: replication,
-		Collection:  collection,
-		DataCenter:  dataCenter,
-		Ttl:         ttl,
-		DiskType:    diskType,
-	}
-	ret, err := Assign(masterFn, grpcDialOption, ar)
-	if err != nil {
-		for index := range files {
-			results[index].Error = err.Error()
-		}
-		return results, err
-	}
 
 	var basicAuth string
 	if username != "" {
 		basicAuth = genBasicAuth(username, password)
 	}
+
+	// 为每个文件单独处理，在Upload内部进行assign
 	for index, file := range files {
-		file.Fid = ret.Fid
-		if index > 0 {
-			file.Fid = file.Fid + "_" + strconv.Itoa(index)
-		}
-		file.Server = ret.Url
-		if usePublicUrl {
-			file.Server = ret.PublicUrl
-		}
 		file.Replication = replication
 		file.Collection = collection
 		file.DataCenter = dataCenter
 		file.Ttl = ttl
 		file.DiskType = diskType
-		results[index].Size, err = file.Upload(maxMB, masterFn, usePublicUrl, ret.Auth, basicAuth, grpcDialOption, chunkConcurrent)
+
+		// 在Upload方法内部进行assign，确保assign和upload之间时间间隔最小
+		size, fid, fileUrl, err := file.UploadWithAssign(maxMB, masterFn, usePublicUrl, basicAuth, grpcDialOption, chunkConcurrent)
 		if err != nil {
 			results[index].Error = err.Error()
+		} else {
+			results[index].Size = size
+			results[index].Fid = fid
+			results[index].FileUrl = fileUrl
 		}
-		results[index].Fid = file.Fid
-		results[index].FileUrl = ret.PublicUrl + "/" + file.Fid
 	}
 	return results, nil
 }
@@ -139,7 +122,55 @@ func newFilePart(fullPathFilename string) (ret FilePart, err error) {
 	return ret, nil
 }
 
-func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jwt security.EncodedJwt, authHeader string, grpcDialOption grpc.DialOption, chunkConcurrent int) (retSize uint32, err error) {
+// UploadWithAssign 在上传前进行assign，确保assign和upload之间时间间隔最小
+func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUrl bool, authHeader string, grpcDialOption grpc.DialOption, chunkConcurrent int) (retSize uint32, fid string, fileUrl string, err error) {
+	// 在实际上传前进行assign
+	ar := &VolumeAssignRequest{
+		Count:       1,
+		Replication: fi.Replication,
+		Collection:  fi.Collection,
+		DataCenter:  fi.DataCenter,
+		Ttl:         fi.Ttl,
+		DiskType:    fi.DiskType,
+	}
+	ret, err := Assign(masterFn, grpcDialOption, ar)
+	if err != nil {
+		return 0, "", "", err
+	}
+
+	// 设置文件信息
+	fi.Fid = ret.Fid
+	fi.Server = ret.Url
+	if usePublicUrl {
+		fi.Server = ret.PublicUrl
+		fileUrl = ret.PublicUrl + "/" + fi.Fid
+	} else {
+		fileUrl = ret.Url + "/" + fi.Fid
+	}
+
+	// 调用原有的Upload方法
+	size, manifestFid, err := fi.Upload(maxMB, masterFn, usePublicUrl, ret.Auth, authHeader, grpcDialOption, chunkConcurrent)
+	if err != nil {
+		return 0, "", "", err
+	}
+
+	// 对于分块上传，manifestFid是文件清单的fid；对于非分块上传，manifestFid是原始fid
+	if manifestFid != "" {
+		// 构建最终的文件URL
+		if maxMB > 0 && fi.FileSize > int64(maxMB*1024*1024) {
+			// 分块上传情况，需要重新构建URL
+			if usePublicUrl {
+				fileUrl = ret.PublicUrl + "/" + manifestFid
+			} else {
+				fileUrl = ret.Url + "/" + manifestFid
+			}
+		}
+		return size, manifestFid, fileUrl, nil
+	}
+	return size, fi.Fid, fileUrl, nil
+}
+
+func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jwt security.EncodedJwt, authHeader string, grpcDialOption grpc.DialOption, chunkConcurrent int) (retSize uint32, manifestFid string, err error) {
 	fileUrl := "http://" + fi.Server + "/" + fi.Fid
 	if fi.ModTime != 0 {
 		fileUrl += "?ts=" + strconv.Itoa(int(fi.ModTime))
@@ -161,21 +192,7 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 			Chunks: make([]*ChunkInfo, chunks),
 		}
 
-		var ret *AssignResult
-		//var id string
-		if fi.DataCenter != "" {
-			ar := &VolumeAssignRequest{
-				Count:       uint64(chunks),
-				Replication: fi.Replication,
-				Collection:  fi.Collection,
-				Ttl:         fi.Ttl,
-				DiskType:    fi.DiskType,
-			}
-			ret, err = Assign(masterFn, grpcDialOption, ar)
-			if err != nil {
-				return
-			}
-		}
+		// 不再预先批量assign，每个chunk在上传前单独assign
 
 		var offset int64
 		var concurrent = chunkConcurrent
@@ -198,7 +215,7 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 			offset += chunkSize
 
 			sem.Acquire()
-			go uploadAsync(i, filename, fi.DataCenter, newReader, masterFn, usePublicUrl, authHeader, grpcDialOption, ar, ret, response, sem)
+			go uploadAsync(i, filename, fi.DataCenter, newReader, masterFn, usePublicUrl, authHeader, grpcDialOption, ar, response, sem)
 		}
 
 		for i := 0; i < int(chunks); i++ {
@@ -218,14 +235,39 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 		if err != nil {
 			// delete all uploaded chunks
 			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
-			return
+			return 0, "", err
 		}
 
-		err = upload_chunked_file_manifest(fileUrl, &cm, jwt, authHeader)
+		// 所有chunks上传完成后，为文件清单重新assign
+		ar := &VolumeAssignRequest{
+			Count:       1,
+			Replication: fi.Replication,
+			Collection:  fi.Collection,
+			DataCenter:  fi.DataCenter,
+			Ttl:         fi.Ttl,
+			DiskType:    fi.DiskType,
+		}
+		ret, assignErr := Assign(masterFn, grpcDialOption, ar)
+		if assignErr != nil {
+			// delete all uploaded chunks
+			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
+			return 0, "", assignErr
+		}
+
+		// 构建文件清单的URL
+		manifestUrl := "http://" + ret.Url + "/" + ret.Fid
+		if usePublicUrl {
+			manifestUrl = "http://" + ret.PublicUrl + "/" + ret.Fid
+		}
+
+		err = upload_chunked_file_manifest(manifestUrl, &cm, ret.Auth, authHeader)
 		if err != nil {
 			// delete all uploaded chunks
 			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
+			return 0, "", err
 		}
+		// 返回文件清单的fid
+		return retSize, ret.Fid, nil
 	} else {
 		uploadOption := &UploadOption{
 			UploadUrl:         fileUrl,
@@ -239,11 +281,11 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 		}
 		ret, e, _ := Upload(fi.Reader, uploadOption)
 		if e != nil {
-			return 0, e
+			return 0, "", e
 		}
-		return ret.Size, e
+		// 对于非分块上传，返回原始fid
+		return ret.Size, fi.Fid, nil
 	}
-	return
 }
 
 // 计算多大的并发数同时上传chunks
@@ -260,7 +302,7 @@ func calculateConcurrent(chunkSize int64, chunks int64) int {
 }
 
 func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, masterFn GetMasterFn, usePublicUrl bool, authHeader string,
-	grpcDialOption grpc.DialOption, ar *VolumeAssignRequest, ret *AssignResult, resp chan<- *AsyncChunkUploadResult, sem *util.Semaphore) {
+	grpcDialOption grpc.DialOption, ar *VolumeAssignRequest, resp chan<- *AsyncChunkUploadResult, sem *util.Semaphore) {
 	defer func() {
 		sem.Release()
 	}()
@@ -270,19 +312,15 @@ func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, mas
 	var res = AsyncChunkUploadResult{}
 	var id string
 	var err error
-	if dataCenter == "" {
-		ret, err = Assign(masterFn, grpcDialOption, ar)
-		if err != nil {
-			res.err = err
-			return
-		}
-		id = ret.Fid
-	} else {
-		id = ret.Fid
-		if index > 0 {
-			id += "_" + strconv.FormatInt(index, 10)
-		}
+
+	// 在实际上传chunk前进行assign，避免EC编码问题
+	ret, err := Assign(masterFn, grpcDialOption, ar)
+	if err != nil {
+		res.err = err
+		resp <- &res
+		return
 	}
+	id = ret.Fid
 	fileUrl := "http://" + ret.Url + "/" + id
 	if usePublicUrl {
 		fileUrl = "http://" + ret.PublicUrl + "/" + id
