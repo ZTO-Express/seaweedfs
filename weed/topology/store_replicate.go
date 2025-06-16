@@ -51,6 +51,9 @@ func ReplicatedWrite(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOpt
 			glog.V(0).Infoln(err)
 			return
 		}
+	} else if len(remoteLocations) == 0 {
+		err = fmt.Errorf("no location found for volumeId:%d", volumeId)
+		return
 	}
 	if len(remoteLocations) > 0 { //send to other replica locations
 		start := time.Now()
