@@ -98,7 +98,7 @@ func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request)
 			u, _ := url.Parse(util.NormalizeUrl(proxyIp))
 			r.URL.Host = u.Host
 			r.URL.Scheme = u.Scheme
-			request, err := http.NewRequest(http.MethodGet, r.URL.String(), nil)
+			request, err := http.NewRequest(r.Method, r.URL.String(), nil)
 			if err != nil {
 				glog.V(0).Infof("failed to instance http request of url %s: %v", r.URL.String(), err)
 				InternalError(w)
