@@ -270,7 +270,7 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 			return 0, "", "", e
 		}
 		// 对于非分块上传，返回原始fid
-		return ret.Size, assignRep.Fid, fileUrl, nil
+		return ret.Size, assignRep.Fid, baseUrl, nil
 	}
 }
 
