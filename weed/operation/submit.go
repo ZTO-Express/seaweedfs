@@ -232,7 +232,7 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 			return 0, "", "", err
 		}
 		// 返回文件清单的fid
-		return retSize, ret.Fid, manifestUrl, nil
+		return retSize, ret.Fid, manifestBaseUrl, nil
 	} else {
 		// 在实际上传前进行assign
 		ar := &VolumeAssignRequest{

@@ -23,6 +23,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/images"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"github.com/seaweedfs/seaweedfs/weed/storage"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
@@ -288,6 +289,14 @@ func (vs *VolumeServer) tryHandleChunkedFile(n *needle.Needle, fileName string, 
 		glog.V(0).Infof("load chunked manifest (%s) error: %v", r.URL.Path, e)
 		return false
 	}
+
+	// 验证所有chunks的存在性
+	if !vs.validateChunksExistence(chunkManifest.Chunks, r.Header.Get("Authorization")) {
+		glog.V(0).Infof("chunks validation failed for manifest (%s)", r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+		return true
+	}
+
 	if fileName == "" && chunkManifest.Name != "" {
 		fileName = chunkManifest.Name
 	}
@@ -433,4 +442,107 @@ func (vs *VolumeServer) streamWriteResponseContent(filename string, mimeType str
 		}, nil
 	})
 
+}
+
+// validateChunksExistence 验证所有chunks的存在性
+func (vs *VolumeServer) validateChunksExistence(chunks []*operation.ChunkInfo, authHeader string) bool {
+	startTime := time.Now()
+	glog.V(1).Infof("[Performance] Starting concurrent chunks validation for %d chunks with concurrency 20", len(chunks))
+
+	// 并发验证chunk，并发数限制为30
+	const maxConcurrency = 30
+	semaphore := make(chan struct{}, maxConcurrency)
+	resultChan := make(chan bool, len(chunks))
+	errorChan := make(chan error, len(chunks))
+
+	// 启动goroutine验证每个chunk
+	for i, chunk := range chunks {
+		go func(index int, c *operation.ChunkInfo) {
+			// 获取信号量
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			chunkStartTime := time.Now()
+			glog.V(2).Infof("[Performance] Validating chunk %d/%d: %s", index+1, len(chunks), c.Fid)
+
+			// 通过LookupFileId获取chunk的URL
+			lookupStartTime := time.Now()
+			fullUrl, jwt, err := operation.LookupFileId(func(_ context.Context) pb.ServerAddress {
+				return vs.GetMaster(context.Background())
+			}, vs.grpcDialOption, c.Fid)
+			lookupDuration := time.Since(lookupStartTime)
+			glog.V(2).Infof("[Performance] Lookup chunk %s took %v, url: %s", c.Fid, lookupDuration, fullUrl)
+
+			if err != nil {
+				glog.V(0).Infof("lookup chunk %s failed after %v: %v", c.Fid, lookupDuration, err)
+				errorChan <- err
+				return
+			}
+
+			// 发送HEAD请求验证chunk存在性
+			reqStartTime := time.Now()
+			req, err := http.NewRequest(http.MethodHead, fullUrl, nil)
+			if err != nil {
+				glog.V(0).Infof("create HEAD request for chunk %s failed: %v", c.Fid, err)
+				errorChan <- err
+				return
+			}
+
+			// 添加认证头
+			if jwt != "" {
+				req.Header.Set("Authorization", "BEARER "+string(jwt))
+			} else if authHeader != "" {
+				req.Header.Set("Authorization", authHeader)
+			}
+
+			// 执行HEAD请求
+			client := &http.Client{Timeout: 10 * time.Second}
+			resp, err := client.Do(req)
+			httpDuration := time.Since(reqStartTime)
+			glog.V(2).Infof("[Performance] HTTP HEAD request for chunk %s took %v", c.Fid, httpDuration)
+
+			if err != nil {
+				glog.V(0).Infof("HEAD request for chunk %s failed after %v: %v", c.Fid, httpDuration, err)
+				errorChan <- err
+				return
+			}
+			resp.Body.Close()
+
+			// 检查响应状态码
+			if resp.StatusCode != http.StatusOK {
+				glog.V(0).Infof("chunk %s not found, status: %d, took %v", c.Fid, resp.StatusCode, httpDuration)
+				errorChan <- fmt.Errorf("chunk %s not found, status: %d", c.Fid, resp.StatusCode)
+				return
+			}
+
+			chunkDuration := time.Since(chunkStartTime)
+			glog.V(2).Infof("[Performance] Chunk %s validation completed in %v (lookup: %v, http: %v)", c.Fid, chunkDuration, lookupDuration, httpDuration)
+			resultChan <- true
+		}(i, chunk)
+	}
+
+	// 等待所有goroutine完成
+	successCount := 0
+	for i := 0; i < len(chunks); i++ {
+		select {
+		case <-resultChan:
+			successCount++
+		case err := <-errorChan:
+			glog.V(0).Infof("chunk validation failed: %v", err)
+			// 等待剩余的goroutine完成
+			for j := i + 1; j < len(chunks); j++ {
+				select {
+				case <-resultChan:
+				case <-errorChan:
+				}
+			}
+			totalDuration := time.Since(startTime)
+			glog.V(1).Infof("[Performance] Chunks validation failed after %v, validated %d/%d chunks", totalDuration, successCount, len(chunks))
+			return false
+		}
+	}
+
+	totalDuration := time.Since(startTime)
+	glog.V(1).Infof("[Performance] All %d chunks validation completed concurrently in %v (avg: %v per chunk)", len(chunks), totalDuration, totalDuration/time.Duration(len(chunks)))
+	return true
 }
