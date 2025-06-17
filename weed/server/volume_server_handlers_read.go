@@ -290,8 +290,8 @@ func (vs *VolumeServer) tryHandleChunkedFile(n *needle.Needle, fileName string, 
 		return false
 	}
 
-	// 验证所有chunks的存在性
-	if !vs.validateChunksExistence(chunkManifest.Chunks, r.Header.Get("Authorization")) {
+	// HEAD请求时,验证所有chunks的存在性
+	if r.Method == http.MethodHead && !vs.validateChunksExistence(chunkManifest.Chunks, r.Header.Get("Authorization")) {
 		glog.V(0).Infof("chunks validation failed for manifest (%s)", r.URL.Path)
 		w.WriteHeader(http.StatusNotFound)
 		return true
