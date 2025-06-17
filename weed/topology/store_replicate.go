@@ -195,6 +195,14 @@ func GetWritableRemoteReplications(s *storage.Store, grpcDialOption grpc.DialOpt
 	if v != nil && v.ReplicaPlacement.GetCopyCount() == 1 {
 		return
 	}
+	if v == nil {
+		// try to find volume from ec locations again, if volume has ec, return err
+		_, hasEcVolume := s.FindEcVolume(volumeId)
+		if hasEcVolume {
+			err = fmt.Errorf("writable replicating lookup failed for volume[%d]: EC Completed ", volumeId)
+			return
+		}
+	}
 
 	// not on local store, or has replications
 	lookupResult, lookupErr := operation.LookupVolumeId(masterFn, grpcDialOption, volumeId.String())
