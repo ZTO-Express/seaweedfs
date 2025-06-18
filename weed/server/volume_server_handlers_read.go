@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
 	"io"
 	"mime"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/images"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"github.com/seaweedfs/seaweedfs/weed/storage"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
@@ -99,7 +101,7 @@ func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request)
 			u, _ := url.Parse(util.NormalizeUrl(proxyIp))
 			r.URL.Host = u.Host
 			r.URL.Scheme = u.Scheme
-			request, err := http.NewRequest(r.Method, r.URL.String(), nil)
+			request, err := http.NewRequest(http.MethodGet, r.URL.String(), nil)
 			if err != nil {
 				glog.V(0).Infof("failed to instance http request of url %s: %v", r.URL.String(), err)
 				InternalError(w)
@@ -290,8 +292,9 @@ func (vs *VolumeServer) tryHandleChunkedFile(n *needle.Needle, fileName string, 
 		return false
 	}
 
-	// HEAD请求时,验证所有chunks的存在性
-	if r.Method == http.MethodHead && !vs.validateChunksExistence(chunkManifest.Chunks, r.Header.Get("Authorization")) {
+	// 在严格模式的HEAD请求时,验证所有chunks的存在性
+	strictMode := r.URL.Query().Get("strict") == "true"
+	if r.Method == http.MethodHead && strictMode && !vs.validateChunksExistence(chunkManifest.Chunks, r.Header.Get("Authorization")) {
 		glog.V(0).Infof("chunks validation failed for manifest (%s)", r.URL.Path)
 		w.WriteHeader(http.StatusNotFound)
 		return true
@@ -446,6 +449,10 @@ func (vs *VolumeServer) streamWriteResponseContent(filename string, mimeType str
 
 // validateChunksExistence 验证所有chunks的存在性
 func (vs *VolumeServer) validateChunksExistence(chunks []*operation.ChunkInfo, authHeader string) bool {
+	// 严格模式下，先校验所有涉及的volume的可用性
+	if !vs.validateVolumesAvailability(chunks) {
+		return false
+	}
 	startTime := time.Now()
 	glog.V(1).Infof("[Performance] Starting concurrent chunks validation for %d chunks with concurrency 20", len(chunks))
 
@@ -545,4 +552,185 @@ func (vs *VolumeServer) validateChunksExistence(chunks []*operation.ChunkInfo, a
 	totalDuration := time.Since(startTime)
 	glog.V(1).Infof("[Performance] All %d chunks validation completed concurrently in %v (avg: %v per chunk)", len(chunks), totalDuration, totalDuration/time.Duration(len(chunks)))
 	return true
+}
+
+// validateVolumesAvailability 严格模式下校验所有涉及volume的可用性
+// 对于EC volume，检查数据分片数量是否大于等于DataShardsCount
+// 对于普通volume，检查是否有足够的副本
+func (vs *VolumeServer) validateVolumesAvailability(chunks []*operation.ChunkInfo) bool {
+	// 收集所有涉及的volumeId
+	volumeIds := make(map[needle.VolumeId]bool)
+	for _, chunk := range chunks {
+		parts := strings.Split(chunk.Fid, ",")
+		if len(parts) != 2 {
+			continue
+		}
+		if volumeId, err := needle.NewVolumeId(parts[0]); err == nil {
+			volumeIds[volumeId] = true
+		}
+	}
+
+	glog.V(1).Infof("[Strict Mode] Validating availability for %d volumes", len(volumeIds))
+
+	// 分离本地volume和远程volume
+	localVolumeIds := make([]needle.VolumeId, 0)
+	remoteVolumeIds := make([]needle.VolumeId, 0)
+
+	for volumeId := range volumeIds {
+		// 检查是否为本地volume（EC或普通volume）
+		if _, hasEcVolume := vs.store.FindEcVolume(volumeId); hasEcVolume {
+			localVolumeIds = append(localVolumeIds, volumeId)
+		} else if vs.store.HasVolume(volumeId) {
+			localVolumeIds = append(localVolumeIds, volumeId)
+		} else {
+			remoteVolumeIds = append(remoteVolumeIds, volumeId)
+		}
+	}
+
+	// 验证本地volumes
+	for _, volumeId := range localVolumeIds {
+		if !vs.validateSingleVolumeAvailability(volumeId) {
+			return false
+		}
+	}
+
+	// 批量验证远程volumes
+	if len(remoteVolumeIds) > 0 {
+		if !vs.validateRemoteVolumesAvailability(remoteVolumeIds, "", false) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// validateSingleVolumeAvailability 校验单个volume的可用性
+func (vs *VolumeServer) validateSingleVolumeAvailability(volumeId needle.VolumeId) bool {
+	// 首先检查是否为EC volume
+	ecVolume, hasEcVolume := vs.store.FindEcVolume(volumeId)
+	if hasEcVolume {
+		return vs.validateEcVolumeAvailability(volumeId, ecVolume)
+	}
+
+	// 检查是否为普通volume
+	hasVolume := vs.store.HasVolume(volumeId)
+	if hasVolume {
+		return vs.validateNormalVolumeAvailability(volumeId)
+	}
+
+	// 如果本地没有volume，通过master查询副本信息
+	return vs.validateRemoteVolumeAvailability(volumeId)
+}
+
+// validateEcVolumeAvailability 校验EC volume的可用性
+func (vs *VolumeServer) validateEcVolumeAvailability(volumeId needle.VolumeId, ecVolume *erasure_coding.EcVolume) bool {
+	// 统计本地可用的数据分片数量
+	localDataShards := 0
+	for _, shard := range ecVolume.Shards {
+		if shard != nil && shard.ShardId < erasure_coding.DataShardsCount {
+			localDataShards++
+		}
+	}
+
+	glog.V(2).Infof("[Strict Mode] EC volume %d has %d local data shards", volumeId, localDataShards)
+
+	// 如果本地数据分片足够，直接返回true
+	if localDataShards >= erasure_coding.DataShardsCount {
+		return true
+	}
+
+	// 否则需要查询远程分片信息
+	lookupResult, err := operation.LookupVolumeId(vs.GetMaster, vs.grpcDialOption, volumeId.String())
+	if err != nil {
+		glog.V(0).Infof("[Strict Mode] Failed to lookup EC volume %d: %v", volumeId, err)
+		return false
+	}
+
+	// 检查总的可用位置数量是否足够
+	if len(lookupResult.Locations) < erasure_coding.DataShardsCount {
+		glog.V(0).Infof("[Strict Mode] EC volume %d has insufficient locations: %d < %d", volumeId, len(lookupResult.Locations), erasure_coding.DataShardsCount)
+		return false
+	}
+
+	glog.V(2).Infof("[Strict Mode] EC volume %d validation passed with %d locations", volumeId, len(lookupResult.Locations))
+	return true
+}
+
+// validateNormalVolumeAvailability 校验普通volume的可用性
+func (vs *VolumeServer) validateNormalVolumeAvailability(volumeId needle.VolumeId) bool {
+	// 获取本地volume信息
+	volume := vs.store.GetVolume(volumeId)
+	if volume == nil {
+		glog.V(0).Infof("[Strict Mode] Local volume %d not found", volumeId)
+		return false
+	}
+
+	// 获取副本配置
+	requiredCopies := volume.ReplicaPlacement.GetCopyCount()
+	glog.V(2).Infof("[Strict Mode] Volume %d requires %d copies", volumeId, requiredCopies)
+
+	// 如果只需要1个副本，本地有就足够了
+	if requiredCopies <= 1 {
+		return true
+	}
+
+	// 查询所有副本位置
+	lookupResult, err := operation.LookupVolumeId(vs.GetMaster, vs.grpcDialOption, volumeId.String())
+	if err != nil {
+		glog.V(0).Infof("[Strict Mode] Failed to lookup volume %d: %v", volumeId, err)
+		return false
+	}
+
+	// 检查可用副本数量
+	if len(lookupResult.Locations) < requiredCopies {
+		glog.V(0).Infof("[Strict Mode] Volume %d has insufficient replicas: %d < %d", volumeId, len(lookupResult.Locations), requiredCopies)
+		return false
+	}
+
+	glog.V(2).Infof("[Strict Mode] Volume %d validation passed with %d/%d replicas", volumeId, len(lookupResult.Locations), requiredCopies)
+	return true
+}
+
+// validateRemoteVolumeAvailability 校验远程volume的可用性
+func (vs *VolumeServer) validateRemoteVolumeAvailability(volumeId needle.VolumeId) bool {
+	// 调用master端的ValidateVolumesAvailability接口进行验证
+	return vs.validateRemoteVolumesAvailability([]needle.VolumeId{volumeId}, "", true)
+}
+
+// validateRemoteVolumesAvailability 批量验证远程volume的可用性
+func (vs *VolumeServer) validateRemoteVolumesAvailability(volumeIds []needle.VolumeId, collection string, strictMode bool) bool {
+	// 转换volumeIds为uint32数组
+	volumeIdInts := make([]uint32, len(volumeIds))
+	for i, vid := range volumeIds {
+		volumeIdInts[i] = uint32(vid)
+	}
+
+	// 调用master的ValidateVolumesAvailability gRPC接口
+	err := operation.WithMasterServerClient(false, vs.GetMaster(context.Background()), vs.grpcDialOption, func(masterClient master_pb.SeaweedClient) error {
+		req := &master_pb.ValidateVolumesAvailabilityRequest{
+			VolumeIds:  volumeIdInts,
+			Collection: collection,
+			StrictMode: strictMode,
+		}
+		resp, err := masterClient.ValidateVolumesAvailability(context.Background(), req)
+		if err != nil {
+			glog.V(0).Infof("[Strict Mode] Failed to validate volumes availability: %v", err)
+			return err
+		}
+
+		if !resp.AllAvailable {
+			glog.V(0).Infof("[Strict Mode] Some volumes are not available:")
+			for _, volInfo := range resp.VolumeInfo {
+				if !volInfo.IsAvailable {
+					glog.V(0).Infof("[Strict Mode] Volume %d: %s", volInfo.VolumeId, volInfo.ErrorMessage)
+				}
+			}
+			return fmt.Errorf("volumes validation failed")
+		}
+
+		glog.V(2).Infof("[Strict Mode] All %d volumes validation passed", len(volumeIds))
+		return nil
+	})
+
+	return err == nil
 }

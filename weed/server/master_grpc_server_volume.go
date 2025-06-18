@@ -3,6 +3,7 @@ package weed_server
 import (
 	"context"
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
 	"reflect"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/storage/super_block"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
+	"github.com/seaweedfs/seaweedfs/weed/topology"
 )
 
 func (ms *MasterServer) ProcessGrowRequest() {
@@ -120,6 +122,134 @@ func (ms *MasterServer) LookupVolume(ctx context.Context, req *master_pb.LookupV
 	}
 
 	return resp, nil
+}
+
+func (ms *MasterServer) ValidateVolumesAvailability(ctx context.Context, req *master_pb.ValidateVolumesAvailabilityRequest) (*master_pb.ValidateVolumesAvailabilityResponse, error) {
+	if !ms.Topo.IsLeader() {
+		return nil, raft.NotLeaderError
+	}
+
+	resp := &master_pb.ValidateVolumesAvailabilityResponse{
+		AllAvailable: true,
+	}
+
+	glog.V(2).Infof("[Strict Mode] Validating availability for %d volumes in collection %s", len(req.VolumeIds), req.Collection)
+
+	for _, volumeId := range req.VolumeIds {
+		volumeInfo := ms.validateSingleVolumeAvailabilityMaster(needle.VolumeId(volumeId), req.Collection, req.StrictMode)
+		resp.VolumeInfo = append(resp.VolumeInfo, volumeInfo)
+		if !volumeInfo.IsAvailable {
+			resp.AllAvailable = false
+		}
+	}
+
+	glog.V(2).Infof("[Strict Mode] Volume validation completed, all available: %v", resp.AllAvailable)
+	return resp, nil
+}
+
+// validateSingleVolumeAvailabilityMaster 在master端校验单个volume的可用性
+func (ms *MasterServer) validateSingleVolumeAvailabilityMaster(volumeId needle.VolumeId, collection string, strictMode bool) *master_pb.VolumeAvailabilityInfo {
+	volumeInfo := &master_pb.VolumeAvailabilityInfo{
+		VolumeId:    uint32(volumeId),
+		IsAvailable: false,
+	}
+
+	// 查找volume位置
+	dataNodes := ms.Topo.Lookup(collection, volumeId)
+	if len(dataNodes) == 0 {
+		volumeInfo.ErrorMessage = fmt.Sprintf("volume %d not found in collection %s", volumeId, collection)
+		return volumeInfo
+	}
+
+	// 检查是否为EC volume
+	ecLocations, found := ms.Topo.LookupEcShards(volumeId)
+	if found {
+		return ms.validateEcVolumeAvailabilityMaster(volumeId, ecLocations, strictMode)
+	}
+
+	// 检查普通volume
+	return ms.validateNormalVolumeAvailabilityMaster(volumeId, dataNodes, strictMode)
+}
+
+// validateEcVolumeAvailabilityMaster 校验EC volume的可用性
+func (ms *MasterServer) validateEcVolumeAvailabilityMaster(volumeId needle.VolumeId, ecLocations *topology.EcShardLocations, strictMode bool) *master_pb.VolumeAvailabilityInfo {
+	volumeInfo := &master_pb.VolumeAvailabilityInfo{
+		VolumeId:         uint32(volumeId),
+		IsEcVolume:       true,
+		RequiredEcShards: erasure_coding.TotalShardsCount,
+	}
+
+	// 统计可用的数据分片数量
+	availableDataShards := 0
+	for shardId := 0; shardId < erasure_coding.TotalShardsCount; shardId++ {
+		if len(ecLocations.Locations[shardId]) > 0 {
+			availableDataShards++
+		}
+	}
+
+	volumeInfo.AvailableEcShards = int32(availableDataShards)
+
+	if strictMode {
+		// 严格模式下需要至少16个数据分片
+		volumeInfo.IsAvailable = availableDataShards == erasure_coding.TotalShardsCount
+		if !volumeInfo.IsAvailable {
+			volumeInfo.ErrorMessage = fmt.Sprintf("EC volume %d has insufficient data shards: %d < %d", volumeId, availableDataShards, erasure_coding.TotalShardsCount)
+		}
+	} else {
+		// 非严格模式下至少需要14个分片
+		volumeInfo.IsAvailable = availableDataShards >= erasure_coding.DataShardsCount
+		if !volumeInfo.IsAvailable {
+			volumeInfo.ErrorMessage = fmt.Sprintf("EC volume %d has insufficient data shards: %d < %d", volumeId, availableDataShards, erasure_coding.DataShardsCount)
+		}
+	}
+
+	glog.V(3).Infof("[Strict Mode] EC volume %d validation: available_shards=%d, required=%d, available=%v",
+		volumeId, availableDataShards, erasure_coding.TotalShardsCount, volumeInfo.IsAvailable)
+	return volumeInfo
+}
+
+// validateNormalVolumeAvailabilityMaster 校验普通volume的可用性
+func (ms *MasterServer) validateNormalVolumeAvailabilityMaster(volumeId needle.VolumeId, dataNodes []*topology.DataNode, strictMode bool) *master_pb.VolumeAvailabilityInfo {
+	volumeInfo := &master_pb.VolumeAvailabilityInfo{
+		VolumeId:          uint32(volumeId),
+		IsEcVolume:        false,
+		AvailableReplicas: int32(len(dataNodes)),
+	}
+
+	// 获取副本配置要求
+	if len(dataNodes) > 0 {
+		// 从第一个节点获取volume信息来确定副本要求
+		for _, volInfo := range dataNodes[0].GetVolumes() {
+			if volInfo.Id == volumeId {
+				volumeInfo.RequiredReplicas = int32(volInfo.ReplicaPlacement.GetCopyCount())
+				break
+			}
+		}
+	}
+
+	// 如果无法获取副本要求，使用默认值1
+	if volumeInfo.RequiredReplicas == 0 {
+		volumeInfo.RequiredReplicas = 1
+	}
+
+	if strictMode {
+		// 严格模式下检查副本数量是否满足要求
+		volumeInfo.IsAvailable = volumeInfo.AvailableReplicas >= volumeInfo.RequiredReplicas
+		if !volumeInfo.IsAvailable {
+			volumeInfo.ErrorMessage = fmt.Sprintf("volume %d has insufficient replicas: %d < %d",
+				volumeId, volumeInfo.AvailableReplicas, volumeInfo.RequiredReplicas)
+		}
+	} else {
+		// 非严格模式下至少需要1个副本
+		volumeInfo.IsAvailable = volumeInfo.AvailableReplicas > 0
+		if !volumeInfo.IsAvailable {
+			volumeInfo.ErrorMessage = fmt.Sprintf("volume %d has no available replicas", volumeId)
+		}
+	}
+
+	glog.V(3).Infof("[Strict Mode] Normal volume %d validation: available_replicas=%d, required=%d, available=%v",
+		volumeId, volumeInfo.AvailableReplicas, volumeInfo.RequiredReplicas, volumeInfo.IsAvailable)
+	return volumeInfo
 }
 
 func (ms *MasterServer) Statistics(ctx context.Context, req *master_pb.StatisticsRequest) (*master_pb.StatisticsResponse, error) {

@@ -19,31 +19,32 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Seaweed_SendHeartbeat_FullMethodName             = "/master_pb.Seaweed/SendHeartbeat"
-	Seaweed_KeepConnected_FullMethodName             = "/master_pb.Seaweed/KeepConnected"
-	Seaweed_LookupVolume_FullMethodName              = "/master_pb.Seaweed/LookupVolume"
-	Seaweed_Assign_FullMethodName                    = "/master_pb.Seaweed/Assign"
-	Seaweed_StreamAssign_FullMethodName              = "/master_pb.Seaweed/StreamAssign"
-	Seaweed_Statistics_FullMethodName                = "/master_pb.Seaweed/Statistics"
-	Seaweed_CollectionList_FullMethodName            = "/master_pb.Seaweed/CollectionList"
-	Seaweed_CollectionDelete_FullMethodName          = "/master_pb.Seaweed/CollectionDelete"
-	Seaweed_VolumeList_FullMethodName                = "/master_pb.Seaweed/VolumeList"
-	Seaweed_EcCollectList_FullMethodName             = "/master_pb.Seaweed/EcCollectList"
-	Seaweed_VolumeListWithoutECVolume_FullMethodName = "/master_pb.Seaweed/VolumeListWithoutECVolume"
-	Seaweed_LookupEcVolume_FullMethodName            = "/master_pb.Seaweed/LookupEcVolume"
-	Seaweed_VacuumVolume_FullMethodName              = "/master_pb.Seaweed/VacuumVolume"
-	Seaweed_VacuumEcVolume_FullMethodName            = "/master_pb.Seaweed/VacuumEcVolume"
-	Seaweed_DisableVacuum_FullMethodName             = "/master_pb.Seaweed/DisableVacuum"
-	Seaweed_EnableVacuum_FullMethodName              = "/master_pb.Seaweed/EnableVacuum"
-	Seaweed_VolumeMarkReadonly_FullMethodName        = "/master_pb.Seaweed/VolumeMarkReadonly"
-	Seaweed_GetMasterConfiguration_FullMethodName    = "/master_pb.Seaweed/GetMasterConfiguration"
-	Seaweed_ListClusterNodes_FullMethodName          = "/master_pb.Seaweed/ListClusterNodes"
-	Seaweed_LeaseAdminToken_FullMethodName           = "/master_pb.Seaweed/LeaseAdminToken"
-	Seaweed_ReleaseAdminToken_FullMethodName         = "/master_pb.Seaweed/ReleaseAdminToken"
-	Seaweed_Ping_FullMethodName                      = "/master_pb.Seaweed/Ping"
-	Seaweed_RaftListClusterServers_FullMethodName    = "/master_pb.Seaweed/RaftListClusterServers"
-	Seaweed_RaftAddServer_FullMethodName             = "/master_pb.Seaweed/RaftAddServer"
-	Seaweed_RaftRemoveServer_FullMethodName          = "/master_pb.Seaweed/RaftRemoveServer"
+	Seaweed_SendHeartbeat_FullMethodName               = "/master_pb.Seaweed/SendHeartbeat"
+	Seaweed_KeepConnected_FullMethodName               = "/master_pb.Seaweed/KeepConnected"
+	Seaweed_LookupVolume_FullMethodName                = "/master_pb.Seaweed/LookupVolume"
+	Seaweed_Assign_FullMethodName                      = "/master_pb.Seaweed/Assign"
+	Seaweed_StreamAssign_FullMethodName                = "/master_pb.Seaweed/StreamAssign"
+	Seaweed_Statistics_FullMethodName                  = "/master_pb.Seaweed/Statistics"
+	Seaweed_CollectionList_FullMethodName              = "/master_pb.Seaweed/CollectionList"
+	Seaweed_CollectionDelete_FullMethodName            = "/master_pb.Seaweed/CollectionDelete"
+	Seaweed_VolumeList_FullMethodName                  = "/master_pb.Seaweed/VolumeList"
+	Seaweed_EcCollectList_FullMethodName               = "/master_pb.Seaweed/EcCollectList"
+	Seaweed_VolumeListWithoutECVolume_FullMethodName   = "/master_pb.Seaweed/VolumeListWithoutECVolume"
+	Seaweed_LookupEcVolume_FullMethodName              = "/master_pb.Seaweed/LookupEcVolume"
+	Seaweed_VacuumVolume_FullMethodName                = "/master_pb.Seaweed/VacuumVolume"
+	Seaweed_VacuumEcVolume_FullMethodName              = "/master_pb.Seaweed/VacuumEcVolume"
+	Seaweed_DisableVacuum_FullMethodName               = "/master_pb.Seaweed/DisableVacuum"
+	Seaweed_EnableVacuum_FullMethodName                = "/master_pb.Seaweed/EnableVacuum"
+	Seaweed_VolumeMarkReadonly_FullMethodName          = "/master_pb.Seaweed/VolumeMarkReadonly"
+	Seaweed_ValidateVolumesAvailability_FullMethodName = "/master_pb.Seaweed/ValidateVolumesAvailability"
+	Seaweed_GetMasterConfiguration_FullMethodName      = "/master_pb.Seaweed/GetMasterConfiguration"
+	Seaweed_ListClusterNodes_FullMethodName            = "/master_pb.Seaweed/ListClusterNodes"
+	Seaweed_LeaseAdminToken_FullMethodName             = "/master_pb.Seaweed/LeaseAdminToken"
+	Seaweed_ReleaseAdminToken_FullMethodName           = "/master_pb.Seaweed/ReleaseAdminToken"
+	Seaweed_Ping_FullMethodName                        = "/master_pb.Seaweed/Ping"
+	Seaweed_RaftListClusterServers_FullMethodName      = "/master_pb.Seaweed/RaftListClusterServers"
+	Seaweed_RaftAddServer_FullMethodName               = "/master_pb.Seaweed/RaftAddServer"
+	Seaweed_RaftRemoveServer_FullMethodName            = "/master_pb.Seaweed/RaftRemoveServer"
 )
 
 // SeaweedClient is the client API for Seaweed service.
@@ -67,6 +68,7 @@ type SeaweedClient interface {
 	DisableVacuum(ctx context.Context, in *DisableVacuumRequest, opts ...grpc.CallOption) (*DisableVacuumResponse, error)
 	EnableVacuum(ctx context.Context, in *EnableVacuumRequest, opts ...grpc.CallOption) (*EnableVacuumResponse, error)
 	VolumeMarkReadonly(ctx context.Context, in *VolumeMarkReadonlyRequest, opts ...grpc.CallOption) (*VolumeMarkReadonlyResponse, error)
+	ValidateVolumesAvailability(ctx context.Context, in *ValidateVolumesAvailabilityRequest, opts ...grpc.CallOption) (*ValidateVolumesAvailabilityResponse, error)
 	GetMasterConfiguration(ctx context.Context, in *GetMasterConfigurationRequest, opts ...grpc.CallOption) (*GetMasterConfigurationResponse, error)
 	ListClusterNodes(ctx context.Context, in *ListClusterNodesRequest, opts ...grpc.CallOption) (*ListClusterNodesResponse, error)
 	LeaseAdminToken(ctx context.Context, in *LeaseAdminTokenRequest, opts ...grpc.CallOption) (*LeaseAdminTokenResponse, error)
@@ -304,6 +306,15 @@ func (c *seaweedClient) VolumeMarkReadonly(ctx context.Context, in *VolumeMarkRe
 	return out, nil
 }
 
+func (c *seaweedClient) ValidateVolumesAvailability(ctx context.Context, in *ValidateVolumesAvailabilityRequest, opts ...grpc.CallOption) (*ValidateVolumesAvailabilityResponse, error) {
+	out := new(ValidateVolumesAvailabilityResponse)
+	err := c.cc.Invoke(ctx, Seaweed_ValidateVolumesAvailability_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *seaweedClient) GetMasterConfiguration(ctx context.Context, in *GetMasterConfigurationRequest, opts ...grpc.CallOption) (*GetMasterConfigurationResponse, error) {
 	out := new(GetMasterConfigurationResponse)
 	err := c.cc.Invoke(ctx, Seaweed_GetMasterConfiguration_FullMethodName, in, out, opts...)
@@ -397,6 +408,7 @@ type SeaweedServer interface {
 	DisableVacuum(context.Context, *DisableVacuumRequest) (*DisableVacuumResponse, error)
 	EnableVacuum(context.Context, *EnableVacuumRequest) (*EnableVacuumResponse, error)
 	VolumeMarkReadonly(context.Context, *VolumeMarkReadonlyRequest) (*VolumeMarkReadonlyResponse, error)
+	ValidateVolumesAvailability(context.Context, *ValidateVolumesAvailabilityRequest) (*ValidateVolumesAvailabilityResponse, error)
 	GetMasterConfiguration(context.Context, *GetMasterConfigurationRequest) (*GetMasterConfigurationResponse, error)
 	ListClusterNodes(context.Context, *ListClusterNodesRequest) (*ListClusterNodesResponse, error)
 	LeaseAdminToken(context.Context, *LeaseAdminTokenRequest) (*LeaseAdminTokenResponse, error)
@@ -462,6 +474,9 @@ func (UnimplementedSeaweedServer) EnableVacuum(context.Context, *EnableVacuumReq
 }
 func (UnimplementedSeaweedServer) VolumeMarkReadonly(context.Context, *VolumeMarkReadonlyRequest) (*VolumeMarkReadonlyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VolumeMarkReadonly not implemented")
+}
+func (UnimplementedSeaweedServer) ValidateVolumesAvailability(context.Context, *ValidateVolumesAvailabilityRequest) (*ValidateVolumesAvailabilityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ValidateVolumesAvailability not implemented")
 }
 func (UnimplementedSeaweedServer) GetMasterConfiguration(context.Context, *GetMasterConfigurationRequest) (*GetMasterConfigurationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMasterConfiguration not implemented")
@@ -830,6 +845,24 @@ func _Seaweed_VolumeMarkReadonly_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Seaweed_ValidateVolumesAvailability_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ValidateVolumesAvailabilityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SeaweedServer).ValidateVolumesAvailability(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Seaweed_ValidateVolumesAvailability_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SeaweedServer).ValidateVolumesAvailability(ctx, req.(*ValidateVolumesAvailabilityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Seaweed_GetMasterConfiguration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetMasterConfigurationRequest)
 	if err := dec(in); err != nil {
@@ -1036,6 +1069,10 @@ var Seaweed_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VolumeMarkReadonly",
 			Handler:    _Seaweed_VolumeMarkReadonly_Handler,
+		},
+		{
+			MethodName: "ValidateVolumesAvailability",
+			Handler:    _Seaweed_ValidateVolumesAvailability_Handler,
 		},
 		{
 			MethodName: "GetMasterConfiguration",

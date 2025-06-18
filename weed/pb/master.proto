@@ -41,6 +41,8 @@ service Seaweed {
   }
   rpc VolumeMarkReadonly (VolumeMarkReadonlyRequest) returns (VolumeMarkReadonlyResponse) {
   }
+  rpc ValidateVolumesAvailability (ValidateVolumesAvailabilityRequest) returns (ValidateVolumesAvailabilityResponse) {
+  }
   rpc GetMasterConfiguration (GetMasterConfigurationRequest) returns (GetMasterConfigurationResponse) {
   }
   rpc ListClusterNodes (ListClusterNodesRequest) returns (ListClusterNodesResponse) {
@@ -464,4 +466,27 @@ message RaftListClusterServersResponse {
     bool   isLeader = 4;
   }
   repeated ClusterServers cluster_servers = 1;
+}
+
+// ValidateVolumesAvailability messages
+message ValidateVolumesAvailabilityRequest {
+  repeated uint32 volume_ids = 1;
+  string collection = 2;
+  bool strict_mode = 3; // 是否启用严格模式
+}
+
+message VolumeAvailabilityInfo {
+  uint32 volume_id = 1;
+  bool is_available = 2;
+  bool is_ec_volume = 3;
+  int32 available_replicas = 4;
+  int32 required_replicas = 5;
+  int32 available_ec_shards = 6;
+  int32 required_ec_shards = 7;
+  string error_message = 8;
+}
+
+message ValidateVolumesAvailabilityResponse {
+  repeated VolumeAvailabilityInfo volume_info = 1;
+  bool all_available = 2;
 }

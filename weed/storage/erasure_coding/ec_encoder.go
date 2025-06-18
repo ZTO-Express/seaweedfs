@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	DataShardsCount             = 14
+	DataShardsCount             = 4
 	ParityShardsCount           = 2
 	TotalShardsCount            = DataShardsCount + ParityShardsCount
 	ErasureCodingLargeBlockSize = 1024 * 1024 * 1024 // 1GB
