@@ -385,5 +385,18 @@ func collectVolumeIdsForEcEncode(commandEnv *CommandEnv, selectedCollection stri
 		}
 	})
 
+	// 去重处理：移除每个 collection 中重复的 volumeId
+	for collection, vids := range collectionVidsMap {
+		vidSet := make(map[needle.VolumeId]bool)
+		uniqueVids := make([]needle.VolumeId, 0)
+		for _, vid := range vids {
+			if !vidSet[vid] {
+				vidSet[vid] = true
+				uniqueVids = append(uniqueVids, vid)
+			}
+		}
+		collectionVidsMap[collection] = uniqueVids
+	}
+
 	return
 }

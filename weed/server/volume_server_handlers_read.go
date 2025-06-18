@@ -216,6 +216,16 @@ func (vs *VolumeServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	// 在严格模式的HEAD请求时,验证非chunks文件对应的volume可用性
+	strictMode := r.URL.Query().Get("strict") == "true"
+	if r.Method == http.MethodHead && strictMode && !n.IsChunkedManifest() {
+		if !vs.validateSingleVolumeAvailability(volumeId) {
+			glog.V(0).Infof("volume %d validation failed for file (%s)", volumeId, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
+
 	if vs.tryHandleChunkedFile(n, filename, ext, w, r) {
 		return
 	}
@@ -664,30 +674,6 @@ func (vs *VolumeServer) validateNormalVolumeAvailability(volumeId needle.VolumeI
 		glog.V(0).Infof("[Strict Mode] Local volume %d not found", volumeId)
 		return false
 	}
-
-	// 获取副本配置
-	requiredCopies := volume.ReplicaPlacement.GetCopyCount()
-	glog.V(2).Infof("[Strict Mode] Volume %d requires %d copies", volumeId, requiredCopies)
-
-	// 如果只需要1个副本，本地有就足够了
-	if requiredCopies <= 1 {
-		return true
-	}
-
-	// 查询所有副本位置
-	lookupResult, err := operation.LookupVolumeId(vs.GetMaster, vs.grpcDialOption, volumeId.String())
-	if err != nil {
-		glog.V(0).Infof("[Strict Mode] Failed to lookup volume %d: %v", volumeId, err)
-		return false
-	}
-
-	// 检查可用副本数量
-	if len(lookupResult.Locations) < requiredCopies {
-		glog.V(0).Infof("[Strict Mode] Volume %d has insufficient replicas: %d < %d", volumeId, len(lookupResult.Locations), requiredCopies)
-		return false
-	}
-
-	glog.V(2).Infof("[Strict Mode] Volume %d validation passed with %d/%d replicas", volumeId, len(lookupResult.Locations), requiredCopies)
 	return true
 }
 
