@@ -58,7 +58,7 @@ func (t *Topology) vacuumOneEcVolumeId(grpcDialOption grpc.DialOption, ecLocatio
 	shardCount := 0
 	for _, shardLocations := range ecLocations.Locations {
 		if len(shardLocations) > 0 {
-			shardCount++
+			shardCount += len(shardLocations)
 		}
 	}
 	hasEnoughShards = shardCount >= erasure_coding.DataShardsCount
@@ -88,6 +88,9 @@ func (t *Topology) checkEcVolumeNeedVacuum(grpcDialOption grpc.DialOption, vid n
 	// 从所有节点获取所有needleIds,如果有一个返回则完成
 	var allNeedleIdMap map[uint64]*volume_server_pb.Shards
 	for _, dataNodes := range ecLocations.Locations {
+		if len(dataNodes) == 0 {
+			continue
+		}
 		// 检查该shard的第一个节点
 		dn := dataNodes[0]
 		err := operation.WithVolumeServerClient(false, dn.ServerAddress(), grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
