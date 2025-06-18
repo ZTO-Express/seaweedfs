@@ -231,8 +231,9 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
 			return 0, "", "", err
 		}
+
 		// 返回文件清单的fid
-		return retSize, ret.Fid, manifestBaseUrl, nil
+		return retSize, ret.Fid, ret.PublicUrl + "/" + ret.Fid, nil
 	} else {
 		// 在实际上传前进行assign
 		ar := &VolumeAssignRequest{
@@ -270,7 +271,7 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 			return 0, "", "", e
 		}
 		// 对于非分块上传，返回原始fid
-		return ret.Size, assignRep.Fid, baseUrl, nil
+		return ret.Size, assignRep.Fid, assignRep.PublicUrl + "/" + assignRep.Fid, nil
 	}
 }
 
