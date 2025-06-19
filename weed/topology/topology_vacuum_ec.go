@@ -16,6 +16,10 @@ import (
 
 // VacuumEcVolumes 处理EC卷的垃圾回收
 func (t *Topology) VacuumEcVolumes(grpcDialOption grpc.DialOption, collection string, volumeId uint32) {
+	// 统计信息：记录开始时间
+	startTime := time.Now()
+	processedVolumeCount := 0
+	skippedVolumeCount := 0
 	glog.V(1).Infof("Start vacuum EC volumes for collection: %s volumeId: %d", collection, volumeId)
 
 	// 如果指定了特定的卷ID，只处理该卷
@@ -24,7 +28,14 @@ func (t *Topology) VacuumEcVolumes(grpcDialOption grpc.DialOption, collection st
 		ecLocations, found := t.LookupEcShards(vid)
 		if found {
 			t.vacuumOneEcVolumeId(grpcDialOption, ecLocations, vid, collection)
+			processedVolumeCount = 1
+		} else {
+			skippedVolumeCount = 1
 		}
+		// 统计信息：输出单个卷处理结果
+		duration := time.Since(startTime)
+		glog.V(0).Infof("Vacuum EC volumes completed - Collection: %s, VolumeId: %d, Processed: %d, Skipped: %d, Duration: %v",
+			collection, volumeId, processedVolumeCount, skippedVolumeCount, duration)
 		return
 	}
 
@@ -41,10 +52,18 @@ func (t *Topology) VacuumEcVolumes(grpcDialOption grpc.DialOption, collection st
 	for vid, ecLocations := range ecShardMapCopy {
 		// 如果指定了集合名称，只处理该集合的卷
 		if collection != "" && collection != ecLocations.Collection {
+			skippedVolumeCount++
 			continue
 		}
 		t.vacuumOneEcVolumeId(grpcDialOption, ecLocations, vid, ecLocations.Collection)
+		processedVolumeCount++
 	}
+
+	// 统计信息：输出批量处理结果
+	duration := time.Since(startTime)
+	totalVolumes := len(ecShardMapCopy)
+	glog.V(0).Infof("Vacuum EC volumes completed - Collection: %s, Total volumes: %d, Processed: %d, Skipped: %d, Duration: %v",
+		collection, totalVolumes, processedVolumeCount, skippedVolumeCount, duration)
 }
 
 // 处理单个EC卷的垃圾回收
