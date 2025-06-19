@@ -43,7 +43,7 @@ type SubmitResult struct {
 	FileName string `json:"fileName,omitempty"`
 	FileUrl  string `json:"url,omitempty"`
 	Fid      string `json:"fid,omitempty"`
-	Size     uint32 `json:"size,omitempty"`
+	Size     uint64 `json:"size,omitempty"`
 	Error    string `json:"error,omitempty"`
 }
 
@@ -140,7 +140,7 @@ func buildUrlWithParams(baseUrl string, modTime int64, fsync bool) string {
 	return url
 }
 
-func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUrl bool, authHeader string, grpcDialOption grpc.DialOption, chunkConcurrent int) (retSize uint32, fid string, url string, err error) {
+func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUrl bool, authHeader string, grpcDialOption grpc.DialOption, chunkConcurrent int) (retSize uint64, fid string, url string, err error) {
 	if closer, ok := fi.Reader.(io.Closer); ok {
 		defer closer.Close()
 	}
@@ -191,7 +191,7 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 				Size:   int64(r.count),
 				Fid:    r.fid,
 			}
-			retSize += r.count
+			retSize += uint64(r.count)
 		}
 		close(response)
 		if err != nil {
@@ -271,7 +271,7 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 			return 0, "", "", e
 		}
 		// 对于非分块上传，返回原始fid
-		return ret.Size, assignRep.Fid, assignRep.PublicUrl + "/" + assignRep.Fid, nil
+		return uint64(ret.Size), assignRep.Fid, assignRep.PublicUrl + "/" + assignRep.Fid, nil
 	}
 }
 
