@@ -80,7 +80,7 @@ func (t *Topology) vacuumOneEcVolumeId(grpcDialOption grpc.DialOption, ecLocatio
 	}
 	// 计算并记录耗时
 	elapsedTime := time.Since(startTime)
-	glog.V(0).Infof("Vacuum EC volume:%d completed, time cost: %v", vid, elapsedTime)
+	glog.V(0).Infof("Vacuum EC volume:%d completed, time cost: %vms", vid, elapsedTime.Milliseconds())
 }
 
 // 检查EC卷是否需要垃圾回收
