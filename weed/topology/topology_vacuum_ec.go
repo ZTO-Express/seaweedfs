@@ -117,7 +117,7 @@ func (t *Topology) checkEcVolumeNeedVacuum(grpcDialOption grpc.DialOption, vid n
 
 	// 如果没有文件，则不垃圾回收 防止因为节点问题导致删除数据
 	if len(allNeedleIdMap) == 0 {
-		glog.V(4).Infof("EC volume:%d has no files, can be vacuumed", vid)
+		glog.V(4).Infof("EC volume:%d has no files, not can be vacuumed", vid)
 		return false
 	}
 
@@ -181,8 +181,8 @@ func (t *Topology) checkEcVolumeNeedVacuum(grpcDialOption grpc.DialOption, vid n
 						NeedleId: nid,
 					})
 					if err != nil {
-						glog.V(0).Infof("Failed to check needle %d status for EC volume:%d on %s: %v", nid, vid, dn.ServerAddress(), err)
-						return err
+						glog.V(0).Infof("Failed to check needle %d status for EC volume:%d on %s: %v continue checking other nodes", nid, vid, dn.ServerAddress(), err)
+						return nil
 					}
 					if resp.IsDeleted {
 						glog.V(3).Infof("Needle %d in EC volume:%d is deleted on %s", nid, vid, dn.ServerAddress())
@@ -192,11 +192,7 @@ func (t *Topology) checkEcVolumeNeedVacuum(grpcDialOption grpc.DialOption, vid n
 				})
 				if err != nil {
 					glog.V(0).Infof("Failed to check needle %d status for EC volume:%d on %s: %v", nid, vid, dn.ServerAddress(), err)
-					select {
-					case resultChan <- needleCheckResult{needleId: nid, fileDeleted: false, err: err}:
-					case <-doneChan:
-					}
-					return
+					continue
 				}
 				// 如果有一个节点返回被删除，则认为文件被删除
 				if fileDeleted {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/storage"
@@ -135,11 +136,11 @@ func (vs *VolumeServer) EcVolumeDelete(ctx context.Context, req *volume_server_p
 		err = deleteAllEcShardIdsForEachLocation(bName, location, shards, req.Soft)
 		if err != nil {
 			glog.Errorf("deleteEcShards %s_%d from %s %s: %v", collection, vid, location.Directory, bName, err)
-			stats.VolumeServerEcVolumeDeleteCounter.WithLabelValues("false").Inc()
+			stats.VolumeServerEcVolumeDeleteCounter.WithLabelValues(strconv.Itoa(int(vid)), "false").Inc()
 			return nil, err
 		}
 	}
-	stats.VolumeServerEcVolumeDeleteCounter.WithLabelValues("true").Inc()
+	stats.VolumeServerEcVolumeDeleteCounter.WithLabelValues(strconv.Itoa(int(vid)), "true").Inc()
 	return resp, nil
 }
 
