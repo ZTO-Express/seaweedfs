@@ -196,7 +196,7 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 		close(response)
 		if err != nil {
 			// delete all uploaded chunks
-			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
+			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption, false)
 			return 0, "", "", err
 		}
 
@@ -212,7 +212,7 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 		ret, assignErr := Assign(masterFn, grpcDialOption, ar)
 		if assignErr != nil {
 			// delete all uploaded chunks
-			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
+			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption, false)
 			return 0, "", "", assignErr
 		}
 
@@ -228,7 +228,7 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 		err = upload_chunked_file_manifest(manifestUrl, &cm, ret.Auth, authHeader)
 		if err != nil {
 			// delete all uploaded chunks
-			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
+			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption, false)
 			return 0, "", "", err
 		}
 
@@ -337,14 +337,14 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 		close(response)
 		if err != nil {
 			// delete all uploaded chunks
-			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
+			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption, false)
 			return
 		}
 
 		err = upload_chunked_file_manifest(fileUrl, &cm, jwt, authHeader)
 		if err != nil {
 			// delete all uploaded chunks
-			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
+			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption, false)
 		}
 	} else {
 		uploadOption := &UploadOption{

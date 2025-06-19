@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"io"
 	"net/http"
 	"net/url"
@@ -13,8 +15,6 @@ import (
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
-	"github.com/seaweedfs/seaweedfs/weed/pb"
-	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/topology"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -199,7 +199,8 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		count := int64(n.Size)
-
+		// if query param vacuum is  true, try vacuum when delete file
+		needVacuum := r.URL.Query().Get("vacuum") == "true"
 		// 检查是否为分块清单，如果是，需要先删除所有块
 		if n.IsChunkedManifest() {
 			chunkManifest, e := operation.LoadChunkManifest(n.Data, n.IsCompressed())
@@ -208,7 +209,7 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// 确保在删除清单前删除所有块
-			if e := chunkManifest.DeleteChunks(vs.GetMaster, false, vs.grpcDialOption); e != nil {
+			if e := chunkManifest.DeleteChunks(vs.GetMaster, false, vs.grpcDialOption, needVacuum); e != nil {
 				writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Delete chunks error: %v", e))
 				return
 			}
@@ -219,24 +220,26 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		_, err = vs.store.DeleteEcShardNeedle(ecVolume, n, cookie)
 		if err == nil {
 			// 删除成功后，异步触发EC卷的垃圾回收
-			go func() {
-				masterAddress := vs.GetMaster(context.Background())
-				if masterAddress == "" {
-					glog.V(0).Infof("无法获取master地址，跳过EC卷 %d 的垃圾回收", volumeId)
-					return
-				}
-				vacuumErr := pb.WithMasterClient(false, masterAddress, vs.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
-					_, vacuumErr := client.VacuumEcVolume(context.Background(), &master_pb.VacuumEcVolumeRequest{
-						VolumeId: uint32(volumeId),
+			if needVacuum {
+				go func() {
+					masterAddress := vs.GetMaster(context.Background())
+					if masterAddress == "" {
+						glog.V(0).Infof("无法获取master地址，跳过EC卷 %d 的垃圾回收", volumeId)
+						return
+					}
+					vacuumErr := pb.WithMasterClient(false, masterAddress, vs.grpcDialOption, false, func(client master_pb.SeaweedClient) error {
+						_, vacuumErr := client.VacuumEcVolume(context.Background(), &master_pb.VacuumEcVolumeRequest{
+							VolumeId: uint32(volumeId),
+						})
+						return vacuumErr
 					})
-					return vacuumErr
-				})
-				if vacuumErr != nil {
-					glog.V(0).Infof("EC卷 %d 垃圾回收失败: %v", volumeId, vacuumErr)
-				} else {
-					glog.V(1).Infof("EC卷 %d 垃圾回收已触发", volumeId)
-				}
-			}()
+					if vacuumErr != nil {
+						glog.V(0).Infof("EC卷 %d 垃圾回收失败: %v", volumeId, vacuumErr)
+					} else {
+						glog.V(1).Infof("EC卷 %d 垃圾回收已触发", volumeId)
+					}
+				}()
+			}
 		}
 		writeDeleteResult(err, count, w, r)
 		return
@@ -265,7 +268,7 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// make sure all chunks had deleted before delete manifest
-		if e := chunkManifest.DeleteChunks(vs.GetMaster, false, vs.grpcDialOption); e != nil {
+		if e := chunkManifest.DeleteChunks(vs.GetMaster, false, vs.grpcDialOption, false); e != nil {
 			writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Delete chunks error: %v", e))
 			return
 		}

@@ -78,7 +78,7 @@ func (cm *ChunkManifest) Marshal() ([]byte, error) {
 	return json.Marshal(cm)
 }
 
-func (cm *ChunkManifest) DeleteChunks(masterFn GetMasterFn, usePublicUrl bool, grpcDialOption grpc.DialOption) error {
+func (cm *ChunkManifest) DeleteChunks(masterFn GetMasterFn, usePublicUrl bool, grpcDialOption grpc.DialOption, vacuum bool) error {
 	startTime := time.Now()
 	var fileIds []string
 	for _, ci := range cm.Chunks {
@@ -100,6 +100,10 @@ func (cm *ChunkManifest) DeleteChunks(masterFn GetMasterFn, usePublicUrl bool, g
 	}
 
 	// 删除成功后，异步触发EC卷的垃圾回收
+	if !vacuum {
+		return nil
+	}
+
 	go func() {
 		// 从fileIds中提取所有volumeId
 		volumeIdMap := make(map[uint32]bool)
