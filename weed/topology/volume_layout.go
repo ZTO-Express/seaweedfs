@@ -120,6 +120,9 @@ type VolumeLayout struct {
 	volumeSizeLimit   uint64
 	replicationAsMin  bool
 	accessLock        sync.RWMutex
+
+	assignedVolumes           map[needle.VolumeId]struct{}
+	assignedVolumesAccessLock sync.RWMutex
 }
 
 type VolumeLayoutStats struct {
@@ -141,6 +144,7 @@ func NewVolumeLayout(rp *super_block.ReplicaPlacement, ttl *needle.TTL, diskType
 		vacuumedVolumes:  make(map[needle.VolumeId]time.Time),
 		volumeSizeLimit:  volumeSizeLimit,
 		replicationAsMin: replicationAsMin,
+		assignedVolumes:  map[needle.VolumeId]struct{}{},
 	}
 }
 
@@ -287,6 +291,56 @@ func (vl *VolumeLayout) ListVolumeServers() (nodes []*DataNode) {
 	return
 }
 
+func (vl *VolumeLayout) PickForWriteAssign(count uint64, option *VolumeGrowOption) (vid needle.VolumeId, counter uint64, locationList *VolumeLocationList, shouldGrow bool, err error) {
+	vl.accessLock.RLock()
+	defer vl.accessLock.RUnlock()
+
+	lenWriters := len(vl.writables)
+	if lenWriters <= 0 {
+		//glog.V(0).Infoln("No more writable volumes!")
+		shouldGrow = true
+		return 0, 0, nil, shouldGrow, errors.New("no more writable volumes")
+	}
+
+	writableNodes := make(map[needle.VolumeId]*VolumeLocationList)
+	for _, volumeId := range vl.writables {
+		locationList = vl.vid2location[volumeId]
+		if locationList != nil && locationList.Length() > 0 {
+			volumeLocationList := &VolumeLocationList{list: make([]*DataNode, 0)}
+			for _, dn := range locationList.list {
+				if option.DataCenter != "" && dn.GetDataCenter().Id() != NodeId(option.DataCenter) {
+					continue
+				}
+				if option.Rack != "" && dn.GetRack().Id() != NodeId(option.Rack) {
+					continue
+				}
+				if option.DataNode != "" && dn.Id() != NodeId(option.DataNode) {
+					continue
+				}
+				volumeLocationList.list = append(volumeLocationList.list, dn)
+			}
+			if len(volumeLocationList.list) > 0 {
+				writableNodes[volumeId] = volumeLocationList
+			}
+		}
+	}
+	if len(writableNodes) <= 0 {
+		//glog.V(0).Infoln("No more writable volumes!")
+		return 0, 0, nil, true, errors.New("no more writable data nodes")
+	}
+
+	// assign volumes from writable nodes
+	vl.assignedVolumesAccessLock.Lock()
+	defer vl.assignedVolumesAccessLock.Unlock()
+	for _, volumeId := range vl.writables {
+		if _, found := vl.assignedVolumes[volumeId]; !found {
+			vl.assignedVolumes[volumeId] = struct{}{}
+			return volumeId, count, writableNodes[volumeId].Copy(), false, nil
+		}
+	}
+	return 0, 0, nil, true, fmt.Errorf("no writable volumes in DataCenter:%v Rack:%v DataNode:%v", option.DataCenter, option.Rack, option.DataNode)
+}
+
 func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (vid needle.VolumeId, counter uint64, locationList *VolumeLocationList, shouldGrow bool, err error) {
 	vl.accessLock.RLock()
 	defer vl.accessLock.RUnlock()
@@ -404,6 +458,7 @@ func (vl *VolumeLayout) removeFromWritable(vid needle.VolumeId) bool {
 		glog.V(0).Infoln("Volume", vid, "becomes unwritable")
 		vl.writables = append(vl.writables[0:toDeleteIndex], vl.writables[toDeleteIndex+1:]...)
 		vl.removeFromCrowded(vid)
+		vl.removeAssigned(vid)
 		return true
 	}
 	return false
@@ -502,6 +557,12 @@ func (vl *VolumeLayout) removeFromCrowded(vid needle.VolumeId) {
 	vl.crowdedAccessLock.Lock()
 	defer vl.crowdedAccessLock.Unlock()
 	delete(vl.crowded, vid)
+}
+
+func (vl *VolumeLayout) removeAssigned(vid needle.VolumeId) {
+	vl.accessLock.Lock()
+	defer vl.accessLock.Unlock()
+	delete(vl.assignedVolumes, vid)
 }
 
 func (vl *VolumeLayout) setVolumeCrowded(vid needle.VolumeId) {

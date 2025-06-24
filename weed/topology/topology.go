@@ -208,9 +208,14 @@ func (t *Topology) NextVolumeId() (needle.VolumeId, error) {
 	return next, nil
 }
 
-func (t *Topology) PickForWrite(requestedCount uint64, option *VolumeGrowOption, volumeLayout *VolumeLayout) (fileId string, count uint64, volumeLocationList *VolumeLocationList, shouldGrow bool, err error) {
+func (t *Topology) PickForWrite(requestedCount uint64, option *VolumeGrowOption, volumeLayout *VolumeLayout, requireNewVolume bool) (fileId string, count uint64, volumeLocationList *VolumeLocationList, shouldGrow bool, err error) {
 	var vid needle.VolumeId
-	vid, count, volumeLocationList, shouldGrow, err = volumeLayout.PickForWrite(requestedCount, option)
+	if requireNewVolume {
+		vid, count, volumeLocationList, shouldGrow, err = volumeLayout.PickForWriteAssign(requestedCount, option)
+		glog.V(0).Infof("PickForWriteAssign finish,success:%v vid:%d, shouldGrow:%v, information: %v", err == nil, vid, shouldGrow, err)
+	} else {
+		vid, count, volumeLocationList, shouldGrow, err = volumeLayout.PickForWrite(requestedCount, option)
+	}
 	if err != nil {
 		return "", 0, nil, shouldGrow, fmt.Errorf("failed to find writable volumes for collection:%s replication:%s ttl:%s error: %v", option.Collection, option.ReplicaPlacement.String(), option.Ttl.String(), err)
 	}

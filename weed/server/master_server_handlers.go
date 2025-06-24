@@ -118,6 +118,8 @@ func (ms *MasterServer) dirAssignHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	requireNewVolume := r.FormValue("requireNewVolume") == "true"
+
 	vl := ms.Topo.GetVolumeLayout(option.Collection, option.ReplicaPlacement, option.Ttl, option.DiskType)
 
 	var (
@@ -134,7 +136,7 @@ func (ms *MasterServer) dirAssignHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	for time.Now().Sub(startTime) < maxTimeout {
-		fid, count, dnList, shouldGrow, err := ms.Topo.PickForWrite(requestedCount, option, vl)
+		fid, count, dnList, shouldGrow, err := ms.Topo.PickForWrite(requestedCount, option, vl, requireNewVolume)
 		if shouldGrow && !vl.HasGrowRequest() {
 			// if picked volume is almost full, trigger a volume-grow request
 			glog.V(0).Infof("dirAssign volume growth %v from %v", option.String(), r.RemoteAddr)
