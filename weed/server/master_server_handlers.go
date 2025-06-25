@@ -138,9 +138,11 @@ func (ms *MasterServer) dirAssignHandler(w http.ResponseWriter, r *http.Request)
 		if shouldGrow && !vl.HasGrowRequest() {
 			// if picked volume is almost full, trigger a volume-grow request
 			glog.V(0).Infof("dirAssign volume growth %v from %v", option.String(), r.RemoteAddr)
-			if ms.Topo.AvailableSpaceFor(option) <= 0 {
-				writeJsonQuiet(w, r, http.StatusNotFound, operation.AssignResult{Error: "No free volumes left for " + option.String()})
-				return
+			availableCount := ms.Topo.AvailableSpaceFor(option)
+			if availableCount <= 0 {
+				//writeJsonQuiet(w, r, http.StatusNotFound, operation.AssignResult{Error: "No free volumes left for " + option.String()})
+				//return
+				glog.V(0).Infof("dirAssignHandler availableSpaceFor: %d", availableCount)
 			}
 			vl.AddGrowRequest()
 			ms.volumeGrowthRequestChan <- &topology.VolumeGrowRequest{
