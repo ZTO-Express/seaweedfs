@@ -560,8 +560,8 @@ func (vl *VolumeLayout) removeFromCrowded(vid needle.VolumeId) {
 }
 
 func (vl *VolumeLayout) removeAssigned(vid needle.VolumeId) {
-	vl.accessLock.Lock()
-	defer vl.accessLock.Unlock()
+	vl.assignedVolumesAccessLock.Lock()
+	defer vl.assignedVolumesAccessLock.Unlock()
 	delete(vl.assignedVolumes, vid)
 }
 
