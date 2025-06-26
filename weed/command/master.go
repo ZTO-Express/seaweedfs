@@ -45,22 +45,23 @@ type MasterOptions struct {
 	volumeSizeLimitMB *uint
 	volumePreallocate *bool
 	// pulseSeconds       *int
-	defaultReplication *string
-	garbageThreshold   *float64
-	whiteList          *string
-	disableHttp        *bool
-	metricsAddress     *string
-	metricsIntervalSec *int
-	raftResumeState    *bool
-	metricsHttpPort    *int
-	metricsHttpIp      *string
-	heartbeatInterval  *time.Duration
-	electionTimeout    *time.Duration
-	raftHashicorp      *bool
-	raftBootstrap      *bool
-	username           *string
-	password           *string
-	disableEcVacuum    *bool
+	defaultReplication    *string
+	garbageThreshold      *float64
+	volumeGrowthThreshold *float64
+	whiteList             *string
+	disableHttp           *bool
+	metricsAddress        *string
+	metricsIntervalSec    *int
+	raftResumeState       *bool
+	metricsHttpPort       *int
+	metricsHttpIp         *string
+	heartbeatInterval     *time.Duration
+	electionTimeout       *time.Duration
+	raftHashicorp         *bool
+	raftBootstrap         *bool
+	username              *string
+	password              *string
+	disableEcVacuum       *bool
 }
 
 func init() {
@@ -76,6 +77,7 @@ func init() {
 	// m.pulseSeconds = cmdMaster.Flag.Int("pulseSeconds", 5, "number of seconds between heartbeats")
 	m.defaultReplication = cmdMaster.Flag.String("defaultReplication", "", "Default replication type if not specified.")
 	m.garbageThreshold = cmdMaster.Flag.Float64("garbageThreshold", 0.3, "threshold to vacuum and reclaim spaces")
+	m.volumeGrowthThreshold = cmdMaster.Flag.Float64("volumeGrowthThreshold", 0.5, "threshold to trigger volume growth")
 	m.whiteList = cmdMaster.Flag.String("whiteList", "", "comma separated Ip addresses having write permission. No limit if empty.")
 	m.disableHttp = cmdMaster.Flag.Bool("disableHttp", false, "disable http requests, only gRPC operations are allowed.")
 	m.metricsAddress = cmdMaster.Flag.String("metrics.address", "", "Prometheus gateway address <host>:<port>")
@@ -325,6 +327,7 @@ func (m *MasterOptions) toMasterOption(whiteList []string) *weed_server.MasterOp
 		// PulseSeconds:            *m.pulseSeconds,
 		DefaultReplicaPlacement: *m.defaultReplication,
 		GarbageThreshold:        *m.garbageThreshold,
+		VolumeGrowthThreshold:   *m.volumeGrowthThreshold,
 		WhiteList:               whiteList,
 		DisableHttp:             *m.disableHttp,
 		MetricsAddress:          *m.metricsAddress,

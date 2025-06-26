@@ -45,6 +45,7 @@ type MasterOption struct {
 	// PulseSeconds            int
 	DefaultReplicaPlacement string
 	GarbageThreshold        float64
+	VolumeGrowthThreshold   float64
 	WhiteList               []string
 	DisableHttp             bool
 	MetricsAddress          string
@@ -114,7 +115,12 @@ func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.Se
 	topology.VolumeGrowStrategy.Copy2Count = v.GetInt("master.volume_growth.copy_2")
 	topology.VolumeGrowStrategy.Copy3Count = v.GetInt("master.volume_growth.copy_3")
 	topology.VolumeGrowStrategy.CopyOtherCount = v.GetInt("master.volume_growth.copy_other")
-	topology.VolumeGrowStrategy.Threshold = v.GetFloat64("master.volume_growth.threshold")
+	// Use command line parameter if provided, otherwise use config file value
+	if option.VolumeGrowthThreshold > 0 {
+		topology.VolumeGrowStrategy.Threshold = option.VolumeGrowthThreshold
+	} else {
+		topology.VolumeGrowStrategy.Threshold = v.GetFloat64("master.volume_growth.threshold")
+	}
 	topology.VolumeGrowStrategy.CrowdedThreshold = v.GetFloat64("master.volume_growth.crowded_threshold")
 
 	var preallocateSize int64

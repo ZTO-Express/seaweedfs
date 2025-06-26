@@ -543,12 +543,20 @@ func (vl *VolumeLayout) enoughCopies(vid needle.VolumeId) bool {
 }
 
 func (vl *VolumeLayout) SetVolumeCapacityFull(vid needle.VolumeId) bool {
+	start := time.Now()
 	vl.accessLock.Lock()
 	defer vl.accessLock.Unlock()
 
+	glog.V(0).Infof("[VolumeLayout.SetVolumeCapacityFull] Attempting to set volume %d as full, current writable count: %d",
+		vid, len(vl.writables))
+
 	wasWritable := vl.removeFromWritable(vid)
 	if wasWritable {
-		glog.V(0).Infof("Volume %d reaches full capacity.", vid)
+		glog.V(0).Infof("[VolumeLayout.SetVolumeCapacityFull] Volume %d reaches full capacity and removed from writable list, new writable count: %d, operation time: %v",
+			vid, len(vl.writables), time.Since(start))
+	} else {
+		glog.V(0).Infof("[VolumeLayout.SetVolumeCapacityFull] Volume %d was already non-writable, writable count remains: %d, operation time: %v",
+			vid, len(vl.writables), time.Since(start))
 	}
 	return wasWritable
 }

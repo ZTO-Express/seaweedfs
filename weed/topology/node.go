@@ -266,9 +266,18 @@ func (n *NodeImpl) UnlinkChildNode(nodeId NodeId) {
 func (n *NodeImpl) CollectDeadNodeAndFullVolumes(freshThreshHold int64, volumeSizeLimit uint64, growThreshold float64) {
 	if n.IsRack() {
 		start := time.Now()
+		glog.V(1).Infof("[CollectDeadNodeAndFullVolumes] Starting volume check on rack %s, volumeSizeLimit=%d, growThreshold=%.2f, freshThreshold=%d",
+			n.Id(), volumeSizeLimit, growThreshold, freshThreshHold)
+
+		totalVolumes := 0
+		fullVolumes := 0
+		crowdedVolumes := 0
+		skippedVolumes := 0
+
 		for _, c := range n.Children() {
 			dn := c.(*DataNode) //can not cast n to DataNode
 			for _, v := range dn.GetVolumes() {
+				totalVolumes++
 				topo := n.GetTopology()
 				diskType := types.ToDiskType(v.DiskType)
 				vl := topo.GetVolumeLayout(v.Collection, v.ReplicaPlacement, v.Ttl, diskType)
@@ -282,10 +291,17 @@ func (n *NodeImpl) CollectDeadNodeAndFullVolumes(freshThreshHold int64, volumeSi
 					// After 20s(grpc timeout), theoretically all the heartbeats of the volume server have reached the master,
 					// the volume size should be correct, not the size before the vacuum.
 					if !ok || time.Now().Add(-20*time.Second).After(vacuumTime) {
-						//fmt.Println("volume",v.Id,"size",v.Size,">",volumeSizeLimit)
+						fullVolumes++
+						glog.V(0).Infof("[VolumeFullDetection] Volume %d on node %s detected as full: size=%d >= limit=%d, collection=%s, sending to chanFullVolumes at %v",
+							v.Id, dn.Id(), v.Size, volumeSizeLimit, v.Collection, time.Now())
 						topo.chanFullVolumes <- v
+					} else {
+						skippedVolumes++
+						glog.V(1).Infof("[VolumeFullDetection] Volume %d on node %s skipped due to recent vacuum at %v, size=%d >= limit=%d",
+							v.Id, dn.Id(), vacuumTime, v.Size, volumeSizeLimit)
 					}
 				} else if float64(v.Size) > float64(volumeSizeLimit)*growThreshold {
+					crowdedVolumes++
 					topo.chanCrowdedVolumes <- v
 				}
 				copyCount := v.ReplicaPlacement.GetCopyCount()
@@ -299,8 +315,12 @@ func (n *NodeImpl) CollectDeadNodeAndFullVolumes(freshThreshHold int64, volumeSi
 			}
 		}
 		costTime := time.Now().Sub(start)
+		glog.V(0).Infof("[CollectDeadNodeAndFullVolumes] Completed volume check on rack %s: total=%d, full=%d, crowded=%d, skipped=%d, cost=%v",
+			n.Id(), totalVolumes, fullVolumes, crowdedVolumes, skippedVolumes, costTime)
+
 		if costTime > time.Millisecond*100 {
-			glog.V(3).Infoln("volume check is full cost", costTime)
+			glog.V(0).Infof("[CollectDeadNodeAndFullVolumes] WARNING: Volume check on rack %s took longer than expected: %v (threshold: 100ms)",
+				n.Id(), costTime)
 		}
 	} else {
 		for _, c := range n.Children() {
