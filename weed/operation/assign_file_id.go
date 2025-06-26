@@ -22,6 +22,7 @@ type VolumeAssignRequest struct {
 	Rack                string
 	DataNode            string
 	WritableVolumeCount uint32
+	RequireNewVolume    bool
 }
 
 type AssignResult struct {
@@ -164,6 +165,7 @@ func Assign(masterFn GetMasterFn, grpcDialOption grpc.DialOption, primaryRequest
 				Rack:                request.Rack,
 				DataNode:            request.DataNode,
 				WritableVolumeCount: request.WritableVolumeCount,
+				RequireNewVolume:    request.RequireNewVolume,
 			}
 			resp, grpcErr := masterClient.Assign(context.Background(), req)
 			if grpcErr != nil {

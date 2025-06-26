@@ -21,19 +21,20 @@ var (
 )
 
 type UploadOptions struct {
-	master          *string
-	dir             *string
-	include         *string
-	replication     *string
-	collection      *string
-	dataCenter      *string
-	ttl             *string
-	diskType        *string
-	maxMB           *int
-	usePublicUrl    *bool
-	Username        *string
-	Password        *string
-	ChunkConcurrent *int
+	master           *string
+	dir              *string
+	include          *string
+	replication      *string
+	collection       *string
+	dataCenter       *string
+	ttl              *string
+	diskType         *string
+	maxMB            *int
+	usePublicUrl     *bool
+	Username         *string
+	Password         *string
+	ChunkConcurrent  *int
+	requireNewVolume *bool
 }
 
 func init() {
@@ -52,6 +53,7 @@ func init() {
 	upload.Username = cmdUpload.Flag.String("username", "", "user auth")
 	upload.Password = cmdUpload.Flag.String("password", "", "user auth")
 	upload.ChunkConcurrent = cmdUpload.Flag.Int("chunkConcurrent", 2, "chunk concurrent number")
+	upload.requireNewVolume = cmdUpload.Flag.Bool("requireNewVolume", false, "chunk concurrent number")
 }
 
 var cmdUpload = &Command{
@@ -109,7 +111,7 @@ func runUpload(cmd *Command, args []string) bool {
 					fmt.Println("upload ", *upload.collection, *upload.diskType, *upload.maxMB)
 					results, e := operation.SubmitFiles(func(_ context.Context) pb.ServerAddress { return pb.ServerAddress(*upload.master) },
 						grpcDialOption, parts, *upload.replication, *upload.collection, *upload.dataCenter, *upload.ttl,
-						*upload.diskType, *upload.maxMB, *upload.usePublicUrl, *upload.Username, *upload.Password, *upload.ChunkConcurrent)
+						*upload.diskType, *upload.maxMB, *upload.usePublicUrl, *upload.Username, *upload.Password, *upload.ChunkConcurrent, *upload.requireNewVolume)
 					bytes, _ := json.Marshal(results)
 					fmt.Println(string(bytes))
 					if e != nil {
@@ -133,7 +135,7 @@ func runUpload(cmd *Command, args []string) bool {
 		}
 		results, err := operation.SubmitFiles(func(_ context.Context) pb.ServerAddress { return pb.ServerAddress(*upload.master) },
 			grpcDialOption, parts, *upload.replication, *upload.collection, *upload.dataCenter, *upload.ttl,
-			*upload.diskType, *upload.maxMB, *upload.usePublicUrl, *upload.Username, *upload.Password, *upload.ChunkConcurrent)
+			*upload.diskType, *upload.maxMB, *upload.usePublicUrl, *upload.Username, *upload.Password, *upload.ChunkConcurrent, *upload.requireNewVolume)
 		if err != nil {
 			fmt.Println(err.Error())
 			return false

@@ -221,6 +221,7 @@ message AssignRequest {
   uint32 memory_map_max_size_mb = 8;
   uint32 Writable_volume_count = 9;
   string disk_type = 10;
+  bool require_new_volume = 11;
 }
 message AssignResponse {
   string fid = 1;

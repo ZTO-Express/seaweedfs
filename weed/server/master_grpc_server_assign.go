@@ -83,7 +83,7 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 
 	for time.Now().Sub(startTime) < maxTimeout {
 		glog.V(2).Infof("Assign: attempting to pick volume for write, elapsed: %v, option: %+v", time.Now().Sub(startTime), option)
-		fid, count, dnList, shouldGrow, err := ms.Topo.PickForWrite(req.Count, option, vl, false)
+		fid, count, dnList, shouldGrow, err := ms.Topo.PickForWrite(req.Count, option, vl, req.RequireNewVolume)
 		glog.V(2).Infof("Assign: PickForWrite result - fid: %s, count: %d, shouldGrow: %v, err: %v", fid, count, shouldGrow, err)
 
 		if shouldGrow && !vl.HasGrowRequest() {

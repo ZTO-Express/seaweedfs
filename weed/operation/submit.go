@@ -57,7 +57,7 @@ type AsyncChunkUploadResult struct {
 type GetMasterFn func(ctx context.Context) pb.ServerAddress
 
 func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []FilePart, replication string, collection string,
-	dataCenter string, ttl string, diskType string, maxMB int, usePublicUrl bool, username, password string, chunkConcurrent int) ([]SubmitResult, error) {
+	dataCenter string, ttl string, diskType string, maxMB int, usePublicUrl bool, username, password string, chunkConcurrent int, requireNewVolume bool) ([]SubmitResult, error) {
 	results := make([]SubmitResult, len(files))
 	for index, file := range files {
 		results[index].FileName = file.FileName
@@ -77,7 +77,7 @@ func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []F
 		file.DiskType = diskType
 
 		// 在Upload方法内部进行assign，确保assign和upload之间时间间隔最小
-		size, fid, fileUrl, err := file.UploadWithAssign(maxMB, masterFn, usePublicUrl, basicAuth, grpcDialOption, chunkConcurrent)
+		size, fid, fileUrl, err := file.UploadWithAssign(maxMB, masterFn, usePublicUrl, basicAuth, grpcDialOption, chunkConcurrent, requireNewVolume)
 		if err != nil {
 			results[index].Error = err.Error()
 		} else {
@@ -140,7 +140,8 @@ func buildUrlWithParams(baseUrl string, modTime int64, fsync bool) string {
 	return url
 }
 
-func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUrl bool, authHeader string, grpcDialOption grpc.DialOption, chunkConcurrent int) (retSize uint64, fid string, url string, err error) {
+func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUrl bool, authHeader string,
+	grpcDialOption grpc.DialOption, chunkConcurrent int, requireNewVolume bool) (retSize uint64, fid string, url string, err error) {
 	if closer, ok := fi.Reader.(io.Closer); ok {
 		defer closer.Close()
 	}
@@ -167,11 +168,12 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 			filename := baseName + "-" + strconv.FormatInt(i+1, 10)
 			//reader := io.LimitReader(fi.Reader, chunkSize)
 			ar := &VolumeAssignRequest{
-				Count:       1,
-				Replication: fi.Replication,
-				Collection:  fi.Collection,
-				Ttl:         fi.Ttl,
-				DiskType:    fi.DiskType,
+				Count:            1,
+				Replication:      fi.Replication,
+				Collection:       fi.Collection,
+				Ttl:              fi.Ttl,
+				DiskType:         fi.DiskType,
+				RequireNewVolume: requireNewVolume,
 			}
 			newReader := io.NewSectionReader(fi.Reader.(*os.File), offset, chunkSize)
 			offset += chunkSize
@@ -202,12 +204,13 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 
 		// 所有chunks上传完成后，为文件清单重新assign
 		ar := &VolumeAssignRequest{
-			Count:       1,
-			Replication: fi.Replication,
-			Collection:  fi.Collection,
-			DataCenter:  fi.DataCenter,
-			Ttl:         fi.Ttl,
-			DiskType:    fi.DiskType,
+			Count:            1,
+			Replication:      fi.Replication,
+			Collection:       fi.Collection,
+			DataCenter:       fi.DataCenter,
+			Ttl:              fi.Ttl,
+			DiskType:         fi.DiskType,
+			RequireNewVolume: requireNewVolume,
 		}
 		ret, assignErr := Assign(masterFn, grpcDialOption, ar)
 		if assignErr != nil {
