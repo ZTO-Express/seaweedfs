@@ -51,7 +51,7 @@ func (ms *MasterServer) ProcessGrowRequest() {
 			})
 
 			// not atomic but it's okay
-			if !found && vl.ShouldGrowVolumes(option) {
+			if !found && (vl.ShouldGrowVolumes(option) || req.Force) {
 				filter.Store(req, nil)
 				// we have lock called inside vg
 				go func() {

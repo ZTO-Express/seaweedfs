@@ -148,6 +148,7 @@ func (ms *MasterServer) dirAssignHandler(w http.ResponseWriter, r *http.Request)
 			ms.volumeGrowthRequestChan <- &topology.VolumeGrowRequest{
 				Option: option,
 				Count:  writableVolumeCount,
+				Force:  requireNewVolume, // if true, will create a new volume even if there is an existing one
 			}
 		}
 		if err != nil {

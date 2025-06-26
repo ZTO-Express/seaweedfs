@@ -101,6 +101,7 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 			growRequest := &topology.VolumeGrowRequest{
 				Option: option,
 				Count:  int(req.WritableVolumeCount),
+				Force:  req.RequireNewVolume,
 			}
 			glog.V(1).Infof("Assign: sending volume grow request: %+v", growRequest)
 			ms.volumeGrowthRequestChan <- growRequest
