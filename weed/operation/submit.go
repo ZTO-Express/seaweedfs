@@ -485,7 +485,6 @@ func upload_one_chunk(filename string, reader io.Reader, masterFn GetMasterFn,
 	fileUrl string, jwt security.EncodedJwt, basicAuth string,
 ) (size uint32, e error) {
 	start := time.Now()
-	glog.V(2).Infof("[监控] upload_one_chunk: 开始上传 %s 到 %s", filename, fileUrl)
 	uploadOption := &UploadOption{
 		UploadUrl:         fileUrl,
 		Filename:          filename,
