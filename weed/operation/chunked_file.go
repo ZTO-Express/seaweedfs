@@ -82,7 +82,14 @@ func (cm *ChunkManifest) DeleteChunks(masterFn GetMasterFn, usePublicUrl bool, g
 	startTime := time.Now()
 	var fileIds []string
 	for _, ci := range cm.Chunks {
+		if ci == nil {
+			continue
+		}
 		fileIds = append(fileIds, ci.Fid)
+	}
+	if len(fileIds) == 0 {
+		glog.V(4).Infof("chunk delete skip,no chunk files, manifest filename:%s", cm.Name)
+		return nil
 	}
 	glog.V(4).Infof("开始删除分块文件，总数量: %d", len(fileIds))
 	results, err := DeleteFiles(masterFn, usePublicUrl, grpcDialOption, fileIds)

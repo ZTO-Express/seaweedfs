@@ -184,7 +184,7 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 			r := <-response
 			if r.err != nil {
 				err = r.err
-				break
+				continue
 			}
 			cm.Chunks[r.index] = &ChunkInfo{
 				Offset: r.index * chunkSize,
