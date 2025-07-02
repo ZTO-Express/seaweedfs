@@ -449,27 +449,9 @@ func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, mas
 		fileUrl = "http://" + ret.PublicUrl + "/" + id
 	}
 
-	glog.V(1).Infof("[监控] uploadAsync: chunk %d volume分配成功, fid: %s, url: %s", index, id, fileUrl)
-
-	for i := 0; i < 3; i++ { //重试
-		glog.V(2).Infof("[监控] uploadAsync: chunk %d 开始第 %d 次上传尝试", index, i+1)
-		count, e := upload_one_chunk(filename, reader, masterFn, fileUrl, ret.Auth, authHeader)
-		glog.V(2).Infof("[监控] uploadAsync: chunk %d 第 %d 次尝试结果 - count: %d, error: %v", index, i+1, count, e)
-
-		if e == nil && count > 0 {
-			glog.V(1).Infof("[监控] uploadAsync: chunk %d 第 %d 次尝试成功, count: %d", index, i+1, count)
-			res.count = count
-			res.err = nil
-			break
-		}
-		glog.Warningf("[监控] uploadAsync: chunk %d 第 %d 次尝试失败: %v", index, i+1, e)
-		res.err = e
-	}
-
-	totalDuration := time.Since(startTime)
-	glog.V(1).Infof("[监控] uploadAsync: chunk %d 处理完成 (总耗时: %v), 最终结果 - fid: %s, count: %d, err: %v",
-		index, totalDuration, id, res.count, res.err)
-
+	count, e := upload_one_chunk(filename, reader, masterFn, fileUrl, ret.Auth, authHeader)
+	res.err = e
+	res.count = count
 	res.fid = id
 	res.index = index
 	resp <- &res
