@@ -288,15 +288,9 @@ func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, mas
 		fileUrl = "http://" + ret.PublicUrl + "/" + id
 	}
 
-	for i := 0; i < 3; i++ { //重试
-		count, e := upload_one_chunk(filename, reader, masterFn, fileUrl, ret.Auth, authHeader)
-		if e == nil {
-			res.count = count
-			res.err = nil
-			break
-		}
-		res.err = e
-	}
+	count, e := upload_one_chunk(filename, reader, masterFn, fileUrl, ret.Auth, authHeader)
+	res.err = e
+	res.count = count
 	res.fid = id
 	res.index = index
 	resp <- &res
