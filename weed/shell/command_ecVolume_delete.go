@@ -43,6 +43,7 @@ func (c *commandEcVolumeDelete) Do(args []string, commandEnv *CommandEnv, writer
 	collectionStr := volDeleteCommand.String("collection", "", "the collection name")
 	nodeStr := volDeleteCommand.String("node", "", "optional, specify the volume server <host>:<port> to delete")
 	shards := volDeleteCommand.String("shards", "", "optional, specify the ec shards to delete")
+	soft := volDeleteCommand.Bool("soft", true, "Is it soft deletion")
 	if err = volDeleteCommand.Parse(args); err != nil {
 		return nil
 	}
@@ -87,7 +88,7 @@ func (c *commandEcVolumeDelete) Do(args []string, commandEnv *CommandEnv, writer
 	}
 
 	for _, sourceVolumeServer := range sourceVolumeServerList {
-		err = deleteEcVolume(commandEnv.option.GrpcDialOption, needle.VolumeId(volumeId), collection, sourceVolumeServer, specifyShardsToDelete)
+		err = deleteEcVolume(commandEnv.option.GrpcDialOption, needle.VolumeId(volumeId), collection, sourceVolumeServer, specifyShardsToDelete, *soft)
 		if err != nil {
 			//delete error, interrupt
 			return err
@@ -130,13 +131,13 @@ func findEcVolumeLocations(commandEnv *CommandEnv, volumeId int, collection stri
 	return sourceVolumeServerList, err
 }
 
-func deleteEcVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, collection string, sourceVolumeServer pb.ServerAddress, specifyShardsToDelete []uint32) (err error) {
+func deleteEcVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, collection string, sourceVolumeServer pb.ServerAddress, specifyShardsToDelete []uint32, soft bool) (err error) {
 	return operation.WithVolumeServerClient(false, sourceVolumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
 		_, deleteErr := volumeServerClient.EcVolumeDelete(context.Background(), &volume_server_pb.EcVolumeDeleteRequest{
 			VolumeId:   uint32(volumeId),
 			Collection: collection,
 			ShardIds:   specifyShardsToDelete,
-			Soft:       true, //软删除
+			Soft:       soft, //软删除
 		})
 		return deleteErr
 	})
