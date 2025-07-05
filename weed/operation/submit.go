@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/pb"
-	"github.com/seaweedfs/seaweedfs/weed/util"
-	"github.com/shirou/gopsutil/v4/mem"
 	"io"
 	"math"
 	"mime"
@@ -16,6 +13,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/util"
+	"github.com/shirou/gopsutil/v4/mem"
 
 	"google.golang.org/grpc"
 
@@ -180,12 +181,26 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 			go uploadAsync(i, filename, fi.DataCenter, newReader, masterFn, usePublicUrl, authHeader, grpcDialOption, ar, response, sem)
 		}
 
+		glog.V(1).Infof("[监控] UploadWithAssign: 等待接收 %d 个chunk的结果", chunks)
+
 		for i := 0; i < int(chunks); i++ {
 			r := <-response
+			glog.V(1).Infof("[监控] UploadWithAssign: 收到chunk %d 结果 - fid: %s, count: %d, err: %v", r.index, r.fid, r.count, r.err)
+
 			if r.err != nil {
 				err = r.err
+				glog.Errorf("[监控] UploadWithAssign: chunk %d 失败，设置全局错误: %v", r.index, r.err)
 				continue
 			}
+
+			// 检查 count 是否为 0
+			if r.count == 0 {
+				err = fmt.Errorf("chunk %d uploaded 0 bytes", r.index)
+				glog.Errorf("[监控] UploadWithAssign: chunk %d 上传了0字节，设置全局错误: %v", r.index, err)
+				continue
+			}
+
+			glog.V(1).Infof("[监控] UploadWithAssign: chunk %d 成功，创建ChunkInfo", r.index)
 			cm.Chunks[r.index] = &ChunkInfo{
 				Offset: r.index * chunkSize,
 				Size:   int64(r.count),
@@ -194,13 +209,30 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 			retSize += uint64(r.count)
 		}
 		close(response)
+
+		glog.V(1).Infof("[监控] UploadWithAssign: 所有chunk处理完成 - 全局错误: %v, 总大小: %d", err, retSize)
+
+		// 验证chunk完整性
+		var missingChunks []int64
+		var successChunks []int64
+		for i := int64(0); i < chunks; i++ {
+			if cm.Chunks[i] == nil {
+				missingChunks = append(missingChunks, i)
+			} else {
+				successChunks = append(successChunks, i)
+			}
+		}
+		glog.V(1).Infof("[监控] UploadWithAssign: 成功的chunk: %v, 缺失的chunk: %v", successChunks, missingChunks)
+
 		if err != nil {
 			// delete all uploaded chunks
+			glog.Errorf("[监控] UploadWithAssign: 因为错误退出，删除所有已上传的chunk: %v", err)
 			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption, false)
 			return 0, "", "", err
 		}
 
 		// 所有chunks上传完成后，为文件清单重新assign
+		glog.V(1).Infof("[监控] UploadWithAssign: 开始为文件清单分配volume")
 		ar := &VolumeAssignRequest{
 			Count:       1,
 			Replication: fi.Replication,
@@ -212,9 +244,12 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 		ret, assignErr := Assign(masterFn, grpcDialOption, ar)
 		if assignErr != nil {
 			// delete all uploaded chunks
+			glog.Errorf("[监控] UploadWithAssign: 文件清单volume分配失败: %v", assignErr)
 			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption, false)
 			return 0, "", "", assignErr
 		}
+
+		glog.V(1).Infof("[监控] UploadWithAssign: 文件清单volume分配成功 - fid: %s", ret.Fid)
 
 		// 构建文件清单的URL
 		var manifestBaseUrl string
@@ -225,12 +260,17 @@ func (fi FilePart) UploadWithAssign(maxMB int, masterFn GetMasterFn, usePublicUr
 		}
 		manifestUrl := buildUrlWithParams(manifestBaseUrl, fi.ModTime, fi.Fsync)
 
+		glog.V(1).Infof("[监控] UploadWithAssign: 开始上传文件清单到: %s", manifestUrl)
 		err = upload_chunked_file_manifest(manifestUrl, &cm, ret.Auth, authHeader)
 		if err != nil {
 			// delete all uploaded chunks
+			glog.Errorf("[监控] UploadWithAssign: 文件清单上传失败: %v", err)
 			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption, false)
 			return 0, "", "", err
 		}
+
+		glog.V(1).Infof("[监控] UploadWithAssign: 文件清单上传成功，返回结果 - fid: %s, url: %s, size: %d",
+			ret.Fid, ret.PublicUrl+"/"+ret.Fid, retSize)
 
 		// 返回文件清单的fid
 		return retSize, ret.Fid, ret.PublicUrl + "/" + ret.Fid, nil
@@ -385,6 +425,9 @@ func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, mas
 		sem.Release()
 	}()
 
+	startTime := time.Now()
+	glog.V(1).Infof("[监控] uploadAsync: 开始处理chunk %d (%s)", index, filename)
+
 	fmt.Println("Uploading chunks async,index ", index, "filename ", filename, " dataCenter ", dataCenter, "usePublicUrl", usePublicUrl, "currentTime", time.Now().Format("2006-01-02 15:04:05.010101"))
 
 	var res = AsyncChunkUploadResult{}
@@ -392,8 +435,10 @@ func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, mas
 	var err error
 
 	// 在实际上传chunk前进行assign，避免EC编码问题
+	glog.V(2).Infof("[监控] uploadAsync: chunk %d 开始分配volume", index)
 	ret, err := Assign(masterFn, grpcDialOption, ar)
 	if err != nil {
+		glog.Errorf("[监控] uploadAsync: chunk %d volume分配失败: %v", index, err)
 		res.err = err
 		resp <- &res
 		return
@@ -404,15 +449,27 @@ func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, mas
 		fileUrl = "http://" + ret.PublicUrl + "/" + id
 	}
 
+	glog.V(1).Infof("[监控] uploadAsync: chunk %d volume分配成功, fid: %s, url: %s", index, id, fileUrl)
+
 	for i := 0; i < 3; i++ { //重试
+		glog.V(2).Infof("[监控] uploadAsync: chunk %d 开始第 %d 次上传尝试", index, i+1)
 		count, e := upload_one_chunk(filename, reader, masterFn, fileUrl, ret.Auth, authHeader)
-		if e == nil {
+		glog.V(2).Infof("[监控] uploadAsync: chunk %d 第 %d 次尝试结果 - count: %d, error: %v", index, i+1, count, e)
+
+		if e == nil && count > 0 {
+			glog.V(1).Infof("[监控] uploadAsync: chunk %d 第 %d 次尝试成功, count: %d", index, i+1, count)
 			res.count = count
 			res.err = nil
 			break
 		}
+		glog.Warningf("[监控] uploadAsync: chunk %d 第 %d 次尝试失败: %v", index, i+1, e)
 		res.err = e
 	}
+
+	totalDuration := time.Since(startTime)
+	glog.V(1).Infof("[监控] uploadAsync: chunk %d 处理完成 (总耗时: %v), 最终结果 - fid: %s, count: %d, err: %v",
+		index, totalDuration, id, res.count, res.err)
+
 	res.fid = id
 	res.index = index
 	resp <- &res
@@ -428,6 +485,8 @@ func upload_one_chunk(filename string, reader io.Reader, masterFn GetMasterFn,
 	fileUrl string, jwt security.EncodedJwt, basicAuth string,
 ) (size uint32, e error) {
 	glog.V(4).Info("Uploading part ", filename, " to ", fileUrl, "...")
+	glog.V(2).Infof("[监控] upload_one_chunk: 开始上传 %s 到 %s", filename, fileUrl)
+
 	uploadOption := &UploadOption{
 		UploadUrl:         fileUrl,
 		Filename:          filename,
@@ -439,9 +498,13 @@ func upload_one_chunk(filename string, reader io.Reader, masterFn GetMasterFn,
 		AuthHeader:        basicAuth,
 	}
 	uploadResult, uploadError, _ := Upload(reader, uploadOption)
+
 	if uploadError != nil {
+		glog.V(2).Infof("[监控] upload_one_chunk: %s 上传失败: %v", filename, uploadError)
 		return 0, uploadError
 	}
+
+	glog.V(2).Infof("[监控] upload_one_chunk: %s 上传成功, 大小: %d bytes", filename, uploadResult.Size)
 	return uploadResult.Size, nil
 }
 
