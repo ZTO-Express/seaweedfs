@@ -413,53 +413,19 @@ func getEtag(r *http.Response) (etag string) {
 
 // streamUploadOptimized 优化的流式上传，减少内存占用
 func streamUploadOptimized(reader io.Reader, option *UploadOption) (*UploadResult, error) {
-	filename := fileNameEscaper.Replace(option.Filename)
-	// 用 pipe 连接 multipart writer 的输出和 http body
-	pr, pw := io.Pipe()
-	bodyWriter := multipart.NewWriter(pw)
-
-	// 异步写入 multipart body
-	go func() {
-		defer pw.Close()
-		defer bodyWriter.Close()
-
-		// 创建一个 form-data 文件字段
-		part, err := bodyWriter.CreateFormFile("file", filename)
-		if err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-
-		// 把大文件流式拷贝进 multipart 的文件字段中
-		size, err := io.Copy(part, reader)
-		if err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-		glog.V(1).Infof("upload file:%s finish,size:%d, url:%s", filename, size, option.UploadUrl)
-	}()
-
 	// 创建HTTP请求
-	req, err := http.NewRequest(http.MethodPost, option.UploadUrl, pr)
+	req, err := http.NewRequest(http.MethodPost, option.UploadUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create upload request %s: %v", option.UploadUrl, err)
 	}
 
+	// 设置请求头
 	if option.MimeType == "" {
 		option.MimeType = mime.TypeByExtension(strings.ToLower(filepath.Ext(option.Filename)))
 	}
-	if option.MimeType != "" {
-		req.Header.Set("Content-Type", option.MimeType)
-	}
-	//if option.IsInputCompressed {
-	//	h.Set("Content-Encoding", "gzip")
-	//}
 	if option.Md5 != "" {
 		req.Header.Set("Content-MD5", option.Md5)
 	}
-
-	req.Header.Set("Content-Type", bodyWriter.FormDataContentType())
-	req.Header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, filename))
 	req.Header.Set("Idempotency-Key", option.UploadUrl)
 
 	for k, v := range option.PairMap {
@@ -475,21 +441,20 @@ func streamUploadOptimized(reader io.Reader, option *UploadOption) (*UploadResul
 	if auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
-
 	// 发送请求
-	resp, err := HttpClient.Do(req)
+	resp, err := sendRequest(reader, req, option)
 	defer util.CloseResponse(resp)
 	if err != nil {
 		if strings.Contains(err.Error(), "connection reset by peer") ||
 			strings.Contains(err.Error(), "use of closed network connection") {
 			glog.V(1).Infof("repeat error upload request %s: %v", option.UploadUrl, err)
 			stats.FilerHandlerCounter.WithLabelValues(stats.RepeatErrorUploadContent).Inc()
-			resp, err = HttpClient.Do(req)
+			resp, err = sendRequest(reader, req, option)
 			defer util.CloseResponse(resp)
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("upload %s %d bytes to %v: %v", option.Filename, -1, option.UploadUrl, err)
+		return nil, fmt.Errorf("upload %s to %v: %v", option.Filename, option.UploadUrl, err)
 	}
 
 	// 处理响应
@@ -518,4 +483,72 @@ func streamUploadOptimized(reader io.Reader, option *UploadOption) (*UploadResul
 	ret.ETag = etag
 	ret.ContentMd5 = resp.Header.Get("Content-MD5")
 	return &ret, nil
+}
+
+// 发送请求的函数
+func sendRequest(reader io.Reader, req *http.Request, option *UploadOption) (*http.Response, error) {
+	filename := fileNameEscaper.Replace(option.Filename)
+	// 为每次请求创建新的 pipe
+	pr, pw := io.Pipe()
+	bodyWriter := multipart.NewWriter(pw)
+
+	// 设置正确的 Content-Type
+	req.Header.Set("Content-Type", bodyWriter.FormDataContentType())
+	req.Body = pr
+
+	// 异步写入 multipart body
+	errCh := make(chan error, 1)
+	go func() {
+		defer pw.Close()
+		defer bodyWriter.Close()
+
+		// 创建一个 form-data 文件字段
+		part, err := bodyWriter.CreateFormFile("file", filename)
+		if err != nil {
+			errCh <- err
+			pw.CloseWithError(err)
+			return
+		}
+
+		// 设置文件的 Content-Type（如果指定了）
+		if option.MimeType != "" && option.MimeType != "application/octet-stream" {
+			part.Write([]byte(fmt.Sprintf("Content-Type: %s\r\n\r\n", option.MimeType)))
+		}
+
+		// 把大文件流式拷贝进 multipart 的文件字段中
+		size, err := io.Copy(part, reader)
+		if err != nil {
+			errCh <- err
+			pw.CloseWithError(err)
+			return
+		}
+		glog.V(1).Infof("upload file:%s finish,size:%d, url:%s", filename, size, option.UploadUrl)
+		errCh <- nil
+	}()
+
+	// 发送请求
+	resp, err := HttpClient.Do(req)
+	if err != nil {
+		// 检查异步写入是否有错误
+		select {
+		case asyncErr := <-errCh:
+			if asyncErr != nil {
+				return nil, fmt.Errorf("async write error: %v, http error: %v", asyncErr, err)
+			}
+		default:
+		}
+		return nil, err
+	}
+
+	// 检查异步写入是否成功
+	select {
+	case asyncErr := <-errCh:
+		if asyncErr != nil {
+			util.CloseResponse(resp)
+			return nil, asyncErr
+		}
+	default:
+	}
+
+	return resp, nil
 }
