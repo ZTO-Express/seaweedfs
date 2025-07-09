@@ -425,9 +425,6 @@ func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, mas
 		sem.Release()
 	}()
 
-	startTime := time.Now()
-	glog.V(1).Infof("[监控] uploadAsync: 开始处理chunk %d (%s)", index, filename)
-
 	fmt.Println("Uploading chunks async,index ", index, "filename ", filename, " dataCenter ", dataCenter, "usePublicUrl", usePublicUrl, "currentTime", time.Now().Format("2006-01-02 15:04:05.010101"))
 
 	var res = AsyncChunkUploadResult{}
