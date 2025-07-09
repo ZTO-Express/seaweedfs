@@ -35,6 +35,7 @@ type UploadOption struct {
 	RetryForever      bool
 	Md5               string
 	BytesBuffer       *bytes.Buffer
+	StreamMode        bool
 }
 
 // FillRemoteAuthHeader 在http请求转发时，将调用方的Authorization头继续透传给upload_content
@@ -154,6 +155,12 @@ func Upload(reader io.Reader, option *UploadOption) (uploadResult *UploadResult,
 }
 
 func doUpload(reader io.Reader, option *UploadOption) (uploadResult *UploadResult, err error, data []byte) {
+	if !option.Cipher && !option.IsInputCompressed && option.StreamMode {
+		uploadResult, err = streamUploadOptimized(reader, option)
+		// dont response full data, data is always nil
+		return uploadResult, err, nil
+	}
+	// 检查是否是BytesReader，避免重复读取
 	bytesReader, ok := reader.(*util.BytesReader)
 	if ok {
 		data = bytesReader.Bytes
@@ -402,4 +409,113 @@ func getEtag(r *http.Response) (etag string) {
 		etag = etag[1 : len(etag)-1]
 	}
 	return
+}
+
+// streamUploadOptimized 优化的流式上传，减少内存占用
+func streamUploadOptimized(reader io.Reader, option *UploadOption) (*UploadResult, error) {
+	filename := fileNameEscaper.Replace(option.Filename)
+	// 用 pipe 连接 multipart writer 的输出和 http body
+	pr, pw := io.Pipe()
+	bodyWriter := multipart.NewWriter(pw)
+
+	// 异步写入 multipart body
+	go func() {
+		defer pw.Close()
+		defer bodyWriter.Close()
+
+		// 创建一个 form-data 文件字段
+		part, err := bodyWriter.CreateFormFile("file", filename)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+
+		// 把大文件流式拷贝进 multipart 的文件字段中
+		size, err := io.Copy(part, reader)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		glog.V(1).Infof("upload file:%s finish,size:%d, url:%s", filename, size, option.UploadUrl)
+	}()
+
+	// 创建HTTP请求
+	req, err := http.NewRequest(http.MethodPost, option.UploadUrl, pr)
+	if err != nil {
+		return nil, fmt.Errorf("create upload request %s: %v", option.UploadUrl, err)
+	}
+
+	if option.MimeType == "" {
+		option.MimeType = mime.TypeByExtension(strings.ToLower(filepath.Ext(option.Filename)))
+	}
+	if option.MimeType != "" {
+		req.Header.Set("Content-Type", option.MimeType)
+	}
+	//if option.IsInputCompressed {
+	//	h.Set("Content-Encoding", "gzip")
+	//}
+	if option.Md5 != "" {
+		req.Header.Set("Content-MD5", option.Md5)
+	}
+
+	req.Header.Set("Content-Type", bodyWriter.FormDataContentType())
+	req.Header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, filename))
+	req.Header.Set("Idempotency-Key", option.UploadUrl)
+
+	for k, v := range option.PairMap {
+		req.Header.Set(k, v)
+	}
+
+	var auth string
+	if option.Jwt != "" {
+		auth = "BEARER " + string(option.Jwt)
+	} else {
+		auth = option.AuthHeader
+	}
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+
+	// 发送请求
+	resp, err := HttpClient.Do(req)
+	defer util.CloseResponse(resp)
+	if err != nil {
+		if strings.Contains(err.Error(), "connection reset by peer") ||
+			strings.Contains(err.Error(), "use of closed network connection") {
+			glog.V(1).Infof("repeat error upload request %s: %v", option.UploadUrl, err)
+			stats.FilerHandlerCounter.WithLabelValues(stats.RepeatErrorUploadContent).Inc()
+			resp, err = HttpClient.Do(req)
+			defer util.CloseResponse(resp)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("upload %s %d bytes to %v: %v", option.Filename, -1, option.UploadUrl, err)
+	}
+
+	// 处理响应
+	var ret UploadResult
+	etag := getEtag(resp)
+	if resp.StatusCode == http.StatusNoContent {
+		ret.ETag = etag
+		return &ret, nil
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response body %v: %v", option.UploadUrl, err)
+	}
+
+	err = json.Unmarshal(respBody, &ret)
+	if err != nil {
+		glog.Errorf("unmarshal %s: %v", option.UploadUrl, string(respBody))
+		return nil, fmt.Errorf("unmarshal %v: %v", option.UploadUrl, err)
+	}
+
+	if ret.Error != "" {
+		return nil, fmt.Errorf("unmarshalled error %v: %v", option.UploadUrl, ret.Error)
+	}
+
+	ret.ETag = etag
+	ret.ContentMd5 = resp.Header.Get("Content-MD5")
+	return &ret, nil
 }

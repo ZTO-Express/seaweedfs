@@ -484,9 +484,8 @@ func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, mas
 func upload_one_chunk(filename string, reader io.Reader, masterFn GetMasterFn,
 	fileUrl string, jwt security.EncodedJwt, basicAuth string,
 ) (size uint32, e error) {
-	glog.V(4).Info("Uploading part ", filename, " to ", fileUrl, "...")
+	start := time.Now()
 	glog.V(2).Infof("[监控] upload_one_chunk: 开始上传 %s 到 %s", filename, fileUrl)
-
 	uploadOption := &UploadOption{
 		UploadUrl:         fileUrl,
 		Filename:          filename,
@@ -496,15 +495,15 @@ func upload_one_chunk(filename string, reader io.Reader, masterFn GetMasterFn,
 		PairMap:           nil,
 		Jwt:               jwt,
 		AuthHeader:        basicAuth,
+		StreamMode:        true,
 	}
 	uploadResult, uploadError, _ := Upload(reader, uploadOption)
 
 	if uploadError != nil {
-		glog.V(2).Infof("[监控] upload_one_chunk: %s 上传失败: %v", filename, uploadError)
+		glog.Errorf("Uploading chunk finish, filename:%s,to%s, err:%v", filename, fileUrl, uploadError)
 		return 0, uploadError
 	}
-
-	glog.V(2).Infof("[监控] upload_one_chunk: %s 上传成功, 大小: %d bytes", filename, uploadResult.Size)
+	glog.V(1).Infof("Uploading chunk success, filename:%s, to%s, resultSize:%d, cost:%f s", filename, fileUrl, uploadResult.Size, time.Since(start).Seconds())
 	return uploadResult.Size, nil
 }
 
