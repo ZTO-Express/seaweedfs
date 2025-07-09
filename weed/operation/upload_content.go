@@ -155,7 +155,7 @@ func Upload(reader io.Reader, option *UploadOption) (uploadResult *UploadResult,
 }
 
 func doUpload(reader io.Reader, option *UploadOption) (uploadResult *UploadResult, err error, data []byte) {
-	if !option.Cipher && !option.IsInputCompressed && option.StreamMode {
+	if option.StreamMode && !option.Cipher && !option.IsInputCompressed {
 		uploadResult, err = streamUploadOptimized(reader, option)
 		// dont response full data, data is always nil
 		return uploadResult, err, nil
@@ -444,15 +444,15 @@ func streamUploadOptimized(reader io.Reader, option *UploadOption) (*UploadResul
 	// 发送请求
 	resp, err := sendRequest(reader, req, option)
 	defer util.CloseResponse(resp)
-	if err != nil {
-		if strings.Contains(err.Error(), "connection reset by peer") ||
-			strings.Contains(err.Error(), "use of closed network connection") {
-			glog.V(1).Infof("repeat error upload request %s: %v", option.UploadUrl, err)
-			stats.FilerHandlerCounter.WithLabelValues(stats.RepeatErrorUploadContent).Inc()
-			resp, err = sendRequest(reader, req, option)
-			defer util.CloseResponse(resp)
-		}
-	}
+	//if err != nil {
+	//	if strings.Contains(err.Error(), "connection reset by peer") ||
+	//		strings.Contains(err.Error(), "use of closed network connection") {
+	//		glog.V(1).Infof("repeat error upload request %s: %v", option.UploadUrl, err)
+	//		stats.FilerHandlerCounter.WithLabelValues(stats.RepeatErrorUploadContent).Inc()
+	//		resp, err = sendRequest(reader, req, option)
+	//		defer util.CloseResponse(resp)
+	//	}
+	//}
 	if err != nil {
 		return nil, fmt.Errorf("upload %s to %v: %v", option.Filename, option.UploadUrl, err)
 	}
@@ -487,14 +487,28 @@ func streamUploadOptimized(reader io.Reader, option *UploadOption) (*UploadResul
 
 // 发送请求的函数
 func sendRequest(reader io.Reader, req *http.Request, option *UploadOption) (*http.Response, error) {
-	filename := fileNameEscaper.Replace(option.Filename)
 	// 为每次请求创建新的 pipe
 	pr, pw := io.Pipe()
+	req.Body = pr
 	bodyWriter := multipart.NewWriter(pw)
+
+	h := make(textproto.MIMEHeader)
+	filename := fileNameEscaper.Replace(option.Filename)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, filename))
+	h.Set("Idempotency-Key", option.UploadUrl)
+
+	if option.MimeType != "" && option.MimeType != "application/octet-stream" {
+		h.Set("Content-Type", option.MimeType)
+	}
+	if option.IsInputCompressed {
+		h.Set("Content-Encoding", "gzip")
+	}
+	if option.Md5 != "" {
+		h.Set("Content-MD5", option.Md5)
+	}
 
 	// 设置正确的 Content-Type
 	req.Header.Set("Content-Type", bodyWriter.FormDataContentType())
-	req.Body = pr
 
 	// 异步写入 multipart body
 	errCh := make(chan error, 1)
@@ -502,21 +516,16 @@ func sendRequest(reader io.Reader, req *http.Request, option *UploadOption) (*ht
 		defer pw.Close()
 		defer bodyWriter.Close()
 
-		// 创建一个 form-data 文件字段
-		part, err := bodyWriter.CreateFormFile("file", filename)
-		if err != nil {
-			errCh <- err
-			pw.CloseWithError(err)
+		fileWriter, cpErr := bodyWriter.CreatePart(h)
+		if cpErr != nil {
+			glog.V(0).Infoln("error creating form file", cpErr.Error())
+			pw.CloseWithError(cpErr)
+			errCh <- cpErr
 			return
 		}
 
-		// 设置文件的 Content-Type（如果指定了）
-		if option.MimeType != "" && option.MimeType != "application/octet-stream" {
-			part.Write([]byte(fmt.Sprintf("Content-Type: %s\r\n\r\n", option.MimeType)))
-		}
-
 		// 把大文件流式拷贝进 multipart 的文件字段中
-		size, err := io.Copy(part, reader)
+		size, err := io.Copy(fileWriter, reader)
 		if err != nil {
 			errCh <- err
 			pw.CloseWithError(err)
@@ -547,7 +556,6 @@ func sendRequest(reader io.Reader, req *http.Request, option *UploadOption) (*ht
 			util.CloseResponse(resp)
 			return nil, asyncErr
 		}
-	default:
 	}
 
 	return resp, nil
