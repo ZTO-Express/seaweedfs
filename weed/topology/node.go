@@ -162,8 +162,10 @@ func (n *NodeImpl) AvailableSpaceFor(option *VolumeGrowOption) int64 {
 	if ecShardCount > 0 {
 		freeVolumeSlotCount = freeVolumeSlotCount - ecShardCount/erasure_coding.DataShardsCount - 1
 	}
-	glog.V(0).Infof("availableSpaceFor freeVolumeSlotCount: %d, ecShardCount:%d, maxVolumeCount:%d, remoteVolumeCount:%d, volumeCount:%d",
-		freeVolumeSlotCount, ecShardCount, t.maxVolumeCount, t.remoteVolumeCount, t.volumeCount)
+	if freeVolumeSlotCount < 1 {
+		glog.V(0).Infof("availableSpaceFor [%v] freeVolumeSlotCount: %d, ecShardCount:%d, maxVolumeCount:%d, remoteVolumeCount:%d, volumeCount:%d", n.GetValue(),
+			freeVolumeSlotCount, ecShardCount, t.maxVolumeCount, t.remoteVolumeCount, t.volumeCount)
+	}
 	return freeVolumeSlotCount
 }
 func (n *NodeImpl) SetParent(node Node) {
