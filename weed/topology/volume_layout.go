@@ -3,11 +3,12 @@ package topology
 import (
 	"errors"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/seaweedfs/seaweedfs/weed/stats"
 
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 
@@ -307,6 +308,7 @@ func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (vi
 			if float64(info.Size) > float64(vl.volumeSizeLimit)*VolumeGrowStrategy.Threshold {
 				shouldGrow = true
 				vl.setVolumeCrowded(vid)
+				glog.V(0).Infof("collection:%s, volume: %d, reach threshold: %f, info.Size:%d\n", option.Collection, vid, VolumeGrowStrategy.Threshold, info.Size)
 			}
 			return vid, count, locationList.Copy(), shouldGrow, nil
 		}
@@ -361,8 +363,9 @@ func (vl *VolumeLayout) ShouldGrowVolumes(option *VolumeGrowOption) bool {
 	stats.MasterVolumeLayout.WithLabelValues(option.Collection, option.DataCenter, "total").Set(float64(total))
 	stats.MasterVolumeLayout.WithLabelValues(option.Collection, option.DataCenter, "active").Set(float64(active))
 	stats.MasterVolumeLayout.WithLabelValues(option.Collection, option.DataCenter, "crowded").Set(float64(crowded))
-	glog.V(0).Infof("active volume: %d, high usage volume: %d\n", active, crowded)
-	return (float64(active) * VolumeGrowStrategy.CrowdedThreshold) <= float64(crowded)
+	result := (float64(active) * VolumeGrowStrategy.CrowdedThreshold) <= float64(crowded)
+	glog.V(0).Infof("active volume: %d, high usage volume: %d, result:%v, option:%s\n", active, crowded, result, option.String())
+	return result
 }
 
 func (vl *VolumeLayout) GetActiveVolumeCount(option *VolumeGrowOption) (total, active, crowded int) {

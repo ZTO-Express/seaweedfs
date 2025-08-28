@@ -53,17 +53,17 @@ func (ms *MasterServer) ProcessGrowRequest() {
 				filter.Store(req, nil)
 				// we have lock called inside vg
 				go func() {
-					glog.V(1).Infoln("starting automatic volume grow")
+					glog.V(1).Infoln("starting automatic volume grow, option:", option.String())
 					start := time.Now()
 					newVidLocations, err := ms.vg.AutomaticGrowByType(req.Option, ms.grpcDialOption, ms.Topo, req.Count)
-					glog.V(1).Infoln("finished automatic volume grow, cost ", time.Now().Sub(start))
+					glog.V(1).Infof("finished automatic volume grow, option:%s, cost: %d \n", option.String(), time.Now().Sub(start))
 					vl.DoneGrowRequest()
 					if err == nil {
 						for _, newVidLocation := range newVidLocations {
 							ms.broadcastToClients(&master_pb.KeepConnectedResponse{VolumeLocation: newVidLocation})
 						}
 					} else {
-						glog.V(1).Infof("automatic volume grow failed: %+v", err)
+						glog.V(1).Infof("automatic volume grow failed. option:%s, error: %+v", option.String(), err)
 					}
 					filter.Delete(req)
 				}()
