@@ -3,6 +3,7 @@ package pb
 import (
 	"context"
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/observer"
 	"google.golang.org/grpc/metadata"
 	"math/rand"
 	"net/http"
@@ -59,6 +60,14 @@ func NewGrpcServer(opts ...grpc.ServerOption) *grpc.Server {
 		grpc.MaxRecvMsgSize(Max_Message_Size),
 		grpc.MaxSendMsgSize(Max_Message_Size),
 	)
+
+	// Attach default server interceptors to propagate selected incoming metadata into context.
+	// Currently we propagate the sw-client-id header.
+	options = append(options,
+		grpc.ChainUnaryInterceptor(observer.ZcatUnaryServerInterceptor),
+		//grpc.ChainStreamInterceptor(observer.ZcatStreamServerInterceptor),
+	)
+
 	for _, opt := range opts {
 		if opt != nil {
 			options = append(options, opt)
@@ -89,6 +98,14 @@ func GrpcDial(ctx context.Context, address string, waitForReady bool, opts ...gr
 			options = append(options, opt)
 		}
 	}
+
+	// Attach client interceptors to forward selected context values as metadata. Keep key in sync
+	// with server interceptors. This allows callers to set values via WithOutgoingValue(ctx, "sw-client-id", "...")
+	options = append(options,
+		grpc.WithChainUnaryInterceptor(observer.ZcatUnaryClientInterceptor),
+		//grpc.WithChainStreamInterceptor(observer.ZcatStreamClientInterceptor),
+	)
+
 	return grpc.DialContext(ctx, address, options...)
 }
 

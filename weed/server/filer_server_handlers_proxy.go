@@ -1,6 +1,8 @@
 package weed_server
 
 import (
+	"git.ztosys.com/ZTO_CS/cat-go/cat"
+	middleware_http "git.ztosys.com/ZTO_CS/zcat-go-sdk/middleware/http"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -15,10 +17,14 @@ var (
 )
 
 func init() {
-	client = &http.Client{Transport: &http.Transport{
+	var transport http.RoundTripper = &http.Transport{
 		MaxIdleConns:        1024,
 		MaxIdleConnsPerHost: 1024,
-	}}
+	}
+	if cat.IsEnabled() {
+		transport = middleware_http.WarpTransportWithTracing(transport)
+	}
+	client = &http.Client{Transport: transport}
 }
 
 func (fs *FilerServer) maybeAddVolumeJwtAuthorization(r *http.Request, fileId string, isWrite bool) {

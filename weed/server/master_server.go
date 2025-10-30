@@ -3,6 +3,7 @@ package weed_server
 import (
 	"context"
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/observer"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -138,6 +139,7 @@ func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.Se
 	ms.guard = security.NewGuard(ms.option.WhiteList, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec, ms.option.Username, ms.option.Password)
 
 	handleStaticResources2(r)
+	r.Use(observer.ZcatHandlerFunc)
 	r.HandleFunc("/", ms.proxyToLeader(ms.uiStatusHandler))
 	r.HandleFunc("/ui/index.html", ms.uiStatusHandler)
 	if !ms.option.DisableHttp {

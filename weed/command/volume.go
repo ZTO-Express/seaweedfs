@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/observer"
 	"net/http"
 	httppprof "net/http/pprof"
 	"os"
@@ -290,7 +291,7 @@ func (v VolumeServerOptions) startVolumeServer(volumeFolders, maxVolumeCounts, v
 	}
 
 	// starting the cluster http server
-	clusterHttpServer := v.startClusterHttpService(volumeMux)
+	clusterHttpServer := v.startClusterHttpService(observer.ZcatHandlerFunc(volumeMux))
 
 	grace.OnReload(volumeServer.LoadNewVolumes)
 

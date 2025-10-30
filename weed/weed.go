@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"fmt"
+	"git.ztosys.com/ZTO_CS/zcat-go-sdk/zcat"
 	"io"
 	"io/fs"
 	"os"
@@ -92,6 +93,9 @@ func main() {
 			cmd.Flag.Parse(args[1:])
 			args = cmd.Flag.Args()
 			IsDebug = cmd.IsDebug
+
+			initZcat(cmd) // initialize zcat if enabled
+
 			if !cmd.Run(cmd, args) {
 				fmt.Fprintf(os.Stderr, "\n")
 				cmd.Flag.Usage()
@@ -106,6 +110,18 @@ func main() {
 	fmt.Fprintf(os.Stderr, "weed: unknown subcommand %q\nRun 'weed help' for usage.\n", args[0])
 	setExitStatus(2)
 	exit()
+}
+
+func initZcat(cmd *command.Command) {
+	zcatEnabled := cmd.Flag.Bool("zcat.enabled", false, "enable zcat tracing")
+	if *zcatEnabled {
+		env := *cmd.Flag.String("env", "fat", "env")
+		zcatEnv := zcat.NewEnv(env)
+		if zcatEnv != zcat.FAT && zcatEnv != zcat.PRO && zcatEnv != zcat.SIT && zcatEnv != zcat.DEV {
+			panic("invalid zcat env:" + env)
+		}
+		zcat.Init("seaweedfs", zcatEnv)
+	}
 }
 
 var usageTemplate = `
