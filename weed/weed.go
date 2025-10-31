@@ -99,7 +99,7 @@ func main() {
 			args = cmd.Flag.Args()
 			IsDebug = cmd.IsDebug
 
-			observer.InitZcat() // initialize zcat if enabled
+			observer.InitZcat(cmd.Name()) // initialize zcat if enabled
 
 			if !cmd.Run(cmd, args) {
 				fmt.Fprintf(os.Stderr, "\n")

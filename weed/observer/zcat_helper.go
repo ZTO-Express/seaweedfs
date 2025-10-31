@@ -11,9 +11,16 @@ var (
 	groupKey       = "WEED_ZCAT_GROUP"
 
 	serverNamePrefix = "seaweedfs"
+	cmdList          = map[string]struct{}{
+		"server": {}, "volume": {}, "master": {},
+		"filer": {}, "shell": {},
+	}
 )
 
-func InitZcat() {
+func InitZcat(subCmd string) {
+	if _, ok := cmdList[subCmd]; !ok {
+		return
+	}
 	zcatEnabled := os.Getenv(zcatEnabledKey)
 	if zcatEnabled == "true" {
 		env := os.Getenv(envKey)
