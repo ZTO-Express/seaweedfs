@@ -12,9 +12,14 @@ var (
 
 	serverNamePrefix = "seaweedfs"
 	cmdList          = map[string]struct{}{
-		"server": {}, "volume": {}, "master": {},
-		"filer": {}, "shell": {},
+		RoleMaster: {}, RoleVolume: {}, RoleServer: {}, RoleShell: {},
 	}
+
+	RoleMaster = "master"
+	RoleVolume = "volume"
+	RoleFiler  = "filer"
+	RoleShell  = "shell"
+	RoleServer = "server"
 )
 
 func InitZcat(subCmd string) {
@@ -34,7 +39,7 @@ func InitZcat(subCmd string) {
 		if group == "" {
 			seaweedGroup = serverNamePrefix
 		} else {
-			seaweedGroup = serverNamePrefix + group
+			seaweedGroup = serverNamePrefix + "-" + group
 		}
 		zcat.Init(seaweedGroup, zcatEnv)
 	}

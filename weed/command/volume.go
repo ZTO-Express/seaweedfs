@@ -291,7 +291,7 @@ func (v VolumeServerOptions) startVolumeServer(volumeFolders, maxVolumeCounts, v
 	}
 
 	// starting the cluster http server
-	clusterHttpServer := v.startClusterHttpService(observer.ZcatHandlerFunc(volumeMux))
+	clusterHttpServer := v.startClusterHttpService(observer.ZcatHandlerFunc(observer.RoleVolume)(volumeMux))
 
 	grace.OnReload(volumeServer.LoadNewVolumes)
 
