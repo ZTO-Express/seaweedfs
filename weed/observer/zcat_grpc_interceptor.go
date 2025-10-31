@@ -14,18 +14,27 @@ import (
 // context (using WithOutgoingValue) for the provided keys and injects them into the outgoing
 // gRPC metadata before performing the RPC.
 var ZcatUnaryClientInterceptor = func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-	transactor, ok := zcat.TransactorFromContext(ctx)
-	if !ok {
+	if !cat.IsEnabled() {
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
-	spanCtx := transactor.SpanContext()
+
+	var spanCtx zcat.SpanContext
+	transactor, ok := zcat.TransactorFromContext(ctx)
+	if ok {
+		spanCtx = transactor.SpanContext()
+	} else {
+		spanCtx = zcat.ChildOfSpanContext(zcat.EmptySpanContext)
+		transactor = zcat.StartTransactorWithSpanContext(spanCtx, zcat.GrpcClient.String(), method)
+		defer transactor.Complete()
+	}
 	childId := zcat.GenerateId()
+	transactor.LogEvent(zcat.RemoteCall.String(), "", "0", childId)
+
+	// inject metadata
 	md := metadata.New(nil)
-	// collect user-supplied values
 	md.Append(middleware_http.RootMessageID, spanCtx.RootMessageID)
 	md.Append(middleware_http.ParentMessageID, spanCtx.ParentMessageID)
 	md.Append(middleware_http.ChildMessageID, childId)
-	transactor.LogEvent(zcat.GrpcClient.String(), "", "0", childId)
 
 	ctx = metadata.NewOutgoingContext(ctx, md)
 	return invoker(ctx, method, req, reply, cc, opts...)
@@ -36,10 +45,12 @@ var ZcatUnaryClientInterceptor = func(ctx context.Context, method string, req, r
 // from incoming requests and stores them into the request context so handlers and downstream
 // logic can access them via GetOutgoingValue with the same keys.
 var ZcatUnaryServerInterceptor = func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	var ok bool
-	var meta metadata.MD
+	if !cat.IsEnabled() {
+		return handler(ctx, req)
+	}
 
-	if meta, ok = metadata.FromIncomingContext(ctx); !ok || !cat.IsEnabled() {
+	meta, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
 		return handler(ctx, req)
 	}
 

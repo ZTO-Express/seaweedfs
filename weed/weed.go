@@ -3,7 +3,6 @@ package main
 import (
 	"embed"
 	"fmt"
-	"git.ztosys.com/ZTO_CS/zcat-go-sdk/zcat"
 	"io"
 	"io/fs"
 	"os"
@@ -21,6 +20,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/seaweedfs/seaweedfs/weed/command"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/observer"
 )
 
 var IsDebug *bool
@@ -45,6 +45,11 @@ func init() {
 	weed_server.StaticFS, _ = fs.Sub(static, "static")
 
 	flag.Var(&util.ConfigurationFileDirectory, "config_dir", "directory with toml configuration files")
+
+	// zcat tracing flags
+	//flag.BoolVar(&observer.ZcatEnabled, "zcat.enabled", false, "enable zcat tracing")
+	//flag.StringVar(&observer.Env, "env", "fat", "zcat environment: dev, fat, sit, pro")
+	//flag.StringVar(&observer.Group, "group", "", "seaweedfs zcat group name")
 }
 
 func main() {
@@ -94,7 +99,7 @@ func main() {
 			args = cmd.Flag.Args()
 			IsDebug = cmd.IsDebug
 
-			initZcat(cmd) // initialize zcat if enabled
+			observer.InitZcat() // initialize zcat if enabled
 
 			if !cmd.Run(cmd, args) {
 				fmt.Fprintf(os.Stderr, "\n")
@@ -110,18 +115,6 @@ func main() {
 	fmt.Fprintf(os.Stderr, "weed: unknown subcommand %q\nRun 'weed help' for usage.\n", args[0])
 	setExitStatus(2)
 	exit()
-}
-
-func initZcat(cmd *command.Command) {
-	zcatEnabled := cmd.Flag.Bool("zcat.enabled", false, "enable zcat tracing")
-	if *zcatEnabled {
-		env := *cmd.Flag.String("env", "fat", "env")
-		zcatEnv := zcat.NewEnv(env)
-		if zcatEnv != zcat.FAT && zcatEnv != zcat.PRO && zcatEnv != zcat.SIT && zcatEnv != zcat.DEV {
-			panic("invalid zcat env:" + env)
-		}
-		zcat.Init("seaweedfs", zcatEnv)
-	}
 }
 
 var usageTemplate = `
