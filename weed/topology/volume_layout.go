@@ -307,8 +307,10 @@ func (vl *VolumeLayout) PickForWrite(count uint64, option *VolumeGrowOption) (vi
 			info, _ := dn.GetVolumesById(vid)
 			if float64(info.Size) > float64(vl.volumeSizeLimit)*VolumeGrowStrategy.Threshold {
 				shouldGrow = true
-				vl.setVolumeCrowded(vid)
-				glog.V(0).Infof("collection:%s, volume: %d, reach threshold: %f, info.Size:%d\n", option.Collection, vid, VolumeGrowStrategy.Threshold, info.Size)
+				ops := vl.setVolumeCrowded(vid)
+				if ops {
+					glog.V(0).Infof("volume:%d becomes crowded, collection:%s, threshold: %f, info.Size:%d\n", vid, option.Collection, VolumeGrowStrategy.Threshold, info.Size)
+				}
 			}
 			return vid, count, locationList.Copy(), shouldGrow, nil
 		}
@@ -364,7 +366,9 @@ func (vl *VolumeLayout) ShouldGrowVolumes(option *VolumeGrowOption) bool {
 	stats.MasterVolumeLayout.WithLabelValues(option.Collection, option.DataCenter, "active").Set(float64(active))
 	stats.MasterVolumeLayout.WithLabelValues(option.Collection, option.DataCenter, "crowded").Set(float64(crowded))
 	result := (float64(active) * VolumeGrowStrategy.CrowdedThreshold) <= float64(crowded)
-	glog.V(0).Infof("active volume: %d, high usage volume: %d, result:%v, option:%s\n", active, crowded, result, option.String())
+	if result {
+		glog.V(0).Infof("shouldGrowVolumes,active volume: %d, high usage volume: %d, option:%s\n", active, crowded, option.String())
+	}
 	return result
 }
 
@@ -507,13 +511,15 @@ func (vl *VolumeLayout) removeFromCrowded(vid needle.VolumeId) {
 	delete(vl.crowded, vid)
 }
 
-func (vl *VolumeLayout) setVolumeCrowded(vid needle.VolumeId) {
+func (vl *VolumeLayout) setVolumeCrowded(vid needle.VolumeId) bool {
 	vl.crowdedAccessLock.Lock()
 	defer vl.crowdedAccessLock.Unlock()
 	if _, ok := vl.crowded[vid]; !ok {
 		vl.crowded[vid] = struct{}{}
-		glog.V(0).Infoln("Volume", vid, "becomes crowded")
+		//glog.V(0).Infoln("Volume", vid, "becomes crowded")
+		return true
 	}
+	return false
 }
 
 func (vl *VolumeLayout) getVolumeCrowded() map[needle.VolumeId]struct{} {
@@ -531,7 +537,10 @@ func (vl *VolumeLayout) SetVolumeCrowded(vid needle.VolumeId) {
 
 	for _, v := range vl.writables {
 		if v == vid {
-			vl.setVolumeCrowded(vid)
+			ops := vl.setVolumeCrowded(vid)
+			if ops {
+				glog.V(0).Infoln("Volume", vid, "becomes crowded")
+			}
 			break
 		}
 	}
