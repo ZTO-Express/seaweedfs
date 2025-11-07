@@ -25,6 +25,10 @@ func (c *commandMqTopicList) Help() string {
 	return `print out all topics`
 }
 
+func (c *commandMqTopicList) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandMqTopicList) Do(args []string, commandEnv *CommandEnv, writer io.Writer) error {
 
 	brokerBalancer, err := findBrokerBalancer(commandEnv)
@@ -55,7 +59,7 @@ func findBrokerBalancer(commandEnv *CommandEnv) (brokerBalancer string, err erro
 			Name: pub_balancer.LockBrokerBalancer,
 		})
 		if err != nil {
-			return fmt.Errorf("FindLockOwner: %v", err)
+			return fmt.Errorf("FindLockOwner: %w", err)
 		}
 		brokerBalancer = resp.Owner
 		return nil

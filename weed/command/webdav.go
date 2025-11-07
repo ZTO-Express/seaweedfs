@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/util/version"
 	"net/http"
 	"os"
 	"os/user"
@@ -23,6 +24,7 @@ var (
 
 type WebDavOption struct {
 	filer          *string
+	ipBind         *string
 	filerRootPath  *string
 	port           *int
 	collection     *string
@@ -38,6 +40,7 @@ type WebDavOption struct {
 func init() {
 	cmdWebDav.Run = runWebDav // break init cycle
 	webDavStandaloneOptions.filer = cmdWebDav.Flag.String("filer", "localhost:8888", "filer server address")
+	webDavStandaloneOptions.ipBind = cmdWebDav.Flag.String("ip.bind", "", "ip address to bind to. Default listen to all.")
 	webDavStandaloneOptions.port = cmdWebDav.Flag.Int("port", 7333, "webdav server http listen port")
 	webDavStandaloneOptions.collection = cmdWebDav.Flag.String("collection", "", "collection to create the files")
 	webDavStandaloneOptions.replication = cmdWebDav.Flag.String("replication", "", "replication to create the files")
@@ -60,9 +63,10 @@ var cmdWebDav = &Command{
 
 func runWebDav(cmd *Command, args []string) bool {
 
-	util.LoadConfiguration("security", false)
+	util.LoadSecurityConfiguration()
 
-	glog.V(0).Infof("Starting Seaweed WebDav Server %s at https port %d", util.Version(), *webDavStandaloneOptions.port)
+	listenAddress := fmt.Sprintf("%s:%d", *webDavStandaloneOptions.ipBind, *webDavStandaloneOptions.port)
+	glog.V(0).Infof("Starting Seaweed WebDav Server %s at %s", version.Version(), listenAddress)
 
 	return webDavStandaloneOptions.startWebDav()
 
@@ -126,19 +130,19 @@ func (wo *WebDavOption) startWebDav() bool {
 
 	httpS := &http.Server{Handler: ws.Handler}
 
-	listenAddress := fmt.Sprintf(":%d", *wo.port)
+	listenAddress := fmt.Sprintf("%s:%d", *wo.ipBind, *wo.port)
 	webDavListener, err := util.NewListener(listenAddress, time.Duration(10)*time.Second)
 	if err != nil {
 		glog.Fatalf("WebDav Server listener on %s error: %v", listenAddress, err)
 	}
 
 	if *wo.tlsPrivateKey != "" {
-		glog.V(0).Infof("Start Seaweed WebDav Server %s at https port %d", util.Version(), *wo.port)
+		glog.V(0).Infof("Start Seaweed WebDav Server %s at https %s", version.Version(), listenAddress)
 		if err = httpS.ServeTLS(webDavListener, *wo.tlsCertificate, *wo.tlsPrivateKey); err != nil {
 			glog.Fatalf("WebDav Server Fail to serve: %v", err)
 		}
 	} else {
-		glog.V(0).Infof("Start Seaweed WebDav Server %s at http port %d", util.Version(), *wo.port)
+		glog.V(0).Infof("Start Seaweed WebDav Server %s at http %s", version.Version(), listenAddress)
 		if err = httpS.Serve(webDavListener); err != nil {
 			glog.Fatalf("WebDav Server Fail to serve: %v", err)
 		}

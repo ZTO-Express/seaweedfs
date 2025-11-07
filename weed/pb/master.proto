@@ -55,6 +55,8 @@ service Seaweed {
   }
   rpc RaftRemoveServer (RaftRemoveServerRequest) returns (RaftRemoveServerResponse) {
   }
+  rpc VolumeGrow (VolumeGrowRequest) returns (VolumeGrowResponse) {
+  }
 }
 
 //////////////////////////////////////////////////
@@ -92,6 +94,7 @@ message HeartbeatResponse {
   uint32 metrics_interval_seconds = 4;
   repeated StorageBackend storage_backends = 5;
   repeated string duplicated_uuids = 6;
+  bool preallocate = 7;
 }
 
 message VolumeInformationMessage {
@@ -110,8 +113,8 @@ message VolumeInformationMessage {
   string remote_storage_name = 13;
   string remote_storage_key = 14;
   string disk_type = 15;
-
   string dir = 16;
+  uint32 disk_id = 17;
 }
 
 message VolumeShortInformationMessage {
@@ -121,6 +124,7 @@ message VolumeShortInformationMessage {
   uint32 version = 9;
   uint32 ttl = 10;
   string disk_type = 15;
+  uint32 disk_id = 16;
 }
 
 message VolumeEcShardInformationMessage {
@@ -129,8 +133,9 @@ message VolumeEcShardInformationMessage {
   uint32 ec_index_bits = 3;
   string disk_type = 4;
   uint64 destroy_time = 5;
-
   string dir = 6;
+  uint32 disk_id = 8;
+  repeated int64 shard_sizes = 9; // optimized: sizes for shards in order of set bits in ec_index_bits
 }
 
 message StorageBackend {
@@ -215,9 +220,22 @@ message AssignRequest {
   string rack = 6;
   string data_node = 7;
   uint32 memory_map_max_size_mb = 8;
-  uint32 Writable_volume_count = 9;
+  uint32 writable_volume_count = 9;
   string disk_type = 10;
 }
+
+message VolumeGrowRequest {
+  uint32 writable_volume_count = 1;
+  string replication = 2;
+  string collection = 3;
+  string ttl = 4;
+  string data_center = 5;
+  string rack = 6;
+  string data_node = 7;
+  uint32 memory_map_max_size_mb = 8;
+  string disk_type = 9;
+}
+
 message AssignResponse {
   string fid = 1;
   uint64 count = 4;
@@ -271,6 +289,7 @@ message DiskInfo {
   repeated VolumeInformationMessage volume_infos = 6;
   repeated VolumeEcShardInformationMessage ec_shard_infos = 7;
   int64 remote_volume_count = 8;
+  uint32 disk_id = 9;
 }
 message DataNodeInfo {
   string id = 1;
@@ -456,4 +475,7 @@ message RaftListClusterServersResponse {
     bool   isLeader = 4;
   }
   repeated ClusterServers cluster_servers = 1;
+}
+
+message VolumeGrowResponse {
 }

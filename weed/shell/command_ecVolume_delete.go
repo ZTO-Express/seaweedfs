@@ -4,15 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"strconv"
+	"strings"
+
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"google.golang.org/grpc"
-	"io"
-	"strconv"
-	"strings"
 )
 
 func init() {
@@ -20,6 +21,10 @@ func init() {
 }
 
 type commandEcVolumeDelete struct {
+}
+
+func (c *commandEcVolumeDelete) HasTag(tag CommandTag) bool {
+	return false
 }
 
 func (c *commandEcVolumeDelete) Name() string {

@@ -1,11 +1,13 @@
 package pub_balancer
 
 import (
+	"math/rand/v2"
+	"time"
+
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
-	"math/rand"
-	"time"
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 func AllocateTopicPartitions(brokers cmap.ConcurrentMap[string, *BrokerStats], partitionCount int32) (assignments []*mq_pb.BrokerPartitionAssignment) {
@@ -14,7 +16,7 @@ func AllocateTopicPartitions(brokers cmap.ConcurrentMap[string, *BrokerStats], p
 	rangeSize := MaxPartitionCount / partitionCount
 	for i := int32(0); i < partitionCount; i++ {
 		assignment := &mq_pb.BrokerPartitionAssignment{
-			Partition: &mq_pb.Partition{
+			Partition: &schema_pb.Partition{
 				RingSize:   MaxPartitionCount,
 				RangeStart: int32(i * rangeSize),
 				RangeStop:  int32((i + 1) * rangeSize),
@@ -42,32 +44,23 @@ func pickBrokers(brokers cmap.ConcurrentMap[string, *BrokerStats], count int32) 
 	}
 	pickedBrokers := make([]string, 0, count)
 	for i := int32(0); i < count; i++ {
-		p := rand.Intn(len(candidates))
+		p := rand.IntN(len(candidates))
 		pickedBrokers = append(pickedBrokers, candidates[p])
 	}
 	return pickedBrokers
 }
 
-// reservoir sampling select N brokers from the active brokers, with exclusion of the excluded brokers
-func pickBrokersExcluded(brokers []string, count int, excludedLeadBroker string, excludedBrokers []string) []string {
-	// convert the excluded brokers to a map
-	excludedBrokerMap := make(map[string]bool)
-	for _, broker := range excludedBrokers {
-		excludedBrokerMap[broker] = true
-	}
-	if excludedLeadBroker != "" {
-		excludedBrokerMap[excludedLeadBroker] = true
-	}
-
+// reservoir sampling select N brokers from the active brokers, with exclusion of the excluded broker
+func pickBrokersExcluded(brokers []string, count int, excludedLeadBroker string, excludedBroker string) []string {
 	pickedBrokers := make([]string, 0, count)
 	for i, broker := range brokers {
-		if _, found := excludedBrokerMap[broker]; found {
+		if broker == excludedBroker {
 			continue
 		}
 		if len(pickedBrokers) < count {
 			pickedBrokers = append(pickedBrokers, broker)
 		} else {
-			j := rand.Intn(i + 1)
+			j := rand.IntN(i + 1)
 			if j < count {
 				pickedBrokers[j] = broker
 			}
@@ -77,7 +70,7 @@ func pickBrokersExcluded(brokers []string, count int, excludedLeadBroker string,
 	// shuffle the picked brokers
 	count = len(pickedBrokers)
 	for i := 0; i < count; i++ {
-		j := rand.Intn(count)
+		j := rand.IntN(count)
 		pickedBrokers[i], pickedBrokers[j] = pickedBrokers[j], pickedBrokers[i]
 	}
 
@@ -86,7 +79,7 @@ func pickBrokersExcluded(brokers []string, count int, excludedLeadBroker string,
 
 // EnsureAssignmentsToActiveBrokers ensures the assignments are assigned to active brokers
 func EnsureAssignmentsToActiveBrokers(activeBrokers cmap.ConcurrentMap[string, *BrokerStats], followerCount int, assignments []*mq_pb.BrokerPartitionAssignment) (hasChanges bool) {
-	glog.V(0).Infof("EnsureAssignmentsToActiveBrokers: activeBrokers: %v, followerCount: %d, assignments: %v", activeBrokers.Count(), followerCount, assignments)
+	glog.V(4).Infof("EnsureAssignmentsToActiveBrokers: activeBrokers: %v, followerCount: %d, assignments: %v", activeBrokers.Count(), followerCount, assignments)
 
 	candidates := make([]string, 0, activeBrokers.Count())
 	for brokerStatsItem := range activeBrokers.IterBuffered() {
@@ -102,21 +95,15 @@ func EnsureAssignmentsToActiveBrokers(activeBrokers cmap.ConcurrentMap[string, *
 			assignment.LeaderBroker = ""
 			count++
 		}
-		for i := 0; i < followerCount; i++ {
-			if i >= len(assignment.FollowerBrokers) {
-				count++
-				continue
-			}
-			if assignment.FollowerBrokers[i] == "" {
-				count++
-			} else if _, found := activeBrokers.Get(assignment.FollowerBrokers[i]); !found {
-				assignment.FollowerBrokers[i] = ""
-				count++
-			}
+		if assignment.FollowerBroker == "" {
+			count++
+		} else if _, found := activeBrokers.Get(assignment.FollowerBroker); !found {
+			assignment.FollowerBroker = ""
+			count++
 		}
 
 		if count > 0 {
-			pickedBrokers := pickBrokersExcluded(candidates, count, assignment.LeaderBroker, assignment.FollowerBrokers)
+			pickedBrokers := pickBrokersExcluded(candidates, count, assignment.LeaderBroker, assignment.FollowerBroker)
 			i := 0
 			if assignment.LeaderBroker == "" {
 				if i < len(pickedBrokers) {
@@ -125,38 +112,17 @@ func EnsureAssignmentsToActiveBrokers(activeBrokers cmap.ConcurrentMap[string, *
 					hasChanges = true
 				}
 			}
-
-			hasEmptyFollowers := false
-			j := 0
-			for ; j < len(assignment.FollowerBrokers); j++ {
-				if assignment.FollowerBrokers[j] == "" {
+			if assignment.FollowerBroker == "" {
+				if i < len(pickedBrokers) {
+					assignment.FollowerBroker = pickedBrokers[i]
+					i++
 					hasChanges = true
-					if i < len(pickedBrokers) {
-						assignment.FollowerBrokers[j] = pickedBrokers[i]
-						i++
-					} else {
-						hasEmptyFollowers = true
-					}
 				}
-			}
-			if hasEmptyFollowers {
-				var followerBrokers []string
-				for _, follower := range assignment.FollowerBrokers {
-					if follower != "" {
-						followerBrokers = append(followerBrokers, follower)
-					}
-				}
-				assignment.FollowerBrokers = followerBrokers
-			}
-
-			if i < len(pickedBrokers) {
-				assignment.FollowerBrokers = append(assignment.FollowerBrokers, pickedBrokers[i:]...)
-				hasChanges = true
 			}
 		}
 
 	}
 
-	glog.V(0).Infof("EnsureAssignmentsToActiveBrokers: activeBrokers: %v, followerCount: %d, assignments: %v hasChanges: %v", activeBrokers.Count(), followerCount, assignments, hasChanges)
+	glog.V(4).Infof("EnsureAssignmentsToActiveBrokers: activeBrokers: %v, followerCount: %d, assignments: %v hasChanges: %v", activeBrokers.Count(), followerCount, assignments, hasChanges)
 	return
 }

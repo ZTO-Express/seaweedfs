@@ -48,7 +48,7 @@ func (store *HbaseStore) initialize(zkquorum, table string) (err error) {
 	headers := map[string][]string{store.cfMetaDir: nil}
 	get, err := hrpc.NewGet(context.Background(), store.table, []byte(key), hrpc.Families(headers))
 	if err != nil {
-		return fmt.Errorf("NewGet returned an error: %v", err)
+		return fmt.Errorf("NewGet returned an error: %w", err)
 	}
 	_, err = store.Client.Get(get)
 	if err != gohbase.TableNotFound {
@@ -203,7 +203,7 @@ func (store *HbaseStore) ListDirectoryPrefixedEntries(ctx context.Context, dirPa
 		}
 		if decodeErr := entry.DecodeAttributesAndChunks(util.MaybeDecompressData(value)); decodeErr != nil {
 			err = decodeErr
-			glog.V(0).Infof("list %s : %v", entry.FullPath, err)
+			glog.V(0).InfofCtx(ctx, "list %s : %v", entry.FullPath, err)
 			break
 		}
 		if !eachEntryFunc(entry) {

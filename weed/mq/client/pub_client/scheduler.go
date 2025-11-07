@@ -3,17 +3,20 @@ package pub_client
 import (
 	"context"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/glog"
-	"github.com/seaweedfs/seaweedfs/weed/pb"
-	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
-	"github.com/seaweedfs/seaweedfs/weed/util/buffered_queue"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"log"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util/buffered_queue"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 type EachPartitionError struct {
@@ -33,6 +36,7 @@ type EachPartitionPublishJob struct {
 func (p *TopicPublisher) startSchedulerThread(wg *sync.WaitGroup) error {
 
 	if err := p.doConfigureTopic(); err != nil {
+		wg.Done()
 		return fmt.Errorf("configure topic %s: %v", p.config.Topic, err)
 	}
 
@@ -111,6 +115,7 @@ func (p *TopicPublisher) onEachAssignments(generation int, assignments []*mq_pb.
 		go func(job *EachPartitionPublishJob) {
 			defer job.wg.Done()
 			if err := p.doPublishToPartition(job); err != nil {
+				log.Printf("publish to %s partition %v: %v", p.config.Topic, job.Partition, err)
 				errChan <- EachPartitionError{assignment, err, generation}
 			}
 		}(job)
@@ -126,14 +131,14 @@ func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) erro
 
 	log.Printf("connecting to %v for topic partition %+v", job.LeaderBroker, job.Partition)
 
-	grpcConnection, err := pb.GrpcDial(context.Background(), job.LeaderBroker, true, p.grpcDialOption)
+	grpcConnection, err := grpc.NewClient(job.LeaderBroker, grpc.WithTransportCredentials(insecure.NewCredentials()), p.grpcDialOption)
 	if err != nil {
 		return fmt.Errorf("dial broker %s: %v", job.LeaderBroker, err)
 	}
 	brokerClient := mq_pb.NewSeaweedMessagingClient(grpcConnection)
 	stream, err := brokerClient.PublishMessage(context.Background())
 	if err != nil {
-		return fmt.Errorf("create publish client: %v", err)
+		return fmt.Errorf("create publish client: %w", err)
 	}
 	publishClient := &PublishClient{
 		SeaweedMessaging_PublishMessageClient: stream,
@@ -142,20 +147,20 @@ func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) erro
 	if err = publishClient.Send(&mq_pb.PublishMessageRequest{
 		Message: &mq_pb.PublishMessageRequest_Init{
 			Init: &mq_pb.PublishMessageRequest_InitMessage{
-				Topic:           p.config.Topic.ToPbTopic(),
-				Partition:       job.Partition,
-				AckInterval:     128,
-				FollowerBrokers: job.FollowerBrokers,
-				PublisherName:   p.config.PublisherName,
+				Topic:          p.config.Topic.ToPbTopic(),
+				Partition:      job.Partition,
+				AckInterval:    128,
+				FollowerBroker: job.FollowerBroker,
+				PublisherName:  p.config.PublisherName,
 			},
 		},
 	}); err != nil {
-		return fmt.Errorf("send init message: %v", err)
+		return fmt.Errorf("send init message: %w", err)
 	}
 	// process the hello message
 	resp, err := stream.Recv()
 	if err != nil {
-		return fmt.Errorf("recv init response: %v", err)
+		return fmt.Errorf("recv init response: %w", err)
 	}
 	if resp.Error != "" {
 		return fmt.Errorf("init response error: %v", resp.Error)
@@ -184,10 +189,10 @@ func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) erro
 				log.Printf("publish2 to %s error: %v\n", publishClient.Broker, ackResp.Error)
 				return
 			}
-			if ackResp.AckSequence > 0 {
-				log.Printf("ack %d published %d hasMoreData:%d", ackResp.AckSequence, atomic.LoadInt64(&publishedTsNs), atomic.LoadInt32(&hasMoreData))
+			if ackResp.AckTsNs > 0 {
+				log.Printf("ack %d published %d hasMoreData:%d", ackResp.AckTsNs, atomic.LoadInt64(&publishedTsNs), atomic.LoadInt32(&hasMoreData))
 			}
-			if atomic.LoadInt64(&publishedTsNs) <= ackResp.AckSequence && atomic.LoadInt32(&hasMoreData) == 0 {
+			if atomic.LoadInt64(&publishedTsNs) <= ackResp.AckTsNs && atomic.LoadInt32(&hasMoreData) == 0 {
 				return
 			}
 		}
@@ -204,7 +209,7 @@ func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) erro
 				Data: data,
 			},
 		}); err != nil {
-			return fmt.Errorf("send publish data: %v", err)
+			return fmt.Errorf("send publish data: %w", err)
 		}
 		publishCounter++
 		atomic.StoreInt64(&publishedTsNs, data.TsNs)
@@ -214,7 +219,7 @@ func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) erro
 	} else {
 		// CloseSend would cancel the context on the server side
 		if err := publishClient.CloseSend(); err != nil {
-			return fmt.Errorf("close send: %v", err)
+			return fmt.Errorf("close send: %w", err)
 		}
 	}
 
@@ -225,7 +230,7 @@ func (p *TopicPublisher) doPublishToPartition(job *EachPartitionPublishJob) erro
 
 func (p *TopicPublisher) doConfigureTopic() (err error) {
 	if len(p.config.Brokers) == 0 {
-		return fmt.Errorf("no bootstrap brokers")
+		return fmt.Errorf("topic configuring found no bootstrap brokers")
 	}
 	var lastErr error
 	for _, brokerAddress := range p.config.Brokers {
@@ -234,9 +239,9 @@ func (p *TopicPublisher) doConfigureTopic() (err error) {
 			p.grpcDialOption,
 			func(client mq_pb.SeaweedMessagingClient) error {
 				_, err := client.ConfigureTopic(context.Background(), &mq_pb.ConfigureTopicRequest{
-					Topic:          p.config.Topic.ToPbTopic(),
-					PartitionCount: p.config.PartitionCount,
-					RecordType:     p.config.RecordType, // TODO schema upgrade
+					Topic:             p.config.Topic.ToPbTopic(),
+					PartitionCount:    p.config.PartitionCount,
+					MessageRecordType: p.config.RecordType, // Flat schema
 				})
 				return err
 			})
@@ -256,7 +261,7 @@ func (p *TopicPublisher) doConfigureTopic() (err error) {
 
 func (p *TopicPublisher) doLookupTopicPartitions() (assignments []*mq_pb.BrokerPartitionAssignment, err error) {
 	if len(p.config.Brokers) == 0 {
-		return nil, fmt.Errorf("no bootstrap brokers")
+		return nil, fmt.Errorf("lookup found no bootstrap brokers")
 	}
 	var lastErr error
 	for _, brokerAddress := range p.config.Brokers {

@@ -3,8 +3,9 @@ package topology
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"testing"
+
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 
 	"github.com/seaweedfs/seaweedfs/weed/sequence"
 	"github.com/seaweedfs/seaweedfs/weed/storage"
@@ -104,7 +105,7 @@ func setup(topologyLayout string) *Topology {
 					vi := storage.VolumeInfo{
 						Id:      needle.VolumeId(int64(m["id"].(float64))),
 						Size:    uint64(m["size"].(float64)),
-						Version: needle.CurrentVersion,
+						Version: needle.GetCurrentVersion(),
 					}
 					if mVal, ok := m["collection"]; ok {
 						vi.Collection = mVal.(string)
@@ -122,10 +123,9 @@ func setup(topologyLayout string) *Topology {
 				}
 
 				disk := server.getOrCreateDisk("")
-				deltaDiskUsages := newDiskUsages()
-				deltaDiskUsage := deltaDiskUsages.getOrCreateDisk("")
-				deltaDiskUsage.maxVolumeCount = int64(serverMap["limit"].(float64))
-				disk.UpAdjustDiskUsageDelta(deltaDiskUsages)
+				disk.UpAdjustDiskUsageDelta("", &DiskUsageCounts{
+					maxVolumeCount: int64(serverMap["limit"].(float64)),
+				})
 
 			}
 		}
@@ -145,7 +145,7 @@ func TestFindEmptySlotsForOneVolume(t *testing.T) {
 		Rack:             "",
 		DataNode:         "",
 	}
-	servers, err := vg.findEmptySlotsForOneVolume(topo, volumeGrowOption)
+	servers, _, err := vg.findEmptySlotsForOneVolume(topo, volumeGrowOption, false)
 	if err != nil {
 		fmt.Println("finding empty slots error :", err)
 		t.Fail()
@@ -267,7 +267,7 @@ func TestReplication011(t *testing.T) {
 		Rack:             "",
 		DataNode:         "",
 	}
-	servers, err := vg.findEmptySlotsForOneVolume(topo, volumeGrowOption)
+	servers, _, err := vg.findEmptySlotsForOneVolume(topo, volumeGrowOption, false)
 	if err != nil {
 		fmt.Println("finding empty slots error :", err)
 		t.Fail()
@@ -345,7 +345,7 @@ func TestFindEmptySlotsForOneVolumeScheduleByWeight(t *testing.T) {
 	distribution := map[NodeId]int{}
 	// assign 1000 volumes
 	for i := 0; i < 1000; i++ {
-		servers, err := vg.findEmptySlotsForOneVolume(topo, volumeGrowOption)
+		servers, _, err := vg.findEmptySlotsForOneVolume(topo, volumeGrowOption, false)
 		if err != nil {
 			fmt.Println("finding empty slots error :", err)
 			t.Fail()

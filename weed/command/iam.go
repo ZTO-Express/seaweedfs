@@ -3,7 +3,10 @@ package command
 import (
 	"context"
 	"fmt"
-	"net/http"
+
+	"github.com/seaweedfs/seaweedfs/weed/util/version"
+
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -12,7 +15,11 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"time"
+
+	// Import credential stores to register them
+	_ "github.com/seaweedfs/seaweedfs/weed/credential/filer_etc"
+	_ "github.com/seaweedfs/seaweedfs/weed/credential/memory"
+	_ "github.com/seaweedfs/seaweedfs/weed/credential/postgres"
 )
 
 var (
@@ -35,7 +42,7 @@ func init() {
 }
 
 var cmdIam = &Command{
-	UsageLine: "iam [-port=8111] [-filer=<ip:port>] [-masters=<ip:port>,<ip:port>]",
+	UsageLine: "iam [-port=8111] [-filer=<ip:port>] [-master=<ip:port>,<ip:port>]",
 	Short:     "start a iam API compatible server",
 	Long:      "start a iam API compatible server.",
 }
@@ -47,7 +54,7 @@ func runIam(cmd *Command, args []string) bool {
 func (iamopt *IamOptions) startIamServer() bool {
 	filerAddress := pb.ServerAddress(*iamopt.filer)
 
-	util.LoadConfiguration("security", false)
+	util.LoadSecurityConfiguration()
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 	for {
 		err := pb.WithGrpcFilerClient(false, 0, filerAddress, grpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
@@ -80,23 +87,21 @@ func (iamopt *IamOptions) startIamServer() bool {
 		glog.Fatalf("IAM API Server startup error: %v", iamApiServer_err)
 	}
 
-	httpS := &http.Server{Handler: router}
-
 	listenAddress := fmt.Sprintf(":%d", *iamopt.port)
 	iamApiListener, iamApiLocalListener, err := util.NewIpAndLocalListeners(*iamopt.ip, *iamopt.port, time.Duration(10)*time.Second)
 	if err != nil {
 		glog.Fatalf("IAM API Server listener on %s error: %v", listenAddress, err)
 	}
 
-	glog.V(0).Infof("Start Seaweed IAM API Server %s at http port %d", util.Version(), *iamopt.port)
+	glog.V(0).Infof("Start Seaweed IAM API Server %s at http port %d", version.Version(), *iamopt.port)
 	if iamApiLocalListener != nil {
 		go func() {
-			if err = httpS.Serve(iamApiLocalListener); err != nil {
+			if err = newHttpServer(router, nil).Serve(iamApiLocalListener); err != nil {
 				glog.Errorf("IAM API Server Fail to serve: %v", err)
 			}
 		}()
 	}
-	if err = httpS.Serve(iamApiListener); err != nil {
+	if err = newHttpServer(router, nil).Serve(iamApiListener); err != nil {
 		glog.Fatalf("IAM API Server Fail to serve: %v", err)
 	}
 

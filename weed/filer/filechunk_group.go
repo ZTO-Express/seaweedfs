@@ -1,15 +1,17 @@
 package filer
 
 import (
+	"context"
+	"io"
+	"sync"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util/chunk_cache"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
-	"sync"
 )
 
 type ChunkGroup struct {
 	lookupFn     wdclient.LookupFileIdFunctionType
-	chunkCache   chunk_cache.ChunkCache
 	sections     map[SectionIndex]*FileChunkSection
 	sectionsLock sync.RWMutex
 	readerCache  *ReaderCache
@@ -18,7 +20,6 @@ type ChunkGroup struct {
 func NewChunkGroup(lookupFn wdclient.LookupFileIdFunctionType, chunkCache chunk_cache.ChunkCache, chunks []*filer_pb.FileChunk) (*ChunkGroup, error) {
 	group := &ChunkGroup{
 		lookupFn:    lookupFn,
-		chunkCache:  chunkCache,
 		sections:    make(map[SectionIndex]*FileChunkSection),
 		readerCache: NewReaderCache(32, chunkCache, lookupFn),
 	}
@@ -44,7 +45,10 @@ func (group *ChunkGroup) AddChunk(chunk *filer_pb.FileChunk) error {
 	return nil
 }
 
-func (group *ChunkGroup) ReadDataAt(fileSize int64, buff []byte, offset int64) (n int, tsNs int64, err error) {
+func (group *ChunkGroup) ReadDataAt(ctx context.Context, fileSize int64, buff []byte, offset int64) (n int, tsNs int64, err error) {
+	if offset >= fileSize {
+		return 0, 0, io.EOF
+	}
 
 	group.sectionsLock.RLock()
 	defer group.sectionsLock.RUnlock()
@@ -53,15 +57,20 @@ func (group *ChunkGroup) ReadDataAt(fileSize int64, buff []byte, offset int64) (
 	for si := sectionIndexStart; si < sectionIndexStop+1; si++ {
 		section, found := group.sections[si]
 		rangeStart, rangeStop := max(offset, int64(si*SectionSize)), min(offset+int64(len(buff)), int64((si+1)*SectionSize))
+		if rangeStart >= rangeStop {
+			continue
+		}
 		if !found {
+			rangeStop = min(rangeStop, fileSize)
 			for i := rangeStart; i < rangeStop; i++ {
 				buff[i-offset] = 0
 			}
+			n = int(int64(n) + rangeStop - rangeStart)
 			continue
 		}
-		xn, xTsNs, xErr := section.readDataAt(group, fileSize, buff[rangeStart-offset:rangeStop-offset], rangeStart)
+		xn, xTsNs, xErr := section.readDataAt(ctx, group, fileSize, buff[rangeStart-offset:rangeStop-offset], rangeStart)
 		if xErr != nil {
-			err = xErr
+			return n + xn, max(tsNs, xTsNs), xErr
 		}
 		n += xn
 		tsNs = max(tsNs, xTsNs)
@@ -81,7 +90,7 @@ func (group *ChunkGroup) SetChunks(chunks []*filer_pb.FileChunk) error {
 			continue
 		}
 
-		resolvedChunks, err := ResolveOneChunkManifest(group.lookupFn, chunk)
+		resolvedChunks, err := ResolveOneChunkManifest(context.Background(), group.lookupFn, chunk)
 		if err != nil {
 			return err
 		}
@@ -114,14 +123,14 @@ const (
 )
 
 // FIXME: needa tests
-func (group *ChunkGroup) SearchChunks(offset, fileSize int64, whence uint32) (found bool, out int64) {
+func (group *ChunkGroup) SearchChunks(ctx context.Context, offset, fileSize int64, whence uint32) (found bool, out int64) {
 	group.sectionsLock.RLock()
 	defer group.sectionsLock.RUnlock()
 
-	return group.doSearchChunks(offset, fileSize, whence)
+	return group.doSearchChunks(ctx, offset, fileSize, whence)
 }
 
-func (group *ChunkGroup) doSearchChunks(offset, fileSize int64, whence uint32) (found bool, out int64) {
+func (group *ChunkGroup) doSearchChunks(ctx context.Context, offset, fileSize int64, whence uint32) (found bool, out int64) {
 
 	sectionIndex, maxSectionIndex := SectionIndex(offset/SectionSize), SectionIndex(fileSize/SectionSize)
 	if whence == SEEK_DATA {
@@ -130,7 +139,7 @@ func (group *ChunkGroup) doSearchChunks(offset, fileSize int64, whence uint32) (
 			if !foundSection {
 				continue
 			}
-			sectionStart := section.DataStartOffset(group, offset, fileSize)
+			sectionStart := section.DataStartOffset(ctx, group, offset, fileSize)
 			if sectionStart == -1 {
 				continue
 			}
@@ -144,7 +153,7 @@ func (group *ChunkGroup) doSearchChunks(offset, fileSize int64, whence uint32) (
 			if !foundSection {
 				return true, offset
 			}
-			holeStart := section.NextStopOffset(group, offset, fileSize)
+			holeStart := section.NextStopOffset(ctx, group, offset, fileSize)
 			if holeStart%SectionSize == 0 {
 				continue
 			}

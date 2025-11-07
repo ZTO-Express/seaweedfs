@@ -41,7 +41,7 @@ func (wfs *WFS) Lookup(cancel <-chan struct{}, header *fuse.InHeader, name strin
 
 	if localEntry == nil {
 		// glog.V(3).Infof("dir Lookup cache miss %s", fullFilePath)
-		entry, err := filer_pb.GetEntry(wfs, fullFilePath)
+		entry, err := filer_pb.GetEntry(context.Background(), wfs, fullFilePath)
 		if err != nil {
 			glog.V(1).Infof("dir GetEntry %s: %v", fullFilePath, err)
 			return fuse.ENOENT
@@ -57,9 +57,9 @@ func (wfs *WFS) Lookup(cancel <-chan struct{}, header *fuse.InHeader, name strin
 
 	inode := wfs.inodeToPath.Lookup(fullFilePath, localEntry.Crtime.Unix(), localEntry.IsDirectory(), len(localEntry.HardLinkId) > 0, localEntry.Inode, true)
 
-	if fh, found := wfs.fhmap.FindFileHandle(inode); found {
+	if fh, found := wfs.fhMap.FindFileHandle(inode); found {
 		fh.entryLock.RLock()
-		if entry := fh.GetEntry(); entry != nil {
+		if entry := fh.GetEntry().GetEntry(); entry != nil {
 			glog.V(4).Infof("lookup opened file %s size %d", dirPath.Child(localEntry.Name()), filer.FileSize(entry))
 			localEntry = filer.FromPbEntry(string(dirPath), entry)
 		}

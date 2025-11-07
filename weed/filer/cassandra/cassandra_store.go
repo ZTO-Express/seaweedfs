@@ -2,9 +2,11 @@ package cassandra
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/gocql/gocql"
 	"time"
+
+	"github.com/gocql/gocql"
 
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -129,13 +131,10 @@ func (store *CassandraStore) FindEntry(ctx context.Context, fullpath util.FullPa
 	if err := store.session.Query(
 		"SELECT meta FROM filemeta WHERE directory=? AND name=?",
 		dir, name).Scan(&data); err != nil {
-		if err != gocql.ErrNotFound {
+		if errors.Is(err, gocql.ErrNotFound) {
 			return nil, filer_pb.ErrNotFound
 		}
-	}
-
-	if len(data) == 0 {
-		return nil, filer_pb.ErrNotFound
+		return nil, err
 	}
 
 	entry = &filer.Entry{
@@ -204,15 +203,15 @@ func (store *CassandraStore) ListDirectoryEntries(ctx context.Context, dirPath u
 		lastFileName = name
 		if decodeErr := entry.DecodeAttributesAndChunks(util.MaybeDecompressData(data)); decodeErr != nil {
 			err = decodeErr
-			glog.V(0).Infof("list %s : %v", entry.FullPath, err)
+			glog.V(0).InfofCtx(ctx, "list %s : %v", entry.FullPath, err)
 			break
 		}
 		if !eachEntryFunc(entry) {
 			break
 		}
 	}
-	if err := iter.Close(); err != nil {
-		glog.V(0).Infof("list iterator close: %v", err)
+	if err = iter.Close(); err != nil {
+		glog.V(0).InfofCtx(ctx, "list iterator close: %v", err)
 	}
 
 	return lastFileName, err

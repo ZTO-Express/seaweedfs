@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -28,7 +29,15 @@ func (c *commandFsTree) Help() string {
 `
 }
 
+func (c *commandFsTree) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandFsTree) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
+
+	if handleHelpRequest(c, args, writer) {
+		return nil
+	}
 
 	path, err := commandEnv.parseUrl(findInputDirectory(args))
 	if err != nil {
@@ -51,7 +60,7 @@ func treeTraverseDirectory(writer io.Writer, filerClient filer_pb.FilerClient, d
 
 	prefix.addMarker(level)
 
-	err = filer_pb.ReadDirAllEntries(filerClient, dir, name, func(entry *filer_pb.Entry, isLast bool) error {
+	err = filer_pb.ReadDirAllEntries(context.Background(), filerClient, dir, name, func(entry *filer_pb.Entry, isLast bool) error {
 		if level < 0 && name != "" {
 			if entry.Name != name {
 				return nil

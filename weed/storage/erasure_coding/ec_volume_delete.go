@@ -15,7 +15,7 @@ var (
 		types.SizeToBytes(b, types.TombstoneFileSize)
 		n, err := file.WriteAt(b, offset+types.NeedleIdSize+types.OffsetSize)
 		if err != nil {
-			return fmt.Errorf("sorted needle write error: %v", err)
+			return fmt.Errorf("sorted needle write error: %w", err)
 		}
 		if n != types.SizeSize {
 			return fmt.Errorf("sorted needle written %d bytes, expecting %d", n, types.SizeSize)
@@ -24,7 +24,7 @@ var (
 	}
 )
 
-func (ev *EcVolume) markNeedleDelete(needleId types.NeedleId) (err error) {
+func (ev *EcVolume) DeleteNeedleFromEcx(needleId types.NeedleId) (err error) {
 	// 如果文件已关闭，则先打开，这里涉及读锁 升级 写锁
 	err = ev.tryOpenEcxFile()
 
@@ -36,13 +36,6 @@ func (ev *EcVolume) markNeedleDelete(needleId types.NeedleId) (err error) {
 	}
 
 	_, _, err = SearchNeedleFromSortedIndex(ev.ecxFile, ev.ecxFileSize, needleId, MarkNeedleDeleted)
-
-	return err
-}
-
-func (ev *EcVolume) DeleteNeedleFromEcx(needleId types.NeedleId) (err error) {
-
-	err = ev.markNeedleDelete(needleId)
 
 	if err != nil {
 		if err == NotFoundError {
@@ -77,7 +70,7 @@ func RebuildEcxFile(baseFileName string) error {
 
 	ecxFile, err := os.OpenFile(baseFileName+".ecx", os.O_RDWR, 0644)
 	if err != nil {
-		return fmt.Errorf("rebuild: failed to open ecx file: %v", err)
+		return fmt.Errorf("rebuild: failed to open ecx file: %w", err)
 	}
 	defer ecxFile.Close()
 
@@ -90,7 +83,7 @@ func RebuildEcxFile(baseFileName string) error {
 
 	ecjFile, err := os.OpenFile(baseFileName+".ecj", os.O_RDWR, 0644)
 	if err != nil {
-		return fmt.Errorf("rebuild: failed to open ecj file: %v", err)
+		return fmt.Errorf("rebuild: failed to open ecj file: %w", err)
 	}
 
 	buf := make([]byte, types.NeedleIdSize)

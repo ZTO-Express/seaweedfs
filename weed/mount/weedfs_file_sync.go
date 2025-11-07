@@ -3,13 +3,14 @@ package mount
 import (
 	"context"
 	"fmt"
+	"syscall"
+	"time"
+
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"syscall"
-	"time"
 )
 
 /**
@@ -53,7 +54,9 @@ import (
 func (wfs *WFS) Flush(cancel <-chan struct{}, in *fuse.FlushIn) fuse.Status {
 	fh := wfs.GetHandle(FileHandleId(in.Fh))
 	if fh == nil {
-		return fuse.ENOENT
+		// If handle is not found, it might have been already released
+		// This is not an error condition for FLUSH
+		return fuse.OK
 	}
 
 	return wfs.doFlush(fh, in.Uid, in.Gid)
@@ -116,13 +119,8 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 	defer fh.wfs.fhLockTable.ReleaseLock(fh.fh, fhActiveLock)
 
 	err := wfs.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-		fh.entryLock.Lock()
-		defer fh.entryLock.Unlock()
 
 		entry := fh.GetEntry()
-		if entry == nil {
-			return nil
-		}
 		entry.Name = name // this flush may be just after a rename operation
 
 		if entry.Attributes != nil {
@@ -133,15 +131,12 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 			if entry.Attributes.Gid == 0 {
 				entry.Attributes.Gid = gid
 			}
-			if entry.Attributes.Crtime == 0 {
-				entry.Attributes.Crtime = time.Now().Unix()
-			}
 			entry.Attributes.Mtime = time.Now().Unix()
 		}
 
 		request := &filer_pb.CreateEntryRequest{
 			Directory:                string(dir),
-			Entry:                    entry,
+			Entry:                    entry.GetEntry(),
 			Signatures:               []int32{wfs.signature},
 			SkipCheckParentDirectory: true,
 		}
@@ -153,7 +148,7 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 
 		manifestChunks, nonManifestChunks := filer.SeparateManifestChunks(entry.GetChunks())
 
-		chunks, _ := filer.CompactFileChunks(wfs.LookupFn(), nonManifestChunks)
+		chunks, _ := filer.CompactFileChunks(context.Background(), wfs.LookupFn(), nonManifestChunks)
 		chunks, manifestErr := filer.MaybeManifestize(wfs.saveDataAsChunk(fileFullPath), chunks)
 		if manifestErr != nil {
 			// not good, but should be ok
@@ -164,7 +159,7 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 		wfs.mapPbIdFromLocalToFiler(request.Entry)
 		defer wfs.mapPbIdFromFilerToLocal(request.Entry)
 
-		if err := filer_pb.CreateEntry(client, request); err != nil {
+		if err := filer_pb.CreateEntry(context.Background(), client, request); err != nil {
 			glog.Errorf("fh flush create %s: %v", fileFullPath, err)
 			return fmt.Errorf("fh flush create %s: %v", fileFullPath, err)
 		}

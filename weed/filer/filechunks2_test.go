@@ -1,9 +1,10 @@
 package filer
 
 import (
+	"context"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/exp/slices"
 	"log"
+	"slices"
 	"testing"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -65,7 +66,7 @@ func TestCompactFileChunksRealCase(t *testing.T) {
 
 	printChunks("before", chunks)
 
-	compacted, garbage := CompactFileChunks(nil, chunks)
+	compacted, garbage := CompactFileChunks(context.Background(), nil, chunks)
 
 	printChunks("compacted", compacted)
 	printChunks("garbage", garbage)

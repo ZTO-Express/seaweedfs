@@ -3,10 +3,15 @@ package weed_server
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"math"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/seaweedfs/seaweedfs/weed/stats"
+
+	"github.com/seaweedfs/seaweedfs/weed/topology"
 
 	"github.com/seaweedfs/raft"
 
@@ -18,7 +23,87 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 )
 
+const (
+	volumeGrowStepCount = 2
+)
+
+func (ms *MasterServer) DoAutomaticVolumeGrow(req *topology.VolumeGrowRequest) {
+	if ms.option.VolumeGrowthDisabled {
+		glog.V(1).Infof("automatic volume grow disabled")
+		return
+	}
+	glog.V(1).Infoln("starting automatic volume grow")
+	start := time.Now()
+	newVidLocations, err := ms.vg.AutomaticGrowByType(req.Option, ms.grpcDialOption, ms.Topo, req.Count)
+	glog.V(1).Infoln("finished automatic volume grow, cost ", time.Now().Sub(start))
+	if err != nil {
+		glog.V(1).Infof("automatic volume grow failed: %+v", err)
+		return
+	}
+	for _, newVidLocation := range newVidLocations {
+		ms.broadcastToClients(&master_pb.KeepConnectedResponse{VolumeLocation: newVidLocation})
+	}
+}
+
 func (ms *MasterServer) ProcessGrowRequest() {
+	go func() {
+		ctx := context.Background()
+		firstRun := true
+		for {
+			if firstRun {
+				firstRun = false
+			} else {
+				time.Sleep(5*time.Minute + time.Duration(30*rand.Float32())*time.Second)
+			}
+			if !ms.Topo.IsLeader() {
+				continue
+			}
+			dcs := ms.Topo.ListDCAndRacks()
+			var err error
+			for _, vlc := range ms.Topo.ListVolumeLayoutCollections() {
+				vl := vlc.VolumeLayout
+				lastGrowCount := vl.GetLastGrowCount()
+				if vl.HasGrowRequest() {
+					continue
+				}
+				writable, crowded := vl.GetWritableVolumeCount()
+				mustGrow := int(lastGrowCount) - writable
+				vgr := vlc.ToVolumeGrowRequest()
+				stats.MasterVolumeLayoutWritable.WithLabelValues(vlc.Collection, vgr.DiskType, vgr.Replication, vgr.Ttl).Set(float64(writable))
+				stats.MasterVolumeLayoutCrowded.WithLabelValues(vlc.Collection, vgr.DiskType, vgr.Replication, vgr.Ttl).Set(float64(crowded))
+
+				switch {
+				case mustGrow > 0:
+					vgr.WritableVolumeCount = uint32(mustGrow)
+					_, err = ms.VolumeGrow(ctx, vgr)
+				case lastGrowCount > 0 && writable < int(lastGrowCount*2) && float64(crowded+volumeGrowStepCount) > float64(writable)*topology.VolumeGrowStrategy.Threshold:
+					vgr.WritableVolumeCount = volumeGrowStepCount
+					_, err = ms.VolumeGrow(ctx, vgr)
+				}
+				if err != nil {
+					glog.V(0).Infof("volume grow request failed: %+v", err)
+				}
+				writableVolumes := vl.CloneWritableVolumes()
+				for dcId, racks := range dcs {
+					for _, rackId := range racks {
+						if vl.ShouldGrowVolumesByDcAndRack(&writableVolumes, dcId, rackId) {
+							vgr.DataCenter = string(dcId)
+							vgr.Rack = string(rackId)
+							if lastGrowCount > 0 {
+								vgr.WritableVolumeCount = uint32(math.Ceil(float64(lastGrowCount) / float64(len(dcs)*len(racks))))
+							} else {
+								vgr.WritableVolumeCount = volumeGrowStepCount
+							}
+
+							if _, err = ms.VolumeGrow(ctx, vgr); err != nil {
+								glog.V(0).Infof("volume grow request for dc:%s rack:%s failed: %+v", dcId, rackId, err)
+							}
+						}
+					}
+				}
+			}
+		}
+	}()
 	go func() {
 		filter := sync.Map{}
 		for {
@@ -26,13 +111,11 @@ func (ms *MasterServer) ProcessGrowRequest() {
 			if !ok {
 				break
 			}
-			glog.V(3).Infoln("enter automatic volume grow: ", req)
 
 			option := req.Option
 			vl := ms.Topo.GetVolumeLayout(option.Collection, option.ReplicaPlacement, option.Ttl, option.DiskType)
 
 			if !ms.Topo.IsLeader() {
-				glog.V(3).Infoln("current ip is not leader, skip request: ", req)
 				//discard buffered requests
 				time.Sleep(time.Second * 1)
 				vl.DoneGrowRequest()
@@ -42,37 +125,29 @@ func (ms *MasterServer) ProcessGrowRequest() {
 			// filter out identical requests being processed
 			found := false
 			filter.Range(func(k, v interface{}) bool {
-				if reflect.DeepEqual(k, req) {
+				existingReq := k.(*topology.VolumeGrowRequest)
+				if existingReq.Equals(req) {
 					found = true
 				}
 				return !found
 			})
 
 			// not atomic but it's okay
-			if !found && vl.ShouldGrowVolumes(option) {
-				filter.Store(req, nil)
-				// we have lock called inside vg
-				go func() {
-					glog.V(1).Infoln("starting automatic volume grow, option:", option.String())
-					start := time.Now()
-					newVidLocations, err := ms.vg.AutomaticGrowByType(req.Option, ms.grpcDialOption, ms.Topo, req.Count)
-					glog.V(1).Infof("finished automatic volume grow, option:%s, cost: %d \n", option.String(), time.Now().Sub(start))
-					vl.DoneGrowRequest()
-					if err == nil {
-						for _, newVidLocation := range newVidLocations {
-							ms.broadcastToClients(&master_pb.KeepConnectedResponse{VolumeLocation: newVidLocation})
-						}
-					} else {
-						glog.V(1).Infof("automatic volume grow failed. option:%s, error: %+v", option.String(), err)
-					}
-					filter.Delete(req)
-				}()
-
-			} else {
-				glog.V(3).Infoln("discard volume grow request: ", req)
+			if found || (!req.Force && !vl.ShouldGrowVolumes()) {
+				glog.V(4).Infoln("discard volume grow request")
 				time.Sleep(time.Millisecond * 211)
 				vl.DoneGrowRequest()
+				continue
 			}
+
+			filter.Store(req, nil)
+			// we have lock called inside vg
+			glog.V(0).Infof("volume grow %+v", req)
+			go func(req *topology.VolumeGrowRequest, vl *topology.VolumeLayout) {
+				ms.DoAutomaticVolumeGrow(req)
+				vl.DoneGrowRequest()
+				filter.Delete(req)
+			}(req, vl)
 		}
 	}()
 }
@@ -140,6 +215,7 @@ func (ms *MasterServer) Statistics(ctx context.Context, req *master_pb.Statistic
 		UsedSize:  stats.UsedSize,
 		FileCount: stats.FileCount,
 	}
+
 	return resp, nil
 }
 
@@ -154,32 +230,6 @@ func (ms *MasterServer) VolumeList(ctx context.Context, req *master_pb.VolumeLis
 		VolumeSizeLimitMb: uint64(ms.option.VolumeSizeLimitMB),
 	}
 
-	return resp, nil
-}
-
-func (ms *MasterServer) VolumeListWithoutECVolume(ctx context.Context, req *master_pb.VolumeListWithoutECVolumeRequest) (*master_pb.VolumeListResponse, error) {
-
-	if !ms.Topo.IsLeader() {
-		return nil, raft.NotLeaderError
-	}
-
-	resp := &master_pb.VolumeListResponse{
-		TopologyInfo:      ms.Topo.ToTopologyInfoByQuery(req),
-		VolumeSizeLimitMb: uint64(ms.option.VolumeSizeLimitMB),
-	}
-
-	return resp, nil
-}
-
-func (ms *MasterServer) EcCollectList(ctx context.Context, req *master_pb.EcCollectRequest) (*master_pb.EcCollectResponse, error) {
-	volumeListResponse, err := ms.VolumeList(ctx, &master_pb.VolumeListRequest{})
-	if err != nil {
-		return nil, err
-	}
-	resp := &master_pb.EcCollectResponse{
-		EcNodeInfo:        ms.Topo.ToEcCollectInfo(volumeListResponse.TopologyInfo, req),
-		VolumeSizeLimitMb: uint64(ms.option.VolumeSizeLimitMB),
-	}
 	return resp, nil
 }
 
@@ -225,7 +275,7 @@ func (ms *MasterServer) VacuumVolume(ctx context.Context, req *master_pb.VacuumV
 
 	resp := &master_pb.VacuumVolumeResponse{}
 
-	ms.Topo.Vacuum(ms.grpcDialOption, float64(req.GarbageThreshold), req.VolumeId, req.Collection, ms.preallocateSize)
+	ms.Topo.Vacuum(ms.grpcDialOption, float64(req.GarbageThreshold), ms.option.MaxParallelVacuumPerServer, req.VolumeId, req.Collection, ms.preallocateSize, false)
 
 	return resp, nil
 }
@@ -267,4 +317,57 @@ func (ms *MasterServer) VolumeMarkReadonly(ctx context.Context, req *master_pb.V
 	}
 
 	return resp, nil
+}
+
+func (ms *MasterServer) VolumeGrow(ctx context.Context, req *master_pb.VolumeGrowRequest) (*master_pb.VolumeGrowResponse, error) {
+	if !ms.Topo.IsLeader() {
+		return nil, raft.NotLeaderError
+	}
+	if req.Replication == "" {
+		req.Replication = ms.option.DefaultReplicaPlacement
+	}
+	replicaPlacement, err := super_block.NewReplicaPlacementFromString(req.Replication)
+	if err != nil {
+		return nil, err
+	}
+	ttl, err := needle.ReadTTL(req.Ttl)
+	if err != nil {
+		return nil, err
+	}
+	if req.DataCenter != "" && !ms.Topo.DataCenterExists(req.DataCenter) {
+		return nil, fmt.Errorf("data center not exists")
+	}
+
+	ver := needle.GetCurrentVersion()
+	volumeGrowOption := topology.VolumeGrowOption{
+		Collection:         req.Collection,
+		ReplicaPlacement:   replicaPlacement,
+		Ttl:                ttl,
+		DiskType:           types.ToDiskType(req.DiskType),
+		Preallocate:        ms.preallocateSize,
+		DataCenter:         req.DataCenter,
+		Rack:               req.Rack,
+		DataNode:           req.DataNode,
+		MemoryMapMaxSizeMb: req.MemoryMapMaxSizeMb,
+		Version:            uint32(ver),
+	}
+	volumeGrowRequest := topology.VolumeGrowRequest{
+		Option: &volumeGrowOption,
+		Count:  req.WritableVolumeCount,
+		Force:  true,
+		Reason: "grpc volume grow",
+	}
+	replicaCount := int64(req.WritableVolumeCount * uint32(replicaPlacement.GetCopyCount()))
+
+	if ms.Topo.AvailableSpaceFor(&volumeGrowOption) < replicaCount {
+		return nil, fmt.Errorf("only %d volumes left, not enough for %d", ms.Topo.AvailableSpaceFor(&volumeGrowOption), replicaCount)
+	}
+
+	if !ms.Topo.DataCenterExists(volumeGrowOption.DataCenter) {
+		err = fmt.Errorf("data center %v not found in topology", volumeGrowOption.DataCenter)
+	}
+
+	ms.DoAutomaticVolumeGrow(&volumeGrowRequest)
+
+	return &master_pb.VolumeGrowResponse{}, nil
 }

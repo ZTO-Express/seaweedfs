@@ -25,7 +25,6 @@ When creating a link:
 
 /** Create a hard link to a file */
 func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *fuse.EntryOut) (code fuse.Status) {
-
 	if wfs.IsOverQuota {
 		return fuse.Status(syscall.ENOSPC)
 	}
@@ -47,6 +46,11 @@ func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *
 	oldEntry, status := wfs.maybeLoadEntry(oldEntryPath)
 	if status != fuse.OK {
 		return status
+	}
+
+	// hardlink is not allowed in WORM mode
+	if wormEnforced, _ := wfs.wormEnforcedForEntry(oldEntryPath, oldEntry); wormEnforced {
+		return fuse.EPERM
 	}
 
 	// update old file to hardlink mode
@@ -84,12 +88,12 @@ func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *
 		wfs.mapPbIdFromLocalToFiler(request.Entry)
 		defer wfs.mapPbIdFromFilerToLocal(request.Entry)
 
-		if err := filer_pb.UpdateEntry(client, updateOldEntryRequest); err != nil {
+		if err := filer_pb.UpdateEntry(context.Background(), client, updateOldEntryRequest); err != nil {
 			return err
 		}
 		wfs.metaCache.UpdateEntry(context.Background(), filer.FromPbEntry(updateOldEntryRequest.Directory, updateOldEntryRequest.Entry))
 
-		if err := filer_pb.CreateEntry(client, request); err != nil {
+		if err := filer_pb.CreateEntry(context.Background(), client, request); err != nil {
 			return err
 		}
 

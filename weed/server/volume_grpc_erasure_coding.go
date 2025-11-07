@@ -50,20 +50,38 @@ func (vs *VolumeServer) VolumeEcShardsGenerate(ctx context.Context, req *volume_
 		return nil, fmt.Errorf("existing collection:%v unexpected input: %v", v.Collection, req.Collection)
 	}
 
+	// Create EC context - prefer existing .vif config if present (for regeneration scenarios)
+	ecCtx := erasure_coding.NewDefaultECContext(req.Collection, needle.VolumeId(req.VolumeId))
+	if volumeInfo, _, found, _ := volume_info.MaybeLoadVolumeInfo(baseFileName + ".vif"); found && volumeInfo.EcShardConfig != nil {
+		ds := int(volumeInfo.EcShardConfig.DataShards)
+		ps := int(volumeInfo.EcShardConfig.ParityShards)
+
+		// Validate and use existing EC config
+		if ds > 0 && ps > 0 && ds+ps <= erasure_coding.MaxShardCount {
+			ecCtx.DataShards = ds
+			ecCtx.ParityShards = ps
+			glog.V(0).Infof("Using existing EC config for volume %d: %s", req.VolumeId, ecCtx.String())
+		} else {
+			glog.Warningf("Invalid EC config in .vif for volume %d (data=%d, parity=%d), using defaults", req.VolumeId, ds, ps)
+		}
+	} else {
+		glog.V(0).Infof("Using default EC config for volume %d: %s", req.VolumeId, ecCtx.String())
+	}
+
 	shouldCleanup := true
 	defer func() {
 		if !shouldCleanup {
 			return
 		}
-		for i := 0; i < erasure_coding.TotalShardsCount; i++ {
-			os.Remove(fmt.Sprintf("%s.ec%2d", baseFileName, i))
+		for i := 0; i < ecCtx.Total(); i++ {
+			os.Remove(baseFileName + ecCtx.ToExt(i))
 		}
 		os.Remove(v.IndexFileName() + ".ecx")
 	}()
 
-	// write .ec00 ~ .ec13 files
-	if err := erasure_coding.WriteEcFiles(baseFileName); err != nil {
-		return nil, fmt.Errorf("WriteEcFiles %s: %v", baseFileName, err)
+	// write .ec00 ~ .ec[TotalShards-1] files using context
+	if err := erasure_coding.WriteEcFilesWithContext(baseFileName, ecCtx); err != nil {
+		return nil, fmt.Errorf("WriteEcFilesWithContext %s: %v", baseFileName, err)
 	}
 
 	// write .ecx file
@@ -72,19 +90,33 @@ func (vs *VolumeServer) VolumeEcShardsGenerate(ctx context.Context, req *volume_
 	}
 
 	// write .vif files
-	var destroyTime uint64
+	var expireAtSec uint64
 	if v.Ttl != nil {
-		ttlMills := v.Ttl.ToSeconds()
-		if ttlMills > 0 {
-			destroyTime = uint64(time.Now().Unix()) + v.Ttl.ToSeconds() //生成ec文件开始计算失效时间
+		ttlSecond := v.Ttl.ToSeconds()
+		if ttlSecond > 0 {
+			expireAtSec = uint64(time.Now().Unix()) + ttlSecond //calculated expiration time
 		}
 	}
 	volumeInfo := &volume_server_pb.VolumeInfo{Version: uint32(v.Version())}
-	if destroyTime == 0 {
-		glog.Warningf("gen ec volume,cal ec volume destory time fail,set time to 0,ttl:%v", v.Ttl)
-	} else {
-		volumeInfo.DestroyTime = destroyTime
+	volumeInfo.DestroyTime = expireAtSec
+
+	datSize, _, _ := v.FileStat()
+	volumeInfo.DatFileSize = int64(datSize)
+
+	// Validate EC configuration before saving to .vif
+	if ecCtx.DataShards <= 0 || ecCtx.ParityShards <= 0 || ecCtx.Total() > erasure_coding.MaxShardCount {
+		return nil, fmt.Errorf("invalid EC config before saving: data=%d, parity=%d, total=%d (max=%d)",
+			ecCtx.DataShards, ecCtx.ParityShards, ecCtx.Total(), erasure_coding.MaxShardCount)
 	}
+
+	// Save EC configuration to VolumeInfo
+	volumeInfo.EcShardConfig = &volume_server_pb.EcShardConfig{
+		DataShards:   uint32(ecCtx.DataShards),
+		ParityShards: uint32(ecCtx.ParityShards),
+	}
+	glog.V(1).Infof("Saving EC config to .vif for volume %d: %d+%d (total: %d)",
+		req.VolumeId, ecCtx.DataShards, ecCtx.ParityShards, ecCtx.Total())
+
 	if err := volume_info.SaveVolumeInfo(baseFileName+".vif", volumeInfo); err != nil {
 		return nil, fmt.Errorf("SaveVolumeInfo %s: %v", baseFileName, err)
 	}
@@ -145,7 +177,9 @@ func (vs *VolumeServer) VolumeEcShardsCopy(ctx context.Context, req *volume_serv
 
 	var dir string
 	if req.SpecifyDir == "" {
-		location := vs.store.FindFreeLocation(types.HardDriveType)
+		location := vs.store.FindFreeLocation(func(location *storage.DiskLocation) bool {
+			return location.DiskType == types.HardDriveType
+		})
 		if location == nil {
 			return nil, fmt.Errorf("no space left")
 		}
@@ -187,7 +221,6 @@ func (vs *VolumeServer) VolumeEcShardsCopy(ctx context.Context, req *volume_serv
 				return err
 			}
 		}
-
 		return nil
 	})
 	if err != nil {
@@ -204,7 +237,9 @@ func (vs *VolumeServer) VolumeEcShardsCopyByRebuild(ctx context.Context, req *vo
 
 	var dir string
 	if req.SpecifyDir == "" {
-		location := vs.store.FindFreeLocation(types.HardDriveType)
+		location := vs.store.FindFreeLocation(func(location *storage.DiskLocation) bool {
+			return location.DiskType == types.HardDriveType
+		})
 		if location == nil {
 			return nil, fmt.Errorf("no space left")
 		}
@@ -521,7 +556,7 @@ func (vs *VolumeServer) VolumeEcBlobDelete(ctx context.Context, req *volume_serv
 
 			_, size, _, err := localEcVolume.LocateEcShardNeedle(types.NeedleId(req.FileKey), needle.Version(req.Version))
 			if err != nil {
-				return nil, fmt.Errorf("locate in local ec volume: %v", err)
+				return nil, fmt.Errorf("locate in local ec volume: %w", err)
 			}
 			if size.IsDeleted() {
 				return resp, nil
@@ -544,9 +579,10 @@ func (vs *VolumeServer) VolumeEcShardsToVolume(ctx context.Context, req *volume_
 
 	glog.V(0).Infof("VolumeEcShardsToVolume: %v", req)
 
-	// collect .ec00 ~ .ec09 files
-	shardFileNames := make([]string, erasure_coding.DataShardsCount)
-	v, found := vs.store.CollectEcShards(needle.VolumeId(req.VolumeId), shardFileNames)
+	// Collect all EC shards (NewEcVolume will load EC config from .vif into v.ECContext)
+	// Use MaxShardCount (32) to support custom EC ratios up to 32 total shards
+	tempShards := make([]string, erasure_coding.MaxShardCount)
+	v, found := vs.store.CollectEcShards(needle.VolumeId(req.VolumeId), tempShards)
 	if !found {
 		return nil, fmt.Errorf("ec volume %d not found", req.VolumeId)
 	}
@@ -555,7 +591,19 @@ func (vs *VolumeServer) VolumeEcShardsToVolume(ctx context.Context, req *volume_
 		return nil, fmt.Errorf("existing collection:%v unexpected input: %v", v.Collection, req.Collection)
 	}
 
-	for shardId := 0; shardId < erasure_coding.DataShardsCount; shardId++ {
+	// Use EC context (already loaded from .vif) to determine data shard count
+	dataShards := v.ECContext.DataShards
+
+	// Defensive validation to prevent panics from corrupted ECContext
+	if dataShards <= 0 || dataShards > erasure_coding.MaxShardCount {
+		return nil, fmt.Errorf("invalid data shard count %d for volume %d (must be 1..%d)", dataShards, req.VolumeId, erasure_coding.MaxShardCount)
+	}
+
+	shardFileNames := tempShards[:dataShards]
+	glog.V(1).Infof("Using EC config from volume %d: %d data shards", req.VolumeId, dataShards)
+
+	// Verify all data shards are present
+	for shardId := 0; shardId < dataShards; shardId++ {
 		if shardFileNames[shardId] == "" {
 			return nil, fmt.Errorf("ec volume %d missing shard %d", req.VolumeId, shardId)
 		}
@@ -584,7 +632,9 @@ func (vs *VolumeServer) VolumeEcShardsToVolume(ctx context.Context, req *volume_
 func (vs *VolumeServer) VolumeEcShardsMove(ctx context.Context, req *volume_server_pb.VolumeEcShardsMoveRequest) (*volume_server_pb.VolumeEcShardsMoveResponse, error) {
 	glog.V(0).Infof("VolumeEcShardsMove: %v", req)
 
-	location := vs.store.FindFreeLocation(types.HardDriveType)
+	location := vs.store.FindFreeLocation(func(location *storage.DiskLocation) bool {
+		return location.DiskType == types.HardDriveType
+	})
 	if location == nil {
 		return nil, fmt.Errorf("no space left")
 	}

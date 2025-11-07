@@ -4,8 +4,15 @@ package stats
 // The naming convention is ErrorSomeThing = "error.some.thing"
 const (
 	// volume server
-	WriteToLocalDisk            = "writeToLocalDisk"
-	WriteToReplicas             = "writeToReplicas"
+	WriteToLocalDisk   = "writeToLocalDisk"
+	WriteToReplicas    = "writeToReplicas"
+	DownloadLimitCond  = "downloadLimitCondition"
+	UploadLimitCond    = "uploadLimitCondition"
+	ReadProxyReq       = "readProxyRequest"
+	ReadRedirectReq    = "readRedirectRequest"
+	EmptyReadProxyLoc  = "emptyReadProxyLocaction"
+	FailedReadProxyReq = "failedReadProxyRequest"
+
 	ErrorSizeMismatchOffsetSize = "errorSizeMismatchOffsetSize"
 	ErrorSizeMismatch           = "errorSizeMismatch"
 	ErrorCRC                    = "errorCRC"
@@ -27,12 +34,14 @@ const (
 	Failed                = "failed"
 
 	// filer handler
-	DirList                  = "dirList"
-	ContentSaveToFiler       = "contentSaveToFiler"
-	AutoChunk                = "autoChunk"
-	ChunkProxy               = "chunkProxy"
-	ChunkAssign              = "chunkAssign"
-	ChunkUpload              = "chunkUpload"
+	DirList            = "dirList"
+	ContentSaveToFiler = "contentSaveToFiler"
+	AutoChunk          = "autoChunk"
+	ChunkProxy         = "chunkProxy"
+	ChunkAssign        = "chunkAssign"
+	ChunkUpload        = "chunkUpload"
+	ChunkMerge         = "chunkMerge"
+
 	ChunkDoUploadRetry       = "chunkDoUploadRetry"
 	ChunkUploadRetry         = "chunkUploadRetry"
 	ChunkAssignRetry         = "chunkAssignRetry"

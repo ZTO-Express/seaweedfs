@@ -1,15 +1,17 @@
 package topology
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"google.golang.org/grpc"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
@@ -20,9 +22,11 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/util/buffer_pool"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 )
 
-func ReplicatedWrite(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOption, s *storage.Store, volumeId needle.VolumeId, n *needle.Needle, r *http.Request, contentMd5 string) (isUnchanged bool, err error) {
+func ReplicatedWrite(ctx context.Context, masterFn operation.GetMasterFn, grpcDialOption grpc.DialOption, s *storage.Store, volumeId needle.VolumeId, n *needle.Needle, r *http.Request, contentMd5 string) (isUnchanged bool, err error) {
+
 	//check JWT
 	jwt := security.GetJwt(r)
 
@@ -36,24 +40,37 @@ func ReplicatedWrite(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOpt
 			return
 		}
 	}
+
 	// read fsync value
 	fsync := false
 	if r.FormValue("fsync") == "true" {
 		fsync = true
 	}
+
 	if s.GetVolume(volumeId) != nil {
 		start := time.Now()
+
+		inFlightGauge := stats.VolumeServerInFlightRequestsGauge.WithLabelValues(stats.WriteToLocalDisk)
+		inFlightGauge.Inc()
+		defer inFlightGauge.Dec()
+
 		isUnchanged, err = s.WriteVolumeNeedle(volumeId, n, true, fsync)
 		stats.VolumeServerRequestHistogram.WithLabelValues(stats.WriteToLocalDisk).Observe(time.Since(start).Seconds())
 		if err != nil {
 			stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorWriteToLocalDisk).Inc()
-			err = fmt.Errorf("failed to write to local disk: %v", err)
+			err = fmt.Errorf("failed to write to local disk: %w", err)
 			glog.V(0).Infoln(err)
 			return
 		}
 	}
+
 	if len(remoteLocations) > 0 { //send to other replica locations
 		start := time.Now()
+
+		inFlightGauge := stats.VolumeServerInFlightRequestsGauge.WithLabelValues(stats.WriteToReplicas)
+		inFlightGauge.Inc()
+		defer inFlightGauge.Dec()
+
 		err = DistributedOperation(remoteLocations, func(location operation.Location) error {
 			u := url.URL{
 				Scheme: "http",
@@ -102,7 +119,12 @@ func ReplicatedWrite(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOpt
 			}
 			uploadOption.FillRemoteAuthHeader(r)
 
-			_, err := operation.UploadData(n.Data, uploadOption)
+			uploader, err := operation.NewUploader()
+			if err != nil {
+				glog.Errorf("replication-UploadData, err:%v, url:%s", err, u.String())
+				return err
+			}
+			_, err = uploader.UploadData(ctx, n.Data, uploadOption)
 			if err != nil {
 				glog.Errorf("replication-UploadData, err:%v, url:%s", err, u.String())
 			}
@@ -141,7 +163,7 @@ func ReplicatedDelete(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOp
 
 	if len(remoteLocations) > 0 { //send to other replica locations
 		if err = DistributedOperation(remoteLocations, func(location operation.Location) error {
-			return util.Delete("http://"+location.Url+r.URL.Path+"?type=replicate", string(jwt), r.Header.Get("Authorization"))
+			return util_http.Delete("http://"+location.Url+r.URL.Path+"?type=replicate", string(jwt), r.Header.Get("Authorization"))
 		}); err != nil {
 			size = 0
 		}

@@ -1,8 +1,10 @@
 package mount
 
 import (
-	"github.com/seaweedfs/seaweedfs/weed/util"
+	"context"
 	"syscall"
+
+	"github.com/seaweedfs/seaweedfs/weed/util"
 
 	"github.com/hanwen/go-fuse/v2/fuse"
 
@@ -38,10 +40,8 @@ func (wfs *WFS) Lseek(cancel <-chan struct{}, in *fuse.LseekIn, out *fuse.LseekO
 	// lock the file until the proper offset was calculated
 	fhActiveLock := fh.wfs.fhLockTable.AcquireLock("Lseek", fh.fh, util.SharedLock)
 	defer fh.wfs.fhLockTable.ReleaseLock(fh.fh, fhActiveLock)
-	fh.entryLock.RLock()
-	defer fh.entryLock.RUnlock()
 
-	fileSize := int64(filer.FileSize(fh.GetEntry()))
+	fileSize := int64(filer.FileSize(fh.GetEntry().GetEntry()))
 	offset := max(int64(in.Offset), 0)
 
 	glog.V(4).Infof(
@@ -56,8 +56,21 @@ func (wfs *WFS) Lseek(cancel <-chan struct{}, in *fuse.LseekIn, out *fuse.LseekO
 		return ENXIO
 	}
 
+	// Create a context that will be cancelled when the cancel channel receives a signal
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc() // Ensure cleanup
+
+	go func() {
+		select {
+		case <-cancel:
+			cancelFunc()
+		case <-ctx.Done():
+			// Clean exit when lseek operation completes
+		}
+	}()
+
 	// search chunks for the offset
-	found, offset := fh.entryChunkGroup.SearchChunks(offset, fileSize, in.Whence)
+	found, offset := fh.entryChunkGroup.SearchChunks(ctx, offset, fileSize, in.Whence)
 	if found {
 		out.Offset = uint64(offset)
 		return fuse.OK

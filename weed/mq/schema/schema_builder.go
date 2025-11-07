@@ -1,11 +1,13 @@
 package schema
 
 import (
-	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"sort"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 var (
+	// Basic scalar types
 	TypeBoolean = &schema_pb.Type{Kind: &schema_pb.Type_ScalarType{schema_pb.ScalarType_BOOL}}
 	TypeInt32   = &schema_pb.Type{Kind: &schema_pb.Type_ScalarType{schema_pb.ScalarType_INT32}}
 	TypeInt64   = &schema_pb.Type{Kind: &schema_pb.Type_ScalarType{schema_pb.ScalarType_INT64}}
@@ -13,22 +15,35 @@ var (
 	TypeDouble  = &schema_pb.Type{Kind: &schema_pb.Type_ScalarType{schema_pb.ScalarType_DOUBLE}}
 	TypeBytes   = &schema_pb.Type{Kind: &schema_pb.Type_ScalarType{schema_pb.ScalarType_BYTES}}
 	TypeString  = &schema_pb.Type{Kind: &schema_pb.Type_ScalarType{schema_pb.ScalarType_STRING}}
+
+	// Parquet logical types
+	TypeTimestamp = &schema_pb.Type{Kind: &schema_pb.Type_ScalarType{schema_pb.ScalarType_TIMESTAMP}}
+	TypeDate      = &schema_pb.Type{Kind: &schema_pb.Type_ScalarType{schema_pb.ScalarType_DATE}}
+	TypeDecimal   = &schema_pb.Type{Kind: &schema_pb.Type_ScalarType{schema_pb.ScalarType_DECIMAL}}
+	TypeTime      = &schema_pb.Type{Kind: &schema_pb.Type_ScalarType{schema_pb.ScalarType_TIME}}
 )
 
 type RecordTypeBuilder struct {
 	recordType *schema_pb.RecordType
 }
 
+// RecordTypeBegin creates a new RecordTypeBuilder, it should be followed by a series of WithField methods and RecordTypeEnd
 func RecordTypeBegin() *RecordTypeBuilder {
 	return &RecordTypeBuilder{recordType: &schema_pb.RecordType{}}
 }
 
+// RecordTypeEnd finishes the building of a RecordValue
 func (rtb *RecordTypeBuilder) RecordTypeEnd() *schema_pb.RecordType {
 	// be consistent with parquet.node.go `func (g Group) Fields() []Field`
 	sort.Slice(rtb.recordType.Fields, func(i, j int) bool {
 		return rtb.recordType.Fields[i].Name < rtb.recordType.Fields[j].Name
 	})
 	return rtb.recordType
+}
+
+// NewRecordTypeBuilder creates a new RecordTypeBuilder from an existing RecordType, it should be followed by a series of WithField methods and RecordTypeEnd
+func NewRecordTypeBuilder(recordType *schema_pb.RecordType) (rtb *RecordTypeBuilder) {
+	return &RecordTypeBuilder{recordType: recordType}
 }
 
 func (rtb *RecordTypeBuilder) WithField(name string, scalarType *schema_pb.Type) *RecordTypeBuilder {

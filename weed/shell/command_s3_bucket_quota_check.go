@@ -2,6 +2,7 @@ package shell
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
@@ -29,6 +30,10 @@ func (c *commandS3BucketQuotaEnforce) Help() string {
 `
 }
 
+func (c *commandS3BucketQuotaEnforce) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandS3BucketQuotaEnforce) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
 
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
@@ -50,7 +55,7 @@ func (c *commandS3BucketQuotaEnforce) Do(args []string, commandEnv *CommandEnv, 
 	var filerBucketsPath string
 	filerBucketsPath, err = readFilerBucketsPath(commandEnv)
 	if err != nil {
-		return fmt.Errorf("read buckets: %v", err)
+		return fmt.Errorf("read buckets: %w", err)
 	}
 
 	// read existing filer configuration
@@ -61,7 +66,7 @@ func (c *commandS3BucketQuotaEnforce) Do(args []string, commandEnv *CommandEnv, 
 
 	// process each bucket
 	hasConfChanges := false
-	err = filer_pb.List(commandEnv, filerBucketsPath, "", func(entry *filer_pb.Entry, isLast bool) error {
+	err = filer_pb.List(context.Background(), commandEnv, filerBucketsPath, "", func(entry *filer_pb.Entry, isLast bool) error {
 		if !entry.IsDirectory {
 			return nil
 		}
@@ -76,7 +81,7 @@ func (c *commandS3BucketQuotaEnforce) Do(args []string, commandEnv *CommandEnv, 
 		return nil
 	}, "", false, math.MaxUint32)
 	if err != nil {
-		return fmt.Errorf("list buckets under %v: %v", filerBucketsPath, err)
+		return fmt.Errorf("list buckets under %v: %w", filerBucketsPath, err)
 	}
 
 	// apply the configuration changes
@@ -130,7 +135,7 @@ func (c *commandS3BucketQuotaEnforce) processEachBucket(fc *filer.FilerConf, fil
 		} else {
 			fmt.Fprintf(writer, "    changing bucket %s to writable.\n", entry.Name)
 		}
-		fc.AddLocationConf(locConf)
+		fc.SetLocationConf(locConf)
 	}
 
 	return

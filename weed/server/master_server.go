@@ -8,11 +8,13 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/telemetry"
 
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -29,6 +31,8 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/shell"
 	"github.com/seaweedfs/seaweedfs/weed/topology"
 	"github.com/seaweedfs/seaweedfs/weed/util"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
+	"github.com/seaweedfs/seaweedfs/weed/util/version"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
 )
 
@@ -38,10 +42,11 @@ const (
 )
 
 type MasterOption struct {
-	Master            pb.ServerAddress
-	MetaFolder        string
-	VolumeSizeLimitMB uint32
-	VolumePreallocate bool
+	Master                     pb.ServerAddress
+	MetaFolder                 string
+	VolumeSizeLimitMB          uint32
+	VolumePreallocate          bool
+	MaxParallelVacuumPerServer int
 	// PulseSeconds            int
 	DefaultReplicaPlacement string
 	GarbageThreshold        float64
@@ -52,6 +57,10 @@ type MasterOption struct {
 	IsFollower              bool
 	Username                string
 	Password                string
+
+	TelemetryUrl         string
+	TelemetryEnabled     bool
+	VolumeGrowthDisabled bool
 }
 
 type MasterServer struct {
@@ -65,8 +74,6 @@ type MasterServer struct {
 	vg                      *topology.VolumeGrowth
 	volumeGrowthRequestChan chan *topology.VolumeGrowRequest
 
-	boundedLeaderChan chan int
-
 	// notifying clients
 	clientChansLock sync.RWMutex
 	clientChans     map[string]chan *master_pb.KeepConnectedResponse
@@ -78,6 +85,9 @@ type MasterServer struct {
 	adminLocks *AdminLocks
 
 	Cluster *cluster.Cluster
+
+	// telemetry
+	telemetryCollector *telemetry.Collector
 }
 
 func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.ServerAddress) *MasterServer {
@@ -94,18 +104,20 @@ func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.Se
 	v.SetDefault("master.replication.treat_replication_as_minimums", false)
 	replicationAsMin := v.GetBool("master.replication.treat_replication_as_minimums")
 
-	v.SetDefault("master.volume_growth.copy_1", 7)
-	v.SetDefault("master.volume_growth.copy_2", 6)
-	v.SetDefault("master.volume_growth.copy_3", 3)
-	v.SetDefault("master.volume_growth.copy_other", 1)
-	v.SetDefault("master.volume_growth.threshold", 0.9)
-	v.SetDefault("master.volume_growth.crowded_threshold", 0.6)
-	topology.VolumeGrowStrategy.Copy1Count = v.GetInt("master.volume_growth.copy_1")
-	topology.VolumeGrowStrategy.Copy2Count = v.GetInt("master.volume_growth.copy_2")
-	topology.VolumeGrowStrategy.Copy3Count = v.GetInt("master.volume_growth.copy_3")
-	topology.VolumeGrowStrategy.CopyOtherCount = v.GetInt("master.volume_growth.copy_other")
+	v.SetDefault("master.volume_growth.copy_1", topology.VolumeGrowStrategy.Copy1Count)
+	v.SetDefault("master.volume_growth.copy_2", topology.VolumeGrowStrategy.Copy2Count)
+	v.SetDefault("master.volume_growth.copy_3", topology.VolumeGrowStrategy.Copy3Count)
+	v.SetDefault("master.volume_growth.copy_other", topology.VolumeGrowStrategy.CopyOtherCount)
+	v.SetDefault("master.volume_growth.threshold", topology.VolumeGrowStrategy.Threshold)
+	v.SetDefault("master.volume_growth.disable", false)
+	option.VolumeGrowthDisabled = v.GetBool("master.volume_growth.disable")
+
+	topology.VolumeGrowStrategy.Copy1Count = v.GetUint32("master.volume_growth.copy_1")
+	topology.VolumeGrowStrategy.Copy2Count = v.GetUint32("master.volume_growth.copy_2")
+	topology.VolumeGrowStrategy.Copy3Count = v.GetUint32("master.volume_growth.copy_3")
+	topology.VolumeGrowStrategy.CopyOtherCount = v.GetUint32("master.volume_growth.copy_other")
 	topology.VolumeGrowStrategy.Threshold = v.GetFloat64("master.volume_growth.threshold")
-	topology.VolumeGrowStrategy.CrowdedThreshold = v.GetFloat64("master.volume_growth.crowded_threshold")
+	whiteList := util.StringSplit(v.GetString("guard.white_list"), ",")
 
 	var preallocateSize int64
 	if option.VolumePreallocate {
@@ -123,7 +135,6 @@ func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.Se
 		adminLocks:              NewAdminLocks(),
 		Cluster:                 cluster.NewCluster(),
 	}
-	ms.boundedLeaderChan = make(chan int, 16)
 
 	ms.MasterClient.SetOnPeerUpdateFn(ms.OnPeerUpdate)
 
@@ -135,32 +146,47 @@ func NewMasterServer(r *mux.Router, option *MasterOption, peers map[string]pb.Se
 	ms.vg = topology.NewDefaultVolumeGrowth()
 	glog.V(0).Infoln("Volume Size Limit is", ms.option.VolumeSizeLimitMB, "MB")
 
-	ms.guard = security.NewGuard(ms.option.WhiteList, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec, ms.option.Username, ms.option.Password)
+	// Initialize telemetry after topology is created
+	if option.TelemetryEnabled && option.TelemetryUrl != "" {
+		telemetryClient := telemetry.NewClient(option.TelemetryUrl, option.TelemetryEnabled)
+		ms.telemetryCollector = telemetry.NewCollector(telemetryClient, ms.Topo, ms.Cluster)
+		ms.telemetryCollector.SetMasterServer(ms)
+
+		// Set version and OS information
+		ms.telemetryCollector.SetVersion(version.VERSION_NUMBER)
+		ms.telemetryCollector.SetOS(runtime.GOOS + "/" + runtime.GOARCH)
+
+		// Start periodic telemetry collection (every 24 hours)
+		ms.telemetryCollector.StartPeriodicCollection(24 * time.Hour)
+	}
+
+	ms.guard = security.NewGuard(append(ms.option.WhiteList, whiteList...), signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec, ms.option.Username, ms.option.Password)
 
 	handleStaticResources2(r)
-	r.HandleFunc("/", ms.proxyToLeader(ms.uiStatusHandler))
-	r.HandleFunc("/ui/index.html", ms.uiStatusHandler)
+	r.HandleFunc("/", ms.proxyToLeader(requestIDMiddleware(ms.uiStatusHandler)))
+	r.HandleFunc("/ui/index.html", requestIDMiddleware(ms.uiStatusHandler))
 	if !ms.option.DisableHttp {
-		r.HandleFunc("/dir/assign", ms.proxyToLeader(ms.guard.WhiteList(ms.dirAssignHandler)))
-		r.HandleFunc("/dir/lookup", ms.guard.WhiteList(ms.dirLookupHandler))
-		r.HandleFunc("/dir/status", ms.proxyToLeader(ms.guard.WhiteList(ms.dirStatusHandler)))
-		r.HandleFunc("/vol/writable", ms.proxyToLeader(ms.guard.WhiteList(ms.volumeListOfWritableHandler)))
-		r.HandleFunc("/col/delete", ms.proxyToLeader(ms.guard.WhiteList(ms.collectionDeleteHandler)))
-		r.HandleFunc("/vol/grow", ms.proxyToLeader(ms.guard.WhiteList(ms.volumeGrowHandler)))
-		r.HandleFunc("/vol/status", ms.proxyToLeader(ms.guard.WhiteList(ms.volumeStatusHandler)))
-		r.HandleFunc("/vol/vacuum", ms.proxyToLeader(ms.guard.WhiteList(ms.volumeVacuumHandler)))
-		r.HandleFunc("/submit", ms.guard.WhiteList(ms.submitFromMasterServerHandler))
+		r.HandleFunc("/dir/assign", ms.proxyToLeader(ms.guard.WhiteList(requestIDMiddleware(ms.dirAssignHandler))))
+		r.HandleFunc("/dir/lookup", ms.guard.WhiteList(requestIDMiddleware(ms.dirLookupHandler)))
+		r.HandleFunc("/dir/status", ms.proxyToLeader(ms.guard.WhiteList(requestIDMiddleware(ms.dirStatusHandler))))
+		r.HandleFunc("/col/delete", ms.proxyToLeader(ms.guard.WhiteList(requestIDMiddleware(ms.collectionDeleteHandler))))
+		r.HandleFunc("/vol/grow", ms.proxyToLeader(ms.guard.WhiteList(requestIDMiddleware(ms.volumeGrowHandler))))
+		r.HandleFunc("/vol/status", ms.proxyToLeader(ms.guard.WhiteList(requestIDMiddleware(ms.volumeStatusHandler))))
+		r.HandleFunc("/vol/vacuum", ms.proxyToLeader(ms.guard.WhiteList(requestIDMiddleware(ms.volumeVacuumHandler))))
+		r.HandleFunc("/submit", ms.guard.WhiteList(requestIDMiddleware(ms.submitFromMasterServerHandler)))
+		r.HandleFunc("/collection/info", ms.guard.WhiteList(requestIDMiddleware(ms.collectionInfoHandler)))
 		/*
 			r.HandleFunc("/stats/health", ms.guard.WhiteList(statsHealthHandler))
 			r.HandleFunc("/stats/counter", ms.guard.WhiteList(statsCounterHandler))
 			r.HandleFunc("/stats/memory", ms.guard.WhiteList(statsMemoryHandler))
 		*/
-		r.HandleFunc("/{fileId}", ms.redirectHandler)
+		r.HandleFunc("/{fileId}", requestIDMiddleware(ms.redirectHandler))
 	}
 
 	ms.Topo.StartRefreshWritableVolumes(
 		ms.grpcDialOption,
 		ms.option.GarbageThreshold,
+		ms.option.MaxParallelVacuumPerServer,
 		topology.VolumeGrowStrategy.Threshold,
 		ms.preallocateSize,
 	)
@@ -185,27 +211,14 @@ func (ms *MasterServer) SetRaftServer(raftServer *RaftServer) {
 			stats.MasterLeaderChangeCounter.WithLabelValues(fmt.Sprintf("%+v", e.Value())).Inc()
 			if ms.Topo.RaftServer.Leader() != "" {
 				glog.V(0).Infof("[%s] %s becomes leader.", ms.Topo.RaftServer.Name(), ms.Topo.RaftServer.Leader())
+				ms.Topo.LastLeaderChangeTime = time.Now()
 			}
 		})
 		raftServerName = fmt.Sprintf("[%s]", ms.Topo.RaftServer.Name())
 	} else if raftServer.RaftHashicorp != nil {
 		ms.Topo.HashicorpRaft = raftServer.RaftHashicorp
-		leaderCh := raftServer.RaftHashicorp.LeaderCh()
-		prevLeader, _ := ms.Topo.HashicorpRaft.LeaderWithID()
 		raftServerName = ms.Topo.HashicorpRaft.String()
-		go func() {
-			for {
-				select {
-				case isLeader := <-leaderCh:
-					ms.Topo.RaftServerAccessLock.RLock()
-					leader, _ := ms.Topo.HashicorpRaft.LeaderWithID()
-					ms.Topo.RaftServerAccessLock.RUnlock()
-					glog.V(0).Infof("is leader %+v change event: %+v => %+v", isLeader, prevLeader, leader)
-					stats.MasterLeaderChangeCounter.WithLabelValues(fmt.Sprintf("%+v", leader)).Inc()
-					prevLeader = leader
-				}
-			}
-		}()
+		ms.Topo.LastLeaderChangeTime = time.Now()
 	}
 	ms.Topo.RaftServerAccessLock.Unlock()
 
@@ -241,27 +254,20 @@ func (ms *MasterServer) proxyToLeader(f http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		ms.boundedLeaderChan <- 1
-		defer func() { <-ms.boundedLeaderChan }()
-		targetUrl, err := url.Parse("http://" + raftServerLeader)
+		// determine the scheme based on HTTPS client configuration
+		scheme := util_http.GetGlobalHttpClient().GetHttpScheme()
+
+		targetUrl, err := url.Parse(scheme + "://" + raftServerLeader)
 		if err != nil {
 			writeJsonError(w, r, http.StatusInternalServerError,
-				fmt.Errorf("Leader URL http://%s Parse Error: %v", raftServerLeader, err))
+				fmt.Errorf("Leader URL %s://%s Parse Error: %v", scheme, raftServerLeader, err))
 			return
 		}
 
 		// proxy to leader
-		glog.V(4).Infoln("proxying to leader", raftServerLeader)
+		glog.V(4).Infoln("proxying to leader", raftServerLeader, "using", scheme)
 		proxy := httputil.NewSingleHostReverseProxy(targetUrl)
-		director := proxy.Director
-		proxy.Director = func(req *http.Request) {
-			actualHost, err := security.GetActualRemoteHost(req)
-			if err == nil {
-				req.Header.Set("HTTP_X_FORWARDED_FOR", actualHost)
-			}
-			director(req)
-		}
-		proxy.Transport = util.Transport
+		proxy.Transport = util_http.GetGlobalHttpClient().GetClientTransport()
 		proxy.ServeHTTP(w, r)
 	}
 }
@@ -275,7 +281,7 @@ func (ms *MasterServer) startAdminScripts() {
 	glog.V(0).Infof("adminScripts: %v", adminScripts)
 
 	v.SetDefault("master.maintenance.sleep_minutes", 17)
-	sleepMinutes := v.GetInt("master.maintenance.sleep_minutes")
+	sleepMinutes := v.GetFloat64("master.maintenance.sleep_minutes")
 
 	scriptLines := strings.Split(adminScripts, "\n")
 	if !strings.Contains(adminScripts, "lock") {
@@ -330,6 +336,10 @@ func processEachCmd(reg *regexp.Regexp, line string, commandEnv *shell.CommandEn
 
 	for _, c := range shell.Commands {
 		if c.Name() == cmd {
+			if c.HasTag(shell.ResourceHeavy) {
+				glog.Warningf("%s is resource heavy and should not run on master", cmd)
+				continue
+			}
 			glog.V(0).Infof("executing: %s %v", cmd, args)
 			if err := c.Do(args, commandEnv, os.Stdout); err != nil {
 				glog.V(0).Infof("error: %v", err)
@@ -419,4 +429,14 @@ func (ms *MasterServer) Shutdown() {
 		ms.Topo.HashicorpRaft.LeadershipTransfer()
 	}
 	ms.Topo.HashicorpRaft.Shutdown()
+}
+
+func (ms *MasterServer) Reload() {
+	glog.V(0).Infoln("Reload master server...")
+
+	util.LoadConfiguration("security", false)
+	v := util.GetViper()
+	ms.guard.UpdateWhiteList(append(ms.option.WhiteList,
+		util.StringSplit(v.GetString("guard.white_list"), ",")...),
+	)
 }

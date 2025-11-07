@@ -4,15 +4,18 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/pb"
-	"github.com/seaweedfs/seaweedfs/weed/wdclient"
 	"io"
 	"log"
 	"time"
 
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/wdclient"
+
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/util"
+
 	"google.golang.org/grpc"
 )
 
@@ -48,6 +51,10 @@ func (c *commandVolumeMove) Help() string {
 `
 }
 
+func (c *commandVolumeMove) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandVolumeMove) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
 
 	volMoveCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
@@ -56,12 +63,18 @@ func (c *commandVolumeMove) Do(args []string, commandEnv *CommandEnv, writer io.
 	targetNodeStr := volMoveCommand.String("target", "", "the target volume server <host>:<port>")
 	diskTypeStr := volMoveCommand.String("disk", "", "[hdd|ssd|<tag>] hard drive or solid state drive or any tag")
 	ioBytePerSecond := volMoveCommand.Int64("ioBytePerSecond", 0, "limit the speed of move")
+	noLock := volMoveCommand.Bool("noLock", false, "do not lock the admin shell at one's own risk")
+
 	if err = volMoveCommand.Parse(args); err != nil {
 		return nil
 	}
 
-	if err = commandEnv.confirmIsLocked(args); err != nil {
-		return
+	if *noLock {
+		commandEnv.noLock = true
+	} else {
+		if err = commandEnv.confirmIsLocked(args); err != nil {
+			return
+		}
 	}
 
 	sourceVolumeServer, targetVolumeServer := pb.ServerAddress(*sourceNodeStr), pb.ServerAddress(*targetNodeStr)
@@ -132,6 +145,7 @@ func copyVolume(grpcDialOption grpc.DialOption, writer io.Writer, volumeId needl
 			shouldMarkWritable = true
 			_, readonlyErr := volumeServerClient.VolumeMarkReadonly(context.Background(), &volume_server_pb.VolumeMarkReadonlyRequest{
 				VolumeId: uint32(volumeId),
+				Persist:  false,
 			})
 			return readonlyErr
 		}
@@ -163,7 +177,7 @@ func copyVolume(grpcDialOption grpc.DialOption, writer io.Writer, volumeId needl
 			if resp.LastAppendAtNs != 0 {
 				lastAppendAtNs = resp.LastAppendAtNs
 			} else {
-				fmt.Fprintf(writer, "volume %d processed %d bytes\n", volumeId, resp.ProcessedBytes)
+				fmt.Fprintf(writer, "%s => %s volume %d processed %s\n", sourceVolumeServer, targetVolumeServer, volumeId, util.BytesToHumanReadable(uint64(resp.ProcessedBytes)))
 			}
 		}
 
@@ -197,7 +211,7 @@ func deleteVolume(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, sour
 	})
 }
 
-func markVolumeWritable(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, sourceVolumeServer pb.ServerAddress, writable bool) (err error) {
+func markVolumeWritable(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, sourceVolumeServer pb.ServerAddress, writable, persist bool) (err error) {
 	return operation.WithVolumeServerClient(false, sourceVolumeServer, grpcDialOption, func(volumeServerClient volume_server_pb.VolumeServerClient) error {
 		if writable {
 			_, err = volumeServerClient.VolumeMarkWritable(context.Background(), &volume_server_pb.VolumeMarkWritableRequest{
@@ -206,16 +220,21 @@ func markVolumeWritable(grpcDialOption grpc.DialOption, volumeId needle.VolumeId
 		} else {
 			_, err = volumeServerClient.VolumeMarkReadonly(context.Background(), &volume_server_pb.VolumeMarkReadonlyRequest{
 				VolumeId: uint32(volumeId),
+				Persist:  persist,
 			})
 		}
 		return err
 	})
 }
 
-func markVolumeReplicasWritable(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, locations []wdclient.Location, writable bool) error {
+func markVolumeReplicaWritable(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, location wdclient.Location, writable, persist bool) error {
+	fmt.Printf("markVolumeReadonly %d on %s ...\n", volumeId, location.Url)
+	return markVolumeWritable(grpcDialOption, volumeId, location.ServerAddress(), writable, persist)
+}
+
+func markVolumeReplicasWritable(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, locations []wdclient.Location, writable, persist bool) error {
 	for _, location := range locations {
-		fmt.Printf("markVolumeReadonly %d on %s ...\n", volumeId, location.Url)
-		if err := markVolumeWritable(grpcDialOption, volumeId, location.ServerAddress(), writable); err != nil {
+		if err := markVolumeReplicaWritable(grpcDialOption, volumeId, location, writable, persist); err != nil {
 			return err
 		}
 	}

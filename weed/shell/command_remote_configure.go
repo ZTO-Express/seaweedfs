@@ -48,6 +48,10 @@ func (c *commandRemoteConfigure) Help() string {
 `
 }
 
+func (c *commandRemoteConfigure) HasTag(CommandTag) bool {
+	return false
+}
+
 var (
 	isAlpha = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`).MatchString
 )
@@ -137,7 +141,7 @@ func (c *commandRemoteConfigure) Do(args []string, commandEnv *CommandEnv, write
 
 func (c *commandRemoteConfigure) listExistingRemoteStorages(commandEnv *CommandEnv, writer io.Writer) error {
 
-	return filer_pb.ReadDirAllEntries(commandEnv, util.FullPath(filer.DirectoryEtcRemote), "", func(entry *filer_pb.Entry, isLast bool) error {
+	return filer_pb.ReadDirAllEntries(context.Background(), commandEnv, util.FullPath(filer.DirectoryEtcRemote), "", func(entry *filer_pb.Entry, isLast bool) error {
 		if len(entry.Content) == 0 {
 			fmt.Fprintf(writer, "skipping %s\n", entry.Name)
 			return nil

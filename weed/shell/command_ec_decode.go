@@ -4,10 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
-	"io"
-	"time"
 
 	"google.golang.org/grpc"
 
@@ -34,7 +34,16 @@ func (c *commandEcDecode) Help() string {
 
 	ec.decode [-collection=""] [-volumeId=<volume_id>]
 
+	The -collection parameter supports regular expressions for pattern matching:
+	  - Use exact match: ec.decode -collection="^mybucket$"
+	  - Match multiple buckets: ec.decode -collection="bucket.*"
+	  - Match all collections: ec.decode -collection=".*"
+
 `
+}
+
+func (c *commandEcDecode) HasTag(CommandTag) bool {
+	return false
 }
 
 func (c *commandEcDecode) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
@@ -63,8 +72,11 @@ func (c *commandEcDecode) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 	}
 
 	// apply to all volumes in the collection
-	volumeIds := collectEcShardIds(topologyInfo, *collection)
-	fmt.Printf("ec encode volumes: %v\n", volumeIds)
+	volumeIds, err := collectEcShardIds(topologyInfo, *collection)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("ec decode volumes: %v\n", volumeIds)
 	for _, vid := range volumeIds {
 		if err = doEcDecode(commandEnv, topologyInfo, *collection, vid); err != nil {
 			return err
@@ -236,32 +248,18 @@ func lookupVolumeIds(commandEnv *CommandEnv, volumeIds []string) (volumeIdLocati
 	return resp.VolumeIdLocations, nil
 }
 
-func collectTopologyInfo(commandEnv *CommandEnv, delayBeforeCollecting time.Duration) (topoInfo *master_pb.TopologyInfo, volumeSizeLimitMb uint64, err error) {
-
-	if delayBeforeCollecting > 0 {
-		time.Sleep(delayBeforeCollecting)
-	}
-
-	var resp *master_pb.VolumeListResponse
-	err = commandEnv.MasterClient.WithClient(false, func(client master_pb.SeaweedClient) error {
-		resp, err = client.VolumeList(context.Background(), &master_pb.VolumeListRequest{})
-		return err
-	})
+func collectEcShardIds(topoInfo *master_pb.TopologyInfo, collectionPattern string) (vids []needle.VolumeId, err error) {
+	// compile regex pattern for collection matching
+	collectionRegex, err := compileCollectionPattern(collectionPattern)
 	if err != nil {
-		return
+		return nil, fmt.Errorf("invalid collection pattern '%s': %v", collectionPattern, err)
 	}
-
-	return resp.TopologyInfo, resp.VolumeSizeLimitMb, nil
-
-}
-
-func collectEcShardIds(topoInfo *master_pb.TopologyInfo, selectedCollection string) (vids []needle.VolumeId) {
 
 	vidMap := make(map[uint32]bool)
-	eachDataNode(topoInfo, func(dc string, rack RackId, dn *master_pb.DataNodeInfo) {
+	eachDataNode(topoInfo, func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo) {
 		if diskInfo, found := dn.DiskInfos[string(types.HardDriveType)]; found {
 			for _, v := range diskInfo.EcShardInfos {
-				if v.Collection == selectedCollection {
+				if collectionRegex.MatchString(v.Collection) {
 					vidMap[v.Id] = true
 				}
 			}
@@ -278,7 +276,7 @@ func collectEcShardIds(topoInfo *master_pb.TopologyInfo, selectedCollection stri
 func collectEcNodeShardBits(topoInfo *master_pb.TopologyInfo, vid needle.VolumeId) map[pb.ServerAddress]erasure_coding.ShardBits {
 
 	nodeToEcIndexBits := make(map[pb.ServerAddress]erasure_coding.ShardBits)
-	eachDataNode(topoInfo, func(dc string, rack RackId, dn *master_pb.DataNodeInfo) {
+	eachDataNode(topoInfo, func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo) {
 		if diskInfo, found := dn.DiskInfos[string(types.HardDriveType)]; found {
 			for _, v := range diskInfo.EcShardInfos {
 				if v.Id == uint32(vid) {

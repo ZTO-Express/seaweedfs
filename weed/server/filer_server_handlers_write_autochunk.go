@@ -3,12 +3,12 @@ package weed_server
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
-	//"github.com/seaweedfs/seaweedfs/weed/s3api"
-	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strconv"
@@ -19,8 +19,10 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/util/constants"
 )
 
 func (fs *FilerServer) autoChunk(ctx context.Context, w http.ResponseWriter, r *http.Request, contentLength int64, so *operation.StorageOption) {
@@ -49,11 +51,17 @@ func (fs *FilerServer) autoChunk(ctx context.Context, w http.ResponseWriter, r *
 		reply, md5bytes, err = fs.doPutAutoChunk(ctx, w, r, chunkSize, contentLength, so)
 	}
 	if err != nil {
-		if strings.HasPrefix(err.Error(), "read input:") || err.Error() == io.ErrUnexpectedEOF.Error() {
+		errStr := err.Error()
+		switch {
+		case errStr == constants.ErrMsgOperationNotPermitted:
+			writeJsonError(w, r, http.StatusForbidden, err)
+		case strings.HasPrefix(errStr, "read input:") || errStr == io.ErrUnexpectedEOF.Error():
 			writeJsonError(w, r, util.HttpStatusCancelled, err)
-		} else if strings.HasSuffix(err.Error(), "is a file") || strings.HasSuffix(err.Error(), "already exists") {
+		case strings.HasSuffix(errStr, "is a file") || strings.HasSuffix(errStr, "already exists"):
 			writeJsonError(w, r, http.StatusConflict, err)
-		} else {
+		case errStr == constants.ErrMsgBadDigest:
+			writeJsonError(w, r, http.StatusBadRequest, err)
+		default:
 			writeJsonError(w, r, http.StatusInternalServerError, err)
 		}
 	} else if reply != nil {
@@ -85,6 +93,10 @@ func (fs *FilerServer) doPostAutoChunk(ctx context.Context, w http.ResponseWrite
 		contentType = ""
 	}
 
+	if err := fs.checkPermissions(ctx, r, fileName); err != nil {
+		return nil, nil, err
+	}
+
 	if so.SaveInside {
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
@@ -94,7 +106,7 @@ func (fs *FilerServer) doPostAutoChunk(ctx context.Context, w http.ResponseWrite
 		return
 	}
 
-	fileChunks, md5Hash, chunkOffset, err, smallContent := fs.uploadReaderToChunks(w, r, part1, chunkSize, fileName, contentType, contentLength, so)
+	fileChunks, md5Hash, chunkOffset, err, smallContent := fs.uploadRequestToChunks(ctx, w, r, part1, chunkSize, fileName, contentType, contentLength, so)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -102,12 +114,12 @@ func (fs *FilerServer) doPostAutoChunk(ctx context.Context, w http.ResponseWrite
 	md5bytes = md5Hash.Sum(nil)
 	headerMd5 := r.Header.Get("Content-Md5")
 	if headerMd5 != "" && !(util.Base64Encode(md5bytes) == headerMd5 || fmt.Sprintf("%x", md5bytes) == headerMd5) {
-		fs.filer.DeleteUncommittedChunks(fileChunks)
-		return nil, nil, errors.New("The Content-Md5 you specified did not match what we received.")
+		fs.filer.DeleteUncommittedChunks(ctx, fileChunks)
+		return nil, nil, errors.New(constants.ErrMsgBadDigest)
 	}
 	filerResult, replyerr = fs.saveMetaData(ctx, r, fileName, contentType, so, md5bytes, fileChunks, chunkOffset, smallContent)
 	if replyerr != nil {
-		fs.filer.DeleteUncommittedChunks(fileChunks)
+		fs.filer.DeleteUncommittedChunks(ctx, fileChunks)
 	}
 
 	return
@@ -121,7 +133,12 @@ func (fs *FilerServer) doPutAutoChunk(ctx context.Context, w http.ResponseWriter
 		contentType = ""
 	}
 
-	fileChunks, md5Hash, chunkOffset, err, smallContent := fs.uploadReaderToChunks(w, r, r.Body, chunkSize, fileName, contentType, contentLength, so)
+	if err := fs.checkPermissions(ctx, r, fileName); err != nil {
+		return nil, nil, err
+	}
+
+	fileChunks, md5Hash, chunkOffset, err, smallContent := fs.uploadRequestToChunks(ctx, w, r, r.Body, chunkSize, fileName, contentType, contentLength, so)
+
 	if err != nil {
 		return nil, nil, err
 	}
@@ -129,12 +146,12 @@ func (fs *FilerServer) doPutAutoChunk(ctx context.Context, w http.ResponseWriter
 	md5bytes = md5Hash.Sum(nil)
 	headerMd5 := r.Header.Get("Content-Md5")
 	if headerMd5 != "" && !(util.Base64Encode(md5bytes) == headerMd5 || fmt.Sprintf("%x", md5bytes) == headerMd5) {
-		fs.filer.DeleteUncommittedChunks(fileChunks)
-		return nil, nil, errors.New("The Content-Md5 you specified did not match what we received.")
+		fs.filer.DeleteUncommittedChunks(ctx, fileChunks)
+		return nil, nil, errors.New(constants.ErrMsgBadDigest)
 	}
 	filerResult, replyerr = fs.saveMetaData(ctx, r, fileName, contentType, so, md5bytes, fileChunks, chunkOffset, smallContent)
 	if replyerr != nil {
-		fs.filer.DeleteUncommittedChunks(fileChunks)
+		fs.filer.DeleteUncommittedChunks(ctx, fileChunks)
 	}
 
 	return
@@ -152,6 +169,74 @@ func isS3Request(r *http.Request) bool {
 	return r.Header.Get(s3_constants.AmzAuthType) != "" || r.Header.Get("X-Amz-Date") != ""
 }
 
+func (fs *FilerServer) checkPermissions(ctx context.Context, r *http.Request, fileName string) error {
+	fullPath := fs.fixFilePath(ctx, r, fileName)
+	enforced, err := fs.wormEnforcedForEntry(ctx, fullPath)
+	if err != nil {
+		return err
+	} else if enforced {
+		// you cannot change a worm file
+		return errors.New(constants.ErrMsgOperationNotPermitted)
+	}
+
+	return nil
+}
+
+func (fs *FilerServer) wormEnforcedForEntry(ctx context.Context, fullPath string) (bool, error) {
+	rule := fs.filer.FilerConf.MatchStorageRule(fullPath)
+	if !rule.Worm {
+		return false, nil
+	}
+
+	entry, err := fs.filer.FindEntry(ctx, util.FullPath(fullPath))
+	if err != nil {
+		if errors.Is(err, filer_pb.ErrNotFound) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	// worm is not enforced
+	if entry.WORMEnforcedAtTsNs == 0 {
+		return false, nil
+	}
+
+	// worm will never expire
+	if rule.WormRetentionTimeSeconds == 0 {
+		return true, nil
+	}
+
+	enforcedAt := time.Unix(0, entry.WORMEnforcedAtTsNs)
+
+	// worm is expired
+	if time.Now().Sub(enforcedAt).Seconds() >= float64(rule.WormRetentionTimeSeconds) {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (fs *FilerServer) fixFilePath(ctx context.Context, r *http.Request, fileName string) string {
+	// fix the path
+	fullPath := r.URL.Path
+	if strings.HasSuffix(fullPath, "/") {
+		if fileName != "" {
+			fullPath += fileName
+		}
+	} else {
+		if fileName != "" {
+			if possibleDirEntry, findDirErr := fs.filer.FindEntry(ctx, util.FullPath(fullPath)); findDirErr == nil {
+				if possibleDirEntry.IsDirectory() {
+					fullPath += "/" + fileName
+				}
+			}
+		}
+	}
+
+	return fullPath
+}
+
 func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileName string, contentType string, so *operation.StorageOption, md5bytes []byte, fileChunks []*filer_pb.FileChunk, chunkOffset int64, content []byte) (filerResult *FilerPostResult, replyerr error) {
 
 	// detect file mode
@@ -161,25 +246,12 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 	}
 	mode, err := strconv.ParseUint(modeStr, 8, 32)
 	if err != nil {
-		glog.Errorf("Invalid mode format: %s, use 0660 by default", modeStr)
+		glog.ErrorfCtx(ctx, "Invalid mode format: %s, use 0660 by default", modeStr)
 		mode = 0660
 	}
 
 	// fix the path
-	path := r.URL.Path
-	if strings.HasSuffix(path, "/") {
-		if fileName != "" {
-			path += fileName
-		}
-	} else {
-		if fileName != "" {
-			if possibleDirEntry, findDirErr := fs.filer.FindEntry(ctx, util.FullPath(path)); findDirErr == nil {
-				if possibleDirEntry.IsDirectory() {
-					path += "/" + fileName
-				}
-			}
-		}
-	}
+	path := fs.fixFilePath(ctx, r, fileName)
 
 	var entry *filer.Entry
 	var newChunks []*filer_pb.FileChunk
@@ -191,7 +263,7 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 	if isAppend || isOffsetWrite {
 		existingEntry, findErr := fs.filer.FindEntry(ctx, util.FullPath(path))
 		if findErr != nil && findErr != filer_pb.ErrNotFound {
-			glog.V(0).Infof("failing to find %s: %v", path, findErr)
+			glog.V(0).InfofCtx(ctx, "failing to find %s: %v", path, findErr)
 		}
 		entry = existingEntry
 	}
@@ -214,7 +286,7 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 		}
 
 	} else {
-		glog.V(4).Infoln("saving", path)
+		glog.V(4).InfolnCtx(ctx, "saving", path)
 		newChunks = fileChunks
 		entry = &filer.Entry{
 			FullPath: util.FullPath(path),
@@ -234,16 +306,16 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 	}
 
 	// maybe concatenate small chunks into one whole chunk
-	mergedChunks, replyerr = fs.maybeMergeChunks(so, newChunks)
+	mergedChunks, replyerr = fs.maybeMergeChunks(ctx, so, newChunks)
 	if replyerr != nil {
-		glog.V(0).Infof("merge chunks %s: %v", r.RequestURI, replyerr)
+		glog.V(0).InfofCtx(ctx, "merge chunks %s: %v", r.RequestURI, replyerr)
 		mergedChunks = newChunks
 	}
 
 	// maybe compact entry chunks
-	mergedChunks, replyerr = filer.MaybeManifestize(fs.saveAsChunk(so), mergedChunks)
+	mergedChunks, replyerr = filer.MaybeManifestize(fs.saveAsChunk(ctx, so), mergedChunks)
 	if replyerr != nil {
-		glog.V(0).Infof("manifestize %s: %v", r.RequestURI, replyerr)
+		glog.V(0).InfofCtx(ctx, "manifestize %s: %v", r.RequestURI, replyerr)
 		return
 	}
 	entry.Chunks = mergedChunks
@@ -263,10 +335,55 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 		if len(v) > 0 && len(v[0]) > 0 {
 			if strings.HasPrefix(k, needle.PairNamePrefix) || k == "Cache-Control" || k == "Expires" || k == "Content-Disposition" {
 				entry.Extended[k] = []byte(v[0])
+				// Log version ID header specifically for debugging
+				if k == "Seaweed-X-Amz-Version-Id" {
+					glog.V(0).Infof("filer: storing version ID header in Extended: %s=%s for path=%s", k, v[0], path)
+				}
 			}
 			if k == "Response-Content-Disposition" {
 				entry.Extended["Content-Disposition"] = []byte(v[0])
 			}
+		}
+	}
+
+	// Process SSE metadata headers sent by S3 API and store in entry extended metadata
+	if sseIVHeader := r.Header.Get(s3_constants.SeaweedFSSSEIVHeader); sseIVHeader != "" {
+		// Decode base64-encoded IV and store in metadata
+		if ivData, err := base64.StdEncoding.DecodeString(sseIVHeader); err == nil {
+			entry.Extended[s3_constants.SeaweedFSSSEIV] = ivData
+			glog.V(4).Infof("Stored SSE-C IV metadata for %s", entry.FullPath)
+		} else {
+			glog.Errorf("Failed to decode SSE-C IV header for %s: %v", entry.FullPath, err)
+		}
+	}
+
+	// Store SSE-C algorithm and key MD5 for proper S3 API response headers
+	if sseAlgorithm := r.Header.Get(s3_constants.AmzServerSideEncryptionCustomerAlgorithm); sseAlgorithm != "" {
+		entry.Extended[s3_constants.AmzServerSideEncryptionCustomerAlgorithm] = []byte(sseAlgorithm)
+		glog.V(4).Infof("Stored SSE-C algorithm metadata for %s", entry.FullPath)
+	}
+	if sseKeyMD5 := r.Header.Get(s3_constants.AmzServerSideEncryptionCustomerKeyMD5); sseKeyMD5 != "" {
+		entry.Extended[s3_constants.AmzServerSideEncryptionCustomerKeyMD5] = []byte(sseKeyMD5)
+		glog.V(4).Infof("Stored SSE-C key MD5 metadata for %s", entry.FullPath)
+	}
+
+	if sseKMSHeader := r.Header.Get(s3_constants.SeaweedFSSSEKMSKeyHeader); sseKMSHeader != "" {
+		// Decode base64-encoded KMS metadata and store
+		if kmsData, err := base64.StdEncoding.DecodeString(sseKMSHeader); err == nil {
+			entry.Extended[s3_constants.SeaweedFSSSEKMSKey] = kmsData
+			glog.V(4).Infof("Stored SSE-KMS metadata for %s", entry.FullPath)
+		} else {
+			glog.Errorf("Failed to decode SSE-KMS metadata header for %s: %v", entry.FullPath, err)
+		}
+	}
+
+	if sseS3Header := r.Header.Get(s3_constants.SeaweedFSSSES3Key); sseS3Header != "" {
+		// Decode base64-encoded S3 metadata and store
+		if s3Data, err := base64.StdEncoding.DecodeString(sseS3Header); err == nil {
+			entry.Extended[s3_constants.SeaweedFSSSES3Key] = s3Data
+			glog.V(4).Infof("Stored SSE-S3 metadata for %s", entry.FullPath)
+		} else {
+			glog.Errorf("Failed to decode SSE-S3 metadata header for %s: %v", entry.FullPath, err)
 		}
 	}
 
@@ -278,12 +395,12 @@ func (fs *FilerServer) saveMetaData(ctx context.Context, r *http.Request, fileNa
 	if dbErr != nil {
 		replyerr = dbErr
 		filerResult.Error = dbErr.Error()
-		glog.V(0).Infof("failing to write %s to filer server : %v", path, dbErr)
+		glog.V(0).InfofCtx(ctx, "failing to write %s to filer server : %v", path, dbErr)
 	}
 	return filerResult, replyerr
 }
 
-func (fs *FilerServer) saveAsChunk(so *operation.StorageOption) filer.SaveDataAsChunkFunctionType {
+func (fs *FilerServer) saveAsChunk(ctx context.Context, so *operation.StorageOption) filer.SaveDataAsChunkFunctionType {
 
 	return func(reader io.Reader, name string, offset int64, tsNs int64) (*filer_pb.FileChunk, error) {
 		var fileId string
@@ -291,7 +408,7 @@ func (fs *FilerServer) saveAsChunk(so *operation.StorageOption) filer.SaveDataAs
 
 		err := util.Retry("saveAsChunk", func() error {
 			// assign one file id for one chunk
-			assignedFileId, urlLocation, auth, assignErr := fs.assignNewFileInfo(so)
+			assignedFileId, urlLocation, auth, assignErr := fs.assignNewFileInfo(ctx, so)
 			if assignErr != nil {
 				return assignErr
 			}
@@ -308,8 +425,14 @@ func (fs *FilerServer) saveAsChunk(so *operation.StorageOption) filer.SaveDataAs
 				PairMap:           nil,
 				Jwt:               auth,
 			}
+
+			uploader, uploaderErr := operation.NewUploader()
+			if uploaderErr != nil {
+				return uploaderErr
+			}
+
 			var uploadErr error
-			uploadResult, uploadErr, _ = operation.Upload(reader, uploadOption)
+			uploadResult, uploadErr, _ = uploader.Upload(ctx, reader, uploadOption)
 			if uploadErr != nil {
 				return uploadErr
 			}
@@ -332,7 +455,7 @@ func (fs *FilerServer) mkdir(ctx context.Context, w http.ResponseWriter, r *http
 	}
 	mode, err := strconv.ParseUint(modeStr, 8, 32)
 	if err != nil {
-		glog.Errorf("Invalid mode format: %s, use 0660 by default", modeStr)
+		glog.ErrorfCtx(ctx, "Invalid mode format: %s, use 0660 by default", modeStr)
 		mode = 0660
 	}
 
@@ -348,7 +471,7 @@ func (fs *FilerServer) mkdir(ctx context.Context, w http.ResponseWriter, r *http
 		return
 	}
 
-	glog.V(4).Infoln("mkdir", path)
+	glog.V(4).InfolnCtx(ctx, "mkdir", path)
 	entry := &filer.Entry{
 		FullPath: util.FullPath(path),
 		Attr: filer.Attr{
@@ -368,7 +491,7 @@ func (fs *FilerServer) mkdir(ctx context.Context, w http.ResponseWriter, r *http
 	if dbErr := fs.filer.CreateEntry(ctx, entry, false, false, nil, false, so.MaxFileNameLength); dbErr != nil {
 		replyerr = dbErr
 		filerResult.Error = dbErr.Error()
-		glog.V(0).Infof("failing to create dir %s on filer server : %v", path, dbErr)
+		glog.V(0).InfofCtx(ctx, "failing to create dir %s on filer server : %v", path, dbErr)
 	}
 	return filerResult, replyerr
 }
@@ -391,12 +514,19 @@ func SaveAmzMetaData(r *http.Request, existing map[string][]byte, isReplace bool
 	}
 
 	if tags := r.Header.Get(s3_constants.AmzObjectTagging); tags != "" {
-		for _, v := range strings.Split(tags, "&") {
-			tag := strings.Split(v, "=")
-			if len(tag) == 2 {
-				metadata[s3_constants.AmzObjectTagging+"-"+tag[0]] = []byte(tag[1])
-			} else if len(tag) == 1 {
-				metadata[s3_constants.AmzObjectTagging+"-"+tag[0]] = nil
+		// Use url.ParseQuery for robust parsing and automatic URL decoding
+		parsedTags, err := url.ParseQuery(tags)
+		if err != nil {
+			glog.Errorf("Failed to parse S3 tags '%s': %v", tags, err)
+		} else {
+			for key, values := range parsedTags {
+				// According to S3 spec, if a key is provided multiple times, the last value is used.
+				// A tag value can be an empty string but not nil.
+				value := ""
+				if len(values) > 0 {
+					value = values[len(values)-1]
+				}
+				metadata[s3_constants.AmzObjectTagging+"-"+key] = []byte(value)
 			}
 		}
 	}
@@ -407,6 +537,15 @@ func SaveAmzMetaData(r *http.Request, existing map[string][]byte, isReplace bool
 				metadata[header] = []byte(value)
 			}
 		}
+	}
+
+	// Handle SSE-C headers
+	if algorithm := r.Header.Get(s3_constants.AmzServerSideEncryptionCustomerAlgorithm); algorithm != "" {
+		metadata[s3_constants.AmzServerSideEncryptionCustomerAlgorithm] = []byte(algorithm)
+	}
+	if keyMD5 := r.Header.Get(s3_constants.AmzServerSideEncryptionCustomerKeyMD5); keyMD5 != "" {
+		// Store as-is; SSE-C MD5 is base64 and case-sensitive
+		metadata[s3_constants.AmzServerSideEncryptionCustomerKeyMD5] = []byte(keyMD5)
 	}
 
 	//acp-owner

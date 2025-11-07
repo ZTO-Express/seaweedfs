@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"fmt"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"go.mongodb.org/mongo-driver/bson"
@@ -23,7 +24,7 @@ func (store *MongodbStore) KvPut(ctx context.Context, key []byte, value []byte) 
 	_, err = c.UpdateOne(ctx, filter, update, opts)
 
 	if err != nil {
-		return fmt.Errorf("kv put: %v", err)
+		return fmt.Errorf("kv put: %w", err)
 	}
 
 	return nil
@@ -37,7 +38,7 @@ func (store *MongodbStore) KvGet(ctx context.Context, key []byte) (value []byte,
 	var where = bson.M{"directory": dir, "name": name}
 	err = store.connect.Database(store.database).Collection(store.collectionName).FindOne(ctx, where).Decode(&data)
 	if err != mongo.ErrNoDocuments && err != nil {
-		glog.Errorf("kv get: %v", err)
+		glog.ErrorfCtx(ctx, "kv get: %v", err)
 		return nil, filer.ErrKvNotFound
 	}
 
@@ -55,7 +56,7 @@ func (store *MongodbStore) KvDelete(ctx context.Context, key []byte) (err error)
 	where := bson.M{"directory": dir, "name": name}
 	_, err = store.connect.Database(store.database).Collection(store.collectionName).DeleteOne(ctx, where)
 	if err != nil {
-		return fmt.Errorf("kv delete: %v", err)
+		return fmt.Errorf("kv delete: %w", err)
 	}
 
 	return nil

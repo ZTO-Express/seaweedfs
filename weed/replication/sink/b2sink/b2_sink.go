@@ -79,7 +79,14 @@ func (g *B2Sink) DeleteEntry(key string, isDirectory, deleteIncludeChunks bool, 
 
 	targetObject := bucket.Object(key)
 
-	return targetObject.Delete(context.Background())
+	err = targetObject.Delete(context.Background())
+	if err != nil {
+		// b2_download_file_by_name: 404: File with such name does not exist.
+		if strings.Contains(err.Error(), ": 404:") {
+			return nil
+		}
+	}
+	return err
 
 }
 
@@ -92,7 +99,7 @@ func (g *B2Sink) CreateEntry(key string, entry *filer_pb.Entry, signatures []int
 	}
 
 	totalSize := filer.FileSize(entry)
-	chunkViews := filer.ViewFromChunks(g.filerSource.LookupFileId, entry.GetChunks(), 0, int64(totalSize))
+	chunkViews := filer.ViewFromChunks(context.Background(), g.filerSource.LookupFileId, entry.GetChunks(), 0, int64(totalSize))
 
 	bucket, err := g.client.Bucket(context.Background(), g.bucket)
 	if err != nil {

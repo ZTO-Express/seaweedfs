@@ -55,6 +55,8 @@ service VolumeServer {
     }
     rpc CopyFile (CopyFileRequest) returns (stream CopyFileResponse) {
     }
+    rpc ReceiveFile (stream ReceiveFileRequest) returns (ReceiveFileResponse) {
+    }
 
     rpc ReadNeedleBlob (ReadNeedleBlobRequest) returns (ReadNeedleBlobResponse) {
     }
@@ -90,6 +92,8 @@ service VolumeServer {
     rpc VolumeEcBlobDelete (VolumeEcBlobDeleteRequest) returns (VolumeEcBlobDeleteResponse) {
     }
     rpc VolumeEcShardsToVolume (VolumeEcShardsToVolumeRequest) returns (VolumeEcShardsToVolumeResponse) {
+    }
+    rpc VolumeEcShardsInfo (VolumeEcShardsInfoRequest) returns (VolumeEcShardsInfoResponse) {
     }
 
     // tiered storage
@@ -188,6 +192,7 @@ message AllocateVolumeRequest {
     string ttl = 5;
     uint32 memory_map_max_size_mb = 6;
     string disk_type = 7;
+    uint32 version = 8;
 }
 message AllocateVolumeResponse {
 }
@@ -203,6 +208,7 @@ message VolumeSyncStatusResponse {
     uint64 tail_offset = 6;
     uint32 compact_revision = 7;
     uint64 idx_file_size = 8;
+    uint32 version = 9;
 }
 
 message VolumeIncrementalCopyRequest {
@@ -243,6 +249,7 @@ message EcVolumeDeleteResponse {
 
 message VolumeMarkReadonlyRequest {
     uint32 volume_id = 1;
+    bool persist = 2;
 }
 message VolumeMarkReadonlyResponse {
 }
@@ -297,6 +304,27 @@ message CopyFileRequest {
 message CopyFileResponse {
     bytes file_content = 1;
     int64 modified_ts_ns = 2;
+}
+
+message ReceiveFileRequest {
+    oneof data {
+        ReceiveFileInfo info = 1;
+        bytes file_content = 2;
+    }
+}
+
+message ReceiveFileInfo {
+    uint32 volume_id = 1;
+    string ext = 2;
+    string collection = 3;
+    bool is_ec_volume = 4;
+    uint32 shard_id = 5;
+    uint64 file_size = 6;
+}
+
+message ReceiveFileResponse {
+    uint64 bytes_written = 1;
+    string error = 2;
 }
 
 message ReadNeedleBlobRequest {
@@ -355,6 +383,7 @@ message VolumeTailSenderResponse {
     bytes needle_header = 1;
     bytes needle_body = 2;
     bool is_last_chunk = 3;
+    uint32 version = 4;
 }
 
 message VolumeTailReceiverRequest {
@@ -391,6 +420,7 @@ message VolumeEcShardsCopyRequest {
     bool copy_ecj_file = 6;
     bool copy_vif_file = 7;
     string specify_dir = 8;
+    uint32 disk_id = 9;  // Target disk ID for storing EC shards
 }
 message VolumeEcShardsCopyResponse {
 }
@@ -477,6 +507,19 @@ message VolumeEcShardsToVolumeRequest {
 message VolumeEcShardsToVolumeResponse {
 }
 
+message VolumeEcShardsInfoRequest {
+    uint32 volume_id = 1;
+}
+message VolumeEcShardsInfoResponse {
+    repeated EcShardInfo ec_shard_infos = 1;
+}
+
+message EcShardInfo {
+    uint32 shard_id = 1;
+    int64 size = 2;
+    string collection = 3;
+}
+
 message ReadVolumeFileStatusRequest {
     uint32 volume_id = 1;
 }
@@ -491,6 +534,7 @@ message ReadVolumeFileStatusResponse {
     string collection = 8;
     string disk_type = 9;
     VolumeInfo volume_info = 10;
+    uint32 version = 11;
 }
 
 message DiskStatus {
@@ -524,11 +568,29 @@ message RemoteFile {
     string extension = 7;
 }
 message VolumeInfo {
+  repeated RemoteFile files = 1;
+  uint32 version = 2;
+  string replication = 3;
+  uint32 bytes_offset = 4;
+  uint64 destroy_time = 5; // expiration time of ec volume
+  int64 dat_file_size = 6; // store the original dat file size
+  bool read_only = 8;
+  EcShardConfig ec_shard_config = 9; // EC shard configuration (optional, null = use default 10+4)
+}
+
+// EcShardConfig specifies erasure coding shard configuration
+message EcShardConfig {
+    uint32 data_shards = 1;   // Number of data shards (e.g., 10)
+    uint32 parity_shards = 2; // Number of parity shards (e.g., 4)
+}
+message OldVersionVolumeInfo {
     repeated RemoteFile files = 1;
     uint32 version = 2;
     string replication = 3;
     uint32 BytesOffset = 4;
-    uint64 DestroyTime = 5;
+    uint64 DestroyTime = 5; // expiration time of ec volume
+    int64 dat_file_size = 6; // store the original dat file size
+    bool read_only = 7;
 }
 
 // tiered storage

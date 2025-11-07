@@ -28,12 +28,14 @@ type VolumeServer struct {
 	inFlightUploadDataLimitCond   *sync.Cond
 	inFlightDownloadDataLimitCond *sync.Cond
 	inflightUploadDataTimeout     time.Duration
+	inflightDownloadDataTimeout   time.Duration
 	hasSlowRead                   bool
 	readBufferSizeMB              int
 
 	SeedMasterNodes []pb.ServerAddress
+	whiteList       []string
 	currentMaster   pb.ServerAddress
-	pulseSeconds    int
+	pulsePeriod     time.Duration
 	dataCenter      string
 	rack            string
 	store           *storage.Store
@@ -57,7 +59,7 @@ func NewVolumeServer(adminMux, publicMux *http.ServeMux, ip string,
 	folders []string, maxCounts []int32, minFreeSpaces []util.MinFreeSpace, diskTypes []types.DiskType,
 	idxFolder string,
 	needleMapKind storage.NeedleMapKind,
-	masterNodes []pb.ServerAddress, pulseSeconds int,
+	masterNodes []pb.ServerAddress, pulsePeriod time.Duration,
 	dataCenter string, rack string,
 	whiteList []string,
 	fixJpgOrientation bool,
@@ -67,6 +69,7 @@ func NewVolumeServer(adminMux, publicMux *http.ServeMux, ip string,
 	concurrentUploadLimit int64,
 	concurrentDownloadLimit int64,
 	inflightUploadDataTimeout time.Duration,
+	inflightDownloadDataTimeout time.Duration,
 	hasSlowRead bool,
 	readBufferSizeMB int,
 	ldbTimeout int64,
@@ -87,7 +90,7 @@ func NewVolumeServer(adminMux, publicMux *http.ServeMux, ip string,
 	readExpiresAfterSec := v.GetInt("jwt.signing.read.expires_after_seconds")
 
 	vs := &VolumeServer{
-		pulseSeconds:                  pulseSeconds,
+		pulsePeriod:                   pulsePeriod,
 		dataCenter:                    dataCenter,
 		rack:                          rack,
 		needleMapKind:                 needleMapKind,
@@ -103,10 +106,14 @@ func NewVolumeServer(adminMux, publicMux *http.ServeMux, ip string,
 		concurrentUploadLimit:         concurrentUploadLimit,
 		concurrentDownloadLimit:       concurrentDownloadLimit,
 		inflightUploadDataTimeout:     inflightUploadDataTimeout,
+		inflightDownloadDataTimeout:   inflightDownloadDataTimeout,
 		hasSlowRead:                   hasSlowRead,
 		readBufferSizeMB:              readBufferSizeMB,
 		ldbTimout:                     ldbTimeout,
+		whiteList:                     whiteList,
 	}
+
+	whiteList = append(whiteList, util.StringSplit(v.GetString("guard.white_list"), ",")...)
 	vs.SeedMasterNodes = masterNodes
 
 	vs.checkWithMaster()
@@ -115,23 +122,26 @@ func NewVolumeServer(adminMux, publicMux *http.ServeMux, ip string,
 	vs.guard = security.NewGuard(whiteList, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec, username, password)
 
 	handleStaticResources(adminMux)
-	adminMux.HandleFunc("/status", vs.statusHandler)
-	adminMux.HandleFunc("/healthz", vs.healthzHandler)
+	adminMux.HandleFunc("/status", requestIDMiddleware(vs.statusHandler))
+	adminMux.HandleFunc("/healthz", requestIDMiddleware(vs.healthzHandler))
 	if signingKey == "" || enableUiAccess {
 		// only expose the volume server details for safe environments
-		adminMux.HandleFunc("/ui/index.html", vs.uiStatusHandler)
+		adminMux.HandleFunc("/ui/index.html", requestIDMiddleware(vs.uiStatusHandler))
 		/*
 			adminMux.HandleFunc("/stats/counter", vs.guard.WhiteList(statsCounterHandler))
 			adminMux.HandleFunc("/stats/memory", vs.guard.WhiteList(statsMemoryHandler))
 			adminMux.HandleFunc("/stats/disk", vs.guard.WhiteList(vs.statsDiskHandler))
 		*/
 	}
-	adminMux.HandleFunc("/", vs.guard.BasicAuth(vs.privateStoreHandler))
+	adminMux.HandleFunc("/", requestIDMiddleware(vs.privateStoreHandler))
 	if publicMux != adminMux {
 		// separated admin and public port
 		handleStaticResources(publicMux)
-		publicMux.HandleFunc("/", vs.guard.BasicAuth(vs.publicReadOnlyHandler))
+		publicMux.HandleFunc("/", requestIDMiddleware(vs.publicReadOnlyHandler))
 	}
+
+	stats.VolumeServerConcurrentDownloadLimit.Set(float64(vs.concurrentDownloadLimit))
+	stats.VolumeServerConcurrentUploadLimit.Set(float64(vs.concurrentUploadLimit))
 
 	go vs.heartbeat()
 	go stats.LoopPushingMetric("volumeServer", util.JoinHostPort(ip, port), vs.metricsAddress, vs.metricsIntervalSec)
@@ -153,4 +163,12 @@ func (vs *VolumeServer) Shutdown() {
 	glog.V(0).Infoln("Shutting down volume server...")
 	vs.store.Close()
 	glog.V(0).Infoln("Shut down successfully!")
+}
+
+func (vs *VolumeServer) Reload() {
+	glog.V(0).Infoln("Reload volume server...")
+
+	util.LoadConfiguration("security", false)
+	v := util.GetViper()
+	vs.guard.UpdateWhiteList(append(vs.whiteList, util.StringSplit(v.GetString("guard.white_list"), ",")...))
 }

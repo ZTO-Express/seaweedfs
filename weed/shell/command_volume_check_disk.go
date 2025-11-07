@@ -5,19 +5,21 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"sync"
+	"time"
+
+	"slices"
+
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
 	"github.com/seaweedfs/seaweedfs/weed/server/constants"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle_map"
-	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
-	"io"
-	"math"
-	"net/http"
-	"sync"
-	"time"
 )
 
 func init() {
@@ -45,6 +47,10 @@ func (c *commandVolumeCheckDisk) Help() string {
         append entries in B and not in A to A
 
 `
+}
+
+func (c *commandVolumeCheckDisk) HasTag(tag CommandTag) bool {
+	return tag == ResourceHeavy
 }
 
 func (c *commandVolumeCheckDisk) getVolumeStatusFileCount(vid uint32, dn *master_pb.DataNodeInfo) (totalFileCount, deletedFileCount uint64) {
@@ -82,7 +88,8 @@ func (c *commandVolumeCheckDisk) eqVolumeFileCount(a, b *VolumeReplica) (bool, b
 	return fileCountA == fileCountB, fileDeletedCountA == fileDeletedCountB
 }
 
-func (c *commandVolumeCheckDisk) shouldSkipVolume(a, b *VolumeReplica, pulseTimeAtSecond int64, syncDeletions, verbose bool) bool {
+func (c *commandVolumeCheckDisk) shouldSkipVolume(a, b *VolumeReplica, pulseTime time.Time, syncDeletions, verbose bool) bool {
+	pulseTimeAtSecond := pulseTime.Unix()
 	doSyncDeletedCount := false
 	if syncDeletions && a.info.DeleteCount != b.info.DeleteCount {
 		doSyncDeletedCount = true
@@ -129,7 +136,7 @@ func (c *commandVolumeCheckDisk) Do(args []string, commandEnv *CommandEnv, write
 	c.writer = writer
 
 	// collect topology information
-	pulseTimeAtSecond := time.Now().Unix() - constants.VolumePulseSeconds*2
+	pulseTime := time.Now().Add(-constants.VolumePulsePeriod * 2)
 	topologyInfo, _, err := collectTopologyInfo(commandEnv, 0)
 	if err != nil {
 		return err
@@ -141,22 +148,34 @@ func (c *commandVolumeCheckDisk) Do(args []string, commandEnv *CommandEnv, write
 		if *volumeId > 0 && replicas[0].info.Id != uint32(*volumeId) {
 			continue
 		}
-		slices.SortFunc(replicas, func(a, b *VolumeReplica) int {
+		// filter readonly replica
+		var writableReplicas []*VolumeReplica
+		for _, replica := range replicas {
+			if replica.info.ReadOnly {
+				fmt.Fprintf(writer, "skipping readonly volume %d on %s\n", replica.info.Id, replica.location.dataNode.Id)
+			} else {
+				writableReplicas = append(writableReplicas, replica)
+			}
+		}
+
+		slices.SortFunc(writableReplicas, func(a, b *VolumeReplica) int {
 			return int(b.info.FileCount - a.info.FileCount)
 		})
-		for len(replicas) >= 2 {
-			a, b := replicas[0], replicas[1]
-			replicas = replicas[1:]
-			if a.info.ReadOnly || b.info.ReadOnly {
-				fmt.Fprintf(writer, "skipping readonly volume %d on %s and %s\n",
-					a.info.Id, a.location.dataNode.Id, b.location.dataNode.Id)
-				continue
-			}
-			if !*slowMode && c.shouldSkipVolume(a, b, pulseTimeAtSecond, *syncDeletions, *verbose) {
+		for len(writableReplicas) >= 2 {
+			a, b := writableReplicas[0], writableReplicas[1]
+			if !*slowMode && c.shouldSkipVolume(a, b, pulseTime, *syncDeletions, *verbose) {
+				// always choose the larger volume to be the source
+				writableReplicas = append(replicas[:1], writableReplicas[2:]...)
 				continue
 			}
 			if err := c.syncTwoReplicas(a, b, *applyChanges, *syncDeletions, *nonRepairThreshold, *verbose); err != nil {
 				fmt.Fprintf(writer, "sync volume %d on %s and %s: %v\n", a.info.Id, a.location.dataNode.Id, b.location.dataNode.Id, err)
+			}
+			// always choose the larger volume to be the source
+			if a.info.FileCount > b.info.FileCount {
+				writableReplicas = append(writableReplicas[:1], writableReplicas[2:]...)
+			} else {
+				writableReplicas = writableReplicas[1:]
 			}
 		}
 	}
@@ -166,11 +185,34 @@ func (c *commandVolumeCheckDisk) Do(args []string, commandEnv *CommandEnv, write
 
 func (c *commandVolumeCheckDisk) syncTwoReplicas(a *VolumeReplica, b *VolumeReplica, applyChanges bool, doSyncDeletions bool, nonRepairThreshold float64, verbose bool) (err error) {
 	aHasChanges, bHasChanges := true, true
-	for aHasChanges || bHasChanges {
+	const maxIterations = 5
+	iteration := 0
+
+	for (aHasChanges || bHasChanges) && iteration < maxIterations {
+		iteration++
+		if verbose {
+			fmt.Fprintf(c.writer, "sync iteration %d for volume %d\n", iteration, a.info.Id)
+		}
+
+		prevAHasChanges, prevBHasChanges := aHasChanges, bHasChanges
 		if aHasChanges, bHasChanges, err = c.checkBoth(a, b, applyChanges, doSyncDeletions, nonRepairThreshold, verbose); err != nil {
 			return err
 		}
+
+		// Detect if we're stuck in a loop with no progress
+		if iteration > 1 && prevAHasChanges == aHasChanges && prevBHasChanges == bHasChanges && (aHasChanges || bHasChanges) {
+			fmt.Fprintf(c.writer, "volume %d sync is not making progress between %s and %s after iteration %d, stopping to prevent infinite loop\n",
+				a.info.Id, a.location.dataNode.Id, b.location.dataNode.Id, iteration)
+			return fmt.Errorf("sync not making progress after %d iterations", iteration)
+		}
 	}
+
+	if iteration >= maxIterations && (aHasChanges || bHasChanges) {
+		fmt.Fprintf(c.writer, "volume %d sync reached maximum iterations (%d) between %s and %s, may need manual intervention\n",
+			a.info.Id, maxIterations, a.location.dataNode.Id, b.location.dataNode.Id)
+		return fmt.Errorf("reached maximum sync iterations (%d)", maxIterations)
+	}
+
 	return nil
 }
 
@@ -191,13 +233,15 @@ func (c *commandVolumeCheckDisk) checkBoth(a *VolumeReplica, b *VolumeReplica, a
 	}
 
 	// find and make up the differences
-	if aHasChanges, err = doVolumeCheckDisk(bDB, aDB, b, a, verbose, c.writer, applyChanges, doSyncDeletions, nonRepairThreshold, readIndexDbCutoffFrom, c.env.option.GrpcDialOption); err != nil {
-		return true, true, fmt.Errorf("doVolumeCheckDisk source:%s target:%s volume %d: %v", b.location.dataNode.Id, a.location.dataNode.Id, b.info.Id, err)
+	aHasChanges, err1 := doVolumeCheckDisk(bDB, aDB, b, a, verbose, c.writer, applyChanges, doSyncDeletions, nonRepairThreshold, readIndexDbCutoffFrom, c.env.option.GrpcDialOption)
+	bHasChanges, err2 := doVolumeCheckDisk(aDB, bDB, a, b, verbose, c.writer, applyChanges, doSyncDeletions, nonRepairThreshold, readIndexDbCutoffFrom, c.env.option.GrpcDialOption)
+	if err1 != nil {
+		return aHasChanges, bHasChanges, fmt.Errorf("doVolumeCheckDisk source:%s target:%s volume %d: %v", b.location.dataNode.Id, a.location.dataNode.Id, b.info.Id, err1)
 	}
-	if bHasChanges, err = doVolumeCheckDisk(aDB, bDB, a, b, verbose, c.writer, applyChanges, doSyncDeletions, nonRepairThreshold, readIndexDbCutoffFrom, c.env.option.GrpcDialOption); err != nil {
-		return true, true, fmt.Errorf("doVolumeCheckDisk source:%s target:%s volume %d: %v", a.location.dataNode.Id, b.location.dataNode.Id, a.info.Id, err)
+	if err2 != nil {
+		return aHasChanges, bHasChanges, fmt.Errorf("doVolumeCheckDisk source:%s target:%s volume %d: %v", a.location.dataNode.Id, b.location.dataNode.Id, a.info.Id, err2)
 	}
-	return
+	return aHasChanges, bHasChanges, nil
 }
 
 func doVolumeCheckDisk(minuend, subtrahend *needle_map.MemDb, source, target *VolumeReplica, verbose bool, writer io.Writer, applyChanges bool, doSyncDeletions bool, nonRepairThreshold float64, cutoffFromAtNs uint64, grpcDialOption grpc.DialOption) (hasChanges bool, err error) {
@@ -279,20 +323,21 @@ func doVolumeCheckDisk(minuend, subtrahend *needle_map.MemDb, source, target *Vo
 				fmt.Fprintf(writer, "delete %s %s => %s\n", needleValue.Key.FileId(source.info.Id), source.location.dataNode.Id, target.location.dataNode.Id)
 			}
 		}
-		deleteResults, deleteErr := operation.DeleteFilesAtOneVolumeServer(
+		deleteResults := operation.DeleteFileIdsAtOneVolumeServer(
 			pb.NewServerAddressFromDataNode(target.location.dataNode),
 			grpcDialOption, fidList, false)
-		if deleteErr != nil {
-			return hasChanges, deleteErr
-		}
+
+		// Check for errors in results
 		for _, deleteResult := range deleteResults {
+			if deleteResult.Error != "" && deleteResult.Error != "not found" {
+				return hasChanges, fmt.Errorf("delete file %s: %v", deleteResult.FileId, deleteResult.Error)
+			}
 			if deleteResult.Status == http.StatusAccepted && deleteResult.Size > 0 {
 				hasChanges = true
-				return
 			}
 		}
 	}
-	return
+	return hasChanges, nil
 }
 
 func readSourceNeedleBlob(grpcDialOption grpc.DialOption, sourceVolumeServer pb.ServerAddress, volumeId uint32, needleValue needle_map.NeedleValue) (needleBlob []byte, err error) {
@@ -375,7 +420,7 @@ func writeToBuffer(client volume_server_pb.VolumeServer_CopyFileClient, buf *byt
 			break
 		}
 		if receiveErr != nil {
-			return fmt.Errorf("receiving: %v", receiveErr)
+			return fmt.Errorf("receiving: %w", receiveErr)
 		}
 		buf.Write(resp.FileContent)
 	}

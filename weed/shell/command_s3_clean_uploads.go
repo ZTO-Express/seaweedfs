@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/util"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 )
 
 func init() {
@@ -33,6 +35,10 @@ func (c *commandS3CleanUploads) Help() string {
 `
 }
 
+func (c *commandS3CleanUploads) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandS3CleanUploads) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	uploadedTimeAgo := bucketCommand.Duration("timeAgo", 24*time.Hour, "created time before now. \"1.5h\" or \"2h45m\". Valid time units are \"m\", \"h\"")
@@ -45,21 +51,21 @@ func (c *commandS3CleanUploads) Do(args []string, commandEnv *CommandEnv, writer
 	var filerBucketsPath string
 	filerBucketsPath, err = readFilerBucketsPath(commandEnv)
 	if err != nil {
-		return fmt.Errorf("read buckets: %v", err)
+		return fmt.Errorf("read buckets: %w", err)
 	}
 
 	var buckets []string
-	err = filer_pb.List(commandEnv, filerBucketsPath, "", func(entry *filer_pb.Entry, isLast bool) error {
+	err = filer_pb.List(context.Background(), commandEnv, filerBucketsPath, "", func(entry *filer_pb.Entry, isLast bool) error {
 		buckets = append(buckets, entry.Name)
 		return nil
 	}, "", false, math.MaxUint32)
 	if err != nil {
-		return fmt.Errorf("list buckets under %v: %v", filerBucketsPath, err)
+		return fmt.Errorf("list buckets under %v: %w", filerBucketsPath, err)
 	}
 
 	for _, bucket := range buckets {
 		if err := c.cleanupUploads(commandEnv, writer, filerBucketsPath, bucket, *uploadedTimeAgo, signingKey); err != nil {
-			fmt.Fprintf(writer, fmt.Sprintf("failed cleanup uploads for bucket %s: %v", bucket, err))
+			fmt.Fprintf(writer, "failed cleanup uploads for bucket %s: %v", bucket, err)
 		}
 	}
 
@@ -70,7 +76,7 @@ func (c *commandS3CleanUploads) cleanupUploads(commandEnv *CommandEnv, writer io
 	uploadsDir := filerBucketsPath + "/" + bucket + "/" + s3_constants.MultipartUploadsFolder
 	var staleUploads []string
 	now := time.Now()
-	err := filer_pb.List(commandEnv, uploadsDir, "", func(entry *filer_pb.Entry, isLast bool) error {
+	err := filer_pb.List(context.Background(), commandEnv, uploadsDir, "", func(entry *filer_pb.Entry, isLast bool) error {
 		ctime := time.Unix(entry.Attributes.Crtime, 0)
 		if ctime.Add(timeAgo).Before(now) {
 			staleUploads = append(staleUploads, entry.Name)
@@ -78,7 +84,7 @@ func (c *commandS3CleanUploads) cleanupUploads(commandEnv *CommandEnv, writer io
 		return nil
 	}, "", false, math.MaxUint32)
 	if err != nil {
-		return fmt.Errorf("list uploads under %v: %v", uploadsDir, err)
+		return fmt.Errorf("list uploads under %v: %w", uploadsDir, err)
 	}
 
 	var encodedJwt security.EncodedJwt
@@ -90,7 +96,7 @@ func (c *commandS3CleanUploads) cleanupUploads(commandEnv *CommandEnv, writer io
 		deleteUrl := fmt.Sprintf("http://%s%s/%s?recursive=true&ignoreRecursiveError=true", commandEnv.option.FilerAddress.ToHttpAddress(), uploadsDir, staleUpload)
 		fmt.Fprintf(writer, "purge %s\n", deleteUrl)
 
-		err = util.Delete(deleteUrl, string(encodedJwt), "")
+		err = util_http.Delete(deleteUrl, string(encodedJwt), "")
 		if err != nil && err.Error() != "" {
 			return fmt.Errorf("purge %s/%s: %v", uploadsDir, staleUpload, err)
 		}

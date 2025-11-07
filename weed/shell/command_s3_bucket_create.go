@@ -30,6 +30,10 @@ func (c *commandS3BucketCreate) Help() string {
 `
 }
 
+func (c *commandS3BucketCreate) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandS3BucketCreate) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
 
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
@@ -51,7 +55,7 @@ func (c *commandS3BucketCreate) Do(args []string, commandEnv *CommandEnv, writer
 
 		resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 		if err != nil {
-			return fmt.Errorf("get filer configuration: %v", err)
+			return fmt.Errorf("get filer configuration: %w", err)
 		}
 		filerBucketsPath := resp.DirBuckets
 
@@ -67,7 +71,7 @@ func (c *commandS3BucketCreate) Do(args []string, commandEnv *CommandEnv, writer
 			},
 		}
 
-		if err := filer_pb.CreateEntry(client, &filer_pb.CreateEntryRequest{
+		if err := filer_pb.CreateEntry(context.Background(), client, &filer_pb.CreateEntryRequest{
 			Directory: filerBucketsPath,
 			Entry:     entry,
 		}); err != nil {

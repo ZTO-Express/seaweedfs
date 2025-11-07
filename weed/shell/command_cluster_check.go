@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"io"
 
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
@@ -30,6 +31,10 @@ func (c *commandClusterCheck) Help() string {
 	cluster.check
 
 `
+}
+
+func (c *commandClusterCheck) HasTag(CommandTag) bool {
+	return false
 }
 
 func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
@@ -75,7 +80,7 @@ func (c *commandClusterCheck) Do(args []string, commandEnv *CommandEnv, writer i
 
 	if len(filers) > 0 {
 		genericDiskInfo, genericDiskInfoOk := topologyInfo.DiskInfos[""]
-		hddDiskInfo, hddDiskInfoOk := topologyInfo.DiskInfos["hdd"]
+		hddDiskInfo, hddDiskInfoOk := topologyInfo.DiskInfos[types.HddType]
 
 		if !genericDiskInfoOk && !hddDiskInfoOk {
 			return fmt.Errorf("filer metadata logs need generic or hdd disk type to be defined")

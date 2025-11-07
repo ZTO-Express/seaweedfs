@@ -16,6 +16,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 
@@ -39,7 +40,7 @@ const (
 var (
 	seededRand *rand.Rand = rand.New(
 		rand.NewSource(time.Now().UnixNano()))
-	policyDocuments = map[string]*PolicyDocument{}
+	policyDocuments = map[string]*policy_engine.PolicyDocument{}
 	policyLock      = sync.RWMutex{}
 )
 
@@ -89,24 +90,12 @@ func MapToIdentitiesAction(action string) string {
 	}
 }
 
-type Statement struct {
-	Effect   string   `json:"Effect"`
-	Action   []string `json:"Action"`
-	Resource []string `json:"Resource"`
-}
+const (
+	USER_DOES_NOT_EXIST = "the user with name %s cannot be found."
+)
 
 type Policies struct {
-	Policies map[string]PolicyDocument `json:"policies"`
-}
-
-type PolicyDocument struct {
-	Version   string       `json:"Version"`
-	Statement []*Statement `json:"Statement"`
-}
-
-func (p PolicyDocument) String() string {
-	b, _ := json.Marshal(p)
-	return string(b)
+	Policies map[string]policy_engine.PolicyDocument `json:"policies"`
 }
 
 func Hash(s *string) string {
@@ -153,27 +142,27 @@ func (iama *IamApiServer) CreateUser(s3cfg *iam_pb.S3ApiConfiguration, values ur
 	return resp
 }
 
-func (iama *IamApiServer) DeleteUser(s3cfg *iam_pb.S3ApiConfiguration, userName string) (resp DeleteUserResponse, err error) {
+func (iama *IamApiServer) DeleteUser(s3cfg *iam_pb.S3ApiConfiguration, userName string) (resp DeleteUserResponse, err *IamError) {
 	for i, ident := range s3cfg.Identities {
 		if userName == ident.Name {
 			s3cfg.Identities = append(s3cfg.Identities[:i], s3cfg.Identities[i+1:]...)
 			return resp, nil
 		}
 	}
-	return resp, fmt.Errorf(iam.ErrCodeNoSuchEntityException)
+	return resp, &IamError{Code: iam.ErrCodeNoSuchEntityException, Error: fmt.Errorf(USER_DOES_NOT_EXIST, userName)}
 }
 
-func (iama *IamApiServer) GetUser(s3cfg *iam_pb.S3ApiConfiguration, userName string) (resp GetUserResponse, err error) {
+func (iama *IamApiServer) GetUser(s3cfg *iam_pb.S3ApiConfiguration, userName string) (resp GetUserResponse, err *IamError) {
 	for _, ident := range s3cfg.Identities {
 		if userName == ident.Name {
 			resp.GetUserResult.User = iam.User{UserName: &ident.Name}
 			return resp, nil
 		}
 	}
-	return resp, fmt.Errorf(iam.ErrCodeNoSuchEntityException)
+	return resp, &IamError{Code: iam.ErrCodeNoSuchEntityException, Error: fmt.Errorf(USER_DOES_NOT_EXIST, userName)}
 }
 
-func (iama *IamApiServer) UpdateUser(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp UpdateUserResponse, err error) {
+func (iama *IamApiServer) UpdateUser(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp UpdateUserResponse, err *IamError) {
 	userName := values.Get("UserName")
 	newUserName := values.Get("NewUserName")
 	if newUserName != "" {
@@ -186,22 +175,23 @@ func (iama *IamApiServer) UpdateUser(s3cfg *iam_pb.S3ApiConfiguration, values ur
 	} else {
 		return resp, nil
 	}
-	return resp, fmt.Errorf(iam.ErrCodeNoSuchEntityException)
+	return resp, &IamError{Code: iam.ErrCodeNoSuchEntityException, Error: fmt.Errorf(USER_DOES_NOT_EXIST, userName)}
 }
 
-func GetPolicyDocument(policy *string) (policyDocument PolicyDocument, err error) {
-	if err = json.Unmarshal([]byte(*policy), &policyDocument); err != nil {
-		return PolicyDocument{}, err
+func GetPolicyDocument(policy *string) (policy_engine.PolicyDocument, error) {
+	var policyDocument policy_engine.PolicyDocument
+	if err := json.Unmarshal([]byte(*policy), &policyDocument); err != nil {
+		return policy_engine.PolicyDocument{}, err
 	}
-	return policyDocument, err
+	return policyDocument, nil
 }
 
-func (iama *IamApiServer) CreatePolicy(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp CreatePolicyResponse, err error) {
+func (iama *IamApiServer) CreatePolicy(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp CreatePolicyResponse, iamError *IamError) {
 	policyName := values.Get("PolicyName")
 	policyDocumentString := values.Get("PolicyDocument")
 	policyDocument, err := GetPolicyDocument(&policyDocumentString)
 	if err != nil {
-		return CreatePolicyResponse{}, err
+		return CreatePolicyResponse{}, &IamError{Code: iam.ErrCodeMalformedPolicyDocumentException, Error: err}
 	}
 	policyId := Hash(&policyDocumentString)
 	arn := fmt.Sprintf("arn:aws:iam:::policy/%s", policyName)
@@ -212,26 +202,36 @@ func (iama *IamApiServer) CreatePolicy(s3cfg *iam_pb.S3ApiConfiguration, values 
 	policyLock.Lock()
 	defer policyLock.Unlock()
 	if err = iama.s3ApiConfig.GetPolicies(&policies); err != nil {
-		return resp, err
+		return resp, &IamError{Code: iam.ErrCodeServiceFailureException, Error: err}
 	}
 	policies.Policies[policyName] = policyDocument
 	if err = iama.s3ApiConfig.PutPolicies(&policies); err != nil {
-		return resp, err
+		return resp, &IamError{Code: iam.ErrCodeServiceFailureException, Error: err}
 	}
 	return resp, nil
 }
 
+type IamError struct {
+	Code  string
+	Error error
+}
+
 // https://docs.aws.amazon.com/IAM/latest/APIReference/API_PutUserPolicy.html
-func (iama *IamApiServer) PutUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp PutUserPolicyResponse, err error) {
+func (iama *IamApiServer) PutUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp PutUserPolicyResponse, iamError *IamError) {
 	userName := values.Get("UserName")
 	policyName := values.Get("PolicyName")
 	policyDocumentString := values.Get("PolicyDocument")
 	policyDocument, err := GetPolicyDocument(&policyDocumentString)
 	if err != nil {
-		return PutUserPolicyResponse{}, err
+		return PutUserPolicyResponse{}, &IamError{Code: iam.ErrCodeMalformedPolicyDocumentException, Error: err}
 	}
 	policyDocuments[policyName] = &policyDocument
-	actions := GetActions(&policyDocument)
+	actions, err := GetActions(&policyDocument)
+	if err != nil {
+		return PutUserPolicyResponse{}, &IamError{Code: iam.ErrCodeMalformedPolicyDocumentException, Error: err}
+	}
+	// Log the actions
+	glog.V(3).Infof("PutUserPolicy: actions=%v", actions)
 	for _, ident := range s3cfg.Identities {
 		if userName != ident.Name {
 			continue
@@ -239,10 +239,10 @@ func (iama *IamApiServer) PutUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values
 		ident.Actions = actions
 		return resp, nil
 	}
-	return resp, fmt.Errorf("%s: the user with name %s cannot be found", iam.ErrCodeNoSuchEntityException, userName)
+	return PutUserPolicyResponse{}, &IamError{Code: iam.ErrCodeNoSuchEntityException, Error: fmt.Errorf("the user with name %s cannot be found", userName)}
 }
 
-func (iama *IamApiServer) GetUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp GetUserPolicyResponse, err error) {
+func (iama *IamApiServer) GetUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp GetUserPolicyResponse, err *IamError) {
 	userName := values.Get("UserName")
 	policyName := values.Get("PolicyName")
 	for _, ident := range s3cfg.Identities {
@@ -253,10 +253,10 @@ func (iama *IamApiServer) GetUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values
 		resp.GetUserPolicyResult.UserName = userName
 		resp.GetUserPolicyResult.PolicyName = policyName
 		if len(ident.Actions) == 0 {
-			return resp, fmt.Errorf(iam.ErrCodeNoSuchEntityException)
+			return resp, &IamError{Code: iam.ErrCodeNoSuchEntityException, Error: errors.New("no actions found")}
 		}
 
-		policyDocument := PolicyDocument{Version: policyDocumentVersion}
+		policyDocument := policy_engine.PolicyDocument{Version: policyDocumentVersion}
 		statements := make(map[string][]string)
 		for _, action := range ident.Actions {
 			// parse "Read:EXAMPLE-BUCKET"
@@ -273,9 +273,9 @@ func (iama *IamApiServer) GetUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values
 		for resource, actions := range statements {
 			isEqAction := false
 			for i, statement := range policyDocument.Statement {
-				if reflect.DeepEqual(statement.Action, actions) {
-					policyDocument.Statement[i].Resource = append(
-						policyDocument.Statement[i].Resource, resource)
+				if reflect.DeepEqual(statement.Action.Strings(), actions) {
+					policyDocument.Statement[i].Resource = policy_engine.NewStringOrStringSlice(append(
+						policyDocument.Statement[i].Resource.Strings(), resource)...)
 					isEqAction = true
 					break
 				}
@@ -283,20 +283,24 @@ func (iama *IamApiServer) GetUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values
 			if isEqAction {
 				continue
 			}
-			policyDocumentStatement := Statement{
-				Effect: "Allow",
-				Action: actions,
+			policyDocumentStatement := policy_engine.PolicyStatement{
+				Effect:   policy_engine.PolicyEffectAllow,
+				Action:   policy_engine.NewStringOrStringSlice(actions...),
+				Resource: policy_engine.NewStringOrStringSlice(resource),
 			}
-			policyDocumentStatement.Resource = append(policyDocumentStatement.Resource, resource)
-			policyDocument.Statement = append(policyDocument.Statement, &policyDocumentStatement)
+			policyDocument.Statement = append(policyDocument.Statement, policyDocumentStatement)
 		}
-		resp.GetUserPolicyResult.PolicyDocument = policyDocument.String()
+		policyDocumentJSON, err := json.Marshal(policyDocument)
+		if err != nil {
+			return resp, &IamError{Code: iam.ErrCodeServiceFailureException, Error: err}
+		}
+		resp.GetUserPolicyResult.PolicyDocument = string(policyDocumentJSON)
 		return resp, nil
 	}
-	return resp, fmt.Errorf(iam.ErrCodeNoSuchEntityException)
+	return resp, &IamError{Code: iam.ErrCodeNoSuchEntityException, Error: fmt.Errorf(USER_DOES_NOT_EXIST, userName)}
 }
 
-func (iama *IamApiServer) DeleteUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp PutUserPolicyResponse, err error) {
+func (iama *IamApiServer) DeleteUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp PutUserPolicyResponse, err *IamError) {
 	userName := values.Get("UserName")
 	for i, ident := range s3cfg.Identities {
 		if ident.Name == userName {
@@ -304,44 +308,44 @@ func (iama *IamApiServer) DeleteUserPolicy(s3cfg *iam_pb.S3ApiConfiguration, val
 			return resp, nil
 		}
 	}
-	return resp, fmt.Errorf(iam.ErrCodeNoSuchEntityException)
+	return resp, &IamError{Code: iam.ErrCodeNoSuchEntityException, Error: fmt.Errorf(USER_DOES_NOT_EXIST, userName)}
 }
 
-func GetActions(policy *PolicyDocument) (actions []string) {
+func GetActions(policy *policy_engine.PolicyDocument) ([]string, error) {
+	var actions []string
+
 	for _, statement := range policy.Statement {
-		if statement.Effect != "Allow" {
-			continue
+		if statement.Effect != policy_engine.PolicyEffectAllow {
+			return nil, fmt.Errorf("not a valid effect: '%s'. Only 'Allow' is possible", statement.Effect)
 		}
-		for _, resource := range statement.Resource {
+		for _, resource := range statement.Resource.Strings() {
 			// Parse "arn:aws:s3:::my-bucket/shared/*"
 			res := strings.Split(resource, ":")
 			if len(res) != 6 || res[0] != "arn" || res[1] != "aws" || res[2] != "s3" {
-				glog.Infof("not match resource: %s", res)
 				continue
 			}
-			for _, action := range statement.Action {
+			for _, action := range statement.Action.Strings() {
 				// Parse "s3:Get*"
 				act := strings.Split(action, ":")
 				if len(act) != 2 || act[0] != "s3" {
-					glog.Infof("not match action: %s", act)
 					continue
 				}
 				statementAction := MapToStatementAction(act[1])
-				if res[5] == "*" {
+
+				if statementAction == "" {
+					return nil, fmt.Errorf("not a valid action: '%s'", act[1])
+				}
+
+				path := res[5]
+				if path == "*" {
 					actions = append(actions, statementAction)
 					continue
 				}
-				// Parse my-bucket/shared/*
-				path := strings.Split(res[5], "/")
-				if len(path) != 2 || path[1] != "*" {
-					glog.Infof("not match bucket: %s", path)
-					continue
-				}
-				actions = append(actions, fmt.Sprintf("%s:%s", statementAction, path[0]))
+				actions = append(actions, fmt.Sprintf("%s:%s", statementAction, path))
 			}
 		}
 	}
-	return actions
+	return actions, nil
 }
 
 func (iama *IamApiServer) CreateAccessKey(s3cfg *iam_pb.S3ApiConfiguration, values url.Values) (resp CreateAccessKeyResponse) {
@@ -438,7 +442,7 @@ func (iama *IamApiServer) DoActions(w http.ResponseWriter, r *http.Request) {
 
 	glog.V(4).Infof("DoActions: %+v", values)
 	var response interface{}
-	var err error
+	var iamError *IamError
 	changed := true
 	switch r.Form.Get("Action") {
 	case "ListUsers":
@@ -452,24 +456,24 @@ func (iama *IamApiServer) DoActions(w http.ResponseWriter, r *http.Request) {
 		response = iama.CreateUser(s3cfg, values)
 	case "GetUser":
 		userName := values.Get("UserName")
-		response, err = iama.GetUser(s3cfg, userName)
-		if err != nil {
-			writeIamErrorResponse(w, r, err, "user", userName, nil)
+		response, iamError = iama.GetUser(s3cfg, userName)
+		if iamError != nil {
+			writeIamErrorResponse(w, r, iamError)
 			return
 		}
 		changed = false
 	case "UpdateUser":
-		response, err = iama.UpdateUser(s3cfg, values)
-		if err != nil {
-			glog.Errorf("UpdateUser: %+v", err)
+		response, iamError = iama.UpdateUser(s3cfg, values)
+		if iamError != nil {
+			glog.Errorf("UpdateUser: %+v", iamError.Error)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInvalidRequest)
 			return
 		}
 	case "DeleteUser":
 		userName := values.Get("UserName")
-		response, err = iama.DeleteUser(s3cfg, userName)
-		if err != nil {
-			writeIamErrorResponse(w, r, err, "user", userName, nil)
+		response, iamError = iama.DeleteUser(s3cfg, userName)
+		if iamError != nil {
+			writeIamErrorResponse(w, r, iamError)
 			return
 		}
 	case "CreateAccessKey":
@@ -479,29 +483,31 @@ func (iama *IamApiServer) DoActions(w http.ResponseWriter, r *http.Request) {
 		handleImplicitUsername(r, values)
 		response = iama.DeleteAccessKey(s3cfg, values)
 	case "CreatePolicy":
-		response, err = iama.CreatePolicy(s3cfg, values)
-		if err != nil {
-			glog.Errorf("CreatePolicy:  %+v", err)
+		response, iamError = iama.CreatePolicy(s3cfg, values)
+		if iamError != nil {
+			glog.Errorf("CreatePolicy:  %+v", iamError.Error)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInvalidRequest)
 			return
 		}
 	case "PutUserPolicy":
-		response, err = iama.PutUserPolicy(s3cfg, values)
-		if err != nil {
-			glog.Errorf("PutUserPolicy:  %+v", err)
-			s3err.WriteErrorResponse(w, r, s3err.ErrInvalidRequest)
+		var iamError *IamError
+		response, iamError = iama.PutUserPolicy(s3cfg, values)
+		if iamError != nil {
+			glog.Errorf("PutUserPolicy:  %+v", iamError.Error)
+
+			writeIamErrorResponse(w, r, iamError)
 			return
 		}
 	case "GetUserPolicy":
-		response, err = iama.GetUserPolicy(s3cfg, values)
-		if err != nil {
-			writeIamErrorResponse(w, r, err, "user", values.Get("UserName"), nil)
+		response, iamError = iama.GetUserPolicy(s3cfg, values)
+		if iamError != nil {
+			writeIamErrorResponse(w, r, iamError)
 			return
 		}
 		changed = false
 	case "DeleteUserPolicy":
-		if response, err = iama.DeleteUserPolicy(s3cfg, values); err != nil {
-			writeIamErrorResponse(w, r, err, "user", values.Get("UserName"), nil)
+		if response, iamError = iama.DeleteUserPolicy(s3cfg, values); iamError != nil {
+			writeIamErrorResponse(w, r, iamError)
 			return
 		}
 	default:
@@ -515,7 +521,8 @@ func (iama *IamApiServer) DoActions(w http.ResponseWriter, r *http.Request) {
 	if changed {
 		err := iama.s3ApiConfig.PutS3ApiConfiguration(s3cfg)
 		if err != nil {
-			writeIamErrorResponse(w, r, fmt.Errorf(iam.ErrCodeServiceFailureException), "", "", err)
+			var iamError = IamError{Code: iam.ErrCodeServiceFailureException, Error: err}
+			writeIamErrorResponse(w, r, &iamError)
 			return
 		}
 	}

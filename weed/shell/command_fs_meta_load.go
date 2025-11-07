@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -36,6 +37,10 @@ func (c *commandFsMetaLoad) Help() string {
 	fs.meta.load -dirPrefix=/buckets/important <filer_host>.meta // load any dirs with prefix "important"
 
 `
+}
+
+func (c *commandFsMetaLoad) HasTag(CommandTag) bool {
+	return false
 }
 
 func (c *commandFsMetaLoad) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
@@ -113,7 +118,7 @@ func (c *commandFsMetaLoad) Do(args []string, commandEnv *CommandEnv, writer io.
 			fullEntry.Entry.Name = strings.ReplaceAll(fullEntry.Entry.Name, "/", "x")
 			if fullEntry.Entry.IsDirectory {
 				wg.Wait()
-				if errEntry := filer_pb.CreateEntry(client, &filer_pb.CreateEntryRequest{
+				if errEntry := filer_pb.CreateEntry(context.Background(), client, &filer_pb.CreateEntryRequest{
 					Directory: fullEntry.Dir,
 					Entry:     fullEntry.Entry,
 				}); errEntry != nil {
@@ -124,7 +129,7 @@ func (c *commandFsMetaLoad) Do(args []string, commandEnv *CommandEnv, writer io.
 				wg.Add(1)
 				waitChan <- struct{}{}
 				go func(entry *filer_pb.FullEntry) {
-					if errEntry := filer_pb.CreateEntry(client, &filer_pb.CreateEntryRequest{
+					if errEntry := filer_pb.CreateEntry(context.Background(), client, &filer_pb.CreateEntryRequest{
 						Directory: entry.Dir,
 						Entry:     entry.Entry,
 					}); errEntry != nil {

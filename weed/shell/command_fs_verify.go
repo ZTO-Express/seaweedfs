@@ -5,6 +5,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"math"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -14,12 +20,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/storage"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
-	"io"
-	"math"
-	"strings"
-	"sync"
-	"time"
+	"slices"
 )
 
 func init() {
@@ -49,6 +50,10 @@ func (c *commandFsVerify) Help() string {
 	fs.verify [-v] [-modifyTimeAgo 1h] /buckets/dir
 
 `
+}
+
+func (c *commandFsVerify) HasTag(CommandTag) bool {
+	return false
 }
 
 func (c *commandFsVerify) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
@@ -110,9 +115,16 @@ func (c *commandFsVerify) collectVolumeIds() error {
 	if err != nil {
 		return err
 	}
-	eachDataNode(topologyInfo, func(dc string, rack RackId, nodeInfo *master_pb.DataNodeInfo) {
+	eachDataNode(topologyInfo, func(dc DataCenterId, rack RackId, nodeInfo *master_pb.DataNodeInfo) {
 		for _, diskInfo := range nodeInfo.DiskInfos {
 			for _, vi := range diskInfo.VolumeInfos {
+				volumeServer := pb.NewServerAddressFromDataNode(nodeInfo)
+				c.volumeIds[vi.Id] = append(c.volumeIds[vi.Id], volumeServer)
+				if !slices.Contains(c.volumeServers, volumeServer) {
+					c.volumeServers = append(c.volumeServers, volumeServer)
+				}
+			}
+			for _, vi := range diskInfo.EcShardInfos {
 				volumeServer := pb.NewServerAddressFromDataNode(nodeInfo)
 				c.volumeIds[vi.Id] = append(c.volumeIds[vi.Id], volumeServer)
 				if !slices.Contains(c.volumeServers, volumeServer) {
@@ -210,8 +222,8 @@ func (c *commandFsVerify) verifyEntry(path string, chunks []*filer_pb.FileChunk,
 				if *c.concurrency == 0 {
 					if err := c.verifyChunk(volumeServer, chunk.Fid); err != nil {
 						if !(*c.metadataFromLog && strings.HasSuffix(err.Error(), "not found")) {
-							fmt.Fprintf(c.writer, "%s failed verify fileId %s: %+v\n",
-								fileMsg, chunk.GetFileIdString(), err)
+							fmt.Fprintf(c.writer, "%s failed verify fileId %s: %+v, at volume server %v\n",
+								fileMsg, chunk.GetFileIdString(), err, volumeServer)
 						}
 						if itemIsVerifed.Load() {
 							itemIsVerifed.Store(false)
@@ -238,8 +250,8 @@ func (c *commandFsVerify) verifyEntry(path string, chunks []*filer_pb.FileChunk,
 					defer wg.Done()
 					if err := c.verifyChunk(volumeServer, fChunk.Fid); err != nil {
 						if !(*c.metadataFromLog && strings.HasSuffix(err.Error(), "not found")) {
-							fmt.Fprintf(c.writer, "%s failed verify fileId %s: %+v\n",
-								msg, fChunk.GetFileIdString(), err)
+							fmt.Fprintf(c.writer, "%s failed verify fileId %s: %+v, at volume server %v\n",
+								msg, fChunk.GetFileIdString(), err, volumeServer)
 						}
 						if itemIsVerifed.Load() {
 							itemIsVerifed.Store(false)
@@ -274,7 +286,7 @@ func (c *commandFsVerify) verifyTraverseBfs(path string) (fileCount uint64, errC
 					return nil
 				}
 			}
-			dataChunks, manifestChunks, resolveErr := filer.ResolveChunkManifest(filer.LookupFn(c.env), entry.Entry.GetChunks(), 0, math.MaxInt64)
+			dataChunks, manifestChunks, resolveErr := filer.ResolveChunkManifest(context.Background(), filer.LookupFn(c.env), entry.Entry.GetChunks(), 0, math.MaxInt64)
 			if resolveErr != nil {
 				return fmt.Errorf("failed to ResolveChunkManifest: %+v", resolveErr)
 			}

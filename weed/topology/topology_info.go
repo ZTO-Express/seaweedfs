@@ -1,9 +1,10 @@
 package topology
 
 import (
-	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
-	"golang.org/x/exp/slices"
+	"slices"
 	"strings"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 )
 
 type TopologyInfo struct {
@@ -11,6 +12,11 @@ type TopologyInfo struct {
 	Free        int64              `json:"Free"`
 	DataCenters []DataCenterInfo   `json:"DataCenters"`
 	Layouts     []VolumeLayoutInfo `json:"Layouts"`
+}
+
+type VolumeLayoutCollection struct {
+	Collection   string
+	VolumeLayout *VolumeLayout
 }
 
 func (t *Topology) ToInfo() (info TopologyInfo) {
@@ -42,22 +48,15 @@ func (t *Topology) ToInfo() (info TopologyInfo) {
 	return
 }
 
-func (t *Topology) ToVolumeListOfWritable(collection string) (info TopologyInfo) {
-	var layouts []VolumeLayoutInfo
+func (t *Topology) ListVolumeLayoutCollections() (volumeLayouts []*VolumeLayoutCollection) {
 	for _, col := range t.collectionMap.Items() {
-		c := col.(*Collection)
-		if collection == "" || c.Name == collection {
-			for _, layout := range c.storageType2VolumeLayout.Items() {
-				if layout != nil {
-					tmp := layout.(*VolumeLayout).ToInfo()
-					tmp.Collection = c.Name
-					layouts = append(layouts, tmp)
-				}
-			}
+		for _, volumeLayout := range col.(*Collection).storageType2VolumeLayout.Items() {
+			volumeLayouts = append(volumeLayouts,
+				&VolumeLayoutCollection{col.(*Collection).Name, volumeLayout.(*VolumeLayout)},
+			)
 		}
 	}
-	info.Layouts = layouts
-	return
+	return volumeLayouts
 }
 
 func (t *Topology) ToVolumeMap() interface{} {
@@ -123,20 +122,4 @@ func (t *Topology) ToTopologyInfo() *master_pb.TopologyInfo {
 		m.DataCenterInfos = append(m.DataCenterInfos, dc.ToDataCenterInfo())
 	}
 	return m
-}
-
-func (t *Topology) ToTopologyInfoByQuery(request *master_pb.VolumeListWithoutECVolumeRequest) *master_pb.TopologyInfo {
-	m := &master_pb.TopologyInfo{
-		Id: string(t.Id()),
-		//DiskInfos: t.diskUsages.ToDiskInfo(),
-	}
-	for _, c := range t.Children() {
-		dc := c.(*DataCenter)
-		m.DataCenterInfos = append(m.DataCenterInfos, dc.ToDataCenterInfoByQuery(request))
-	}
-	return m
-}
-
-func (t *Topology) ToEcCollectInfo(top *master_pb.TopologyInfo, req *master_pb.EcCollectRequest) []*master_pb.EcNodeInfo {
-	return MasterCollectEcVolumeServersByDc(top, req.DataCenter)
 }

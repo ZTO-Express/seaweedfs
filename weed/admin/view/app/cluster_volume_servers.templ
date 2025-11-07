@@ -1,0 +1,412 @@
+package app
+
+import (
+    "fmt"
+    "github.com/seaweedfs/seaweedfs/weed/admin/dash"
+)
+
+templ ClusterVolumeServers(data dash.ClusterVolumeServersData) {
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">
+            <i class="fas fa-server me-2"></i>Volume Servers
+        </h1>
+        <div class="btn-toolbar mb-2 mb-md-0">
+            <div class="btn-group me-2">
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="exportVolumeServers()">
+                    <i class="fas fa-download me-1"></i>Export
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="hosts-content">
+        <!-- Summary Cards -->
+        <div class="row mb-4">
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card border-left-primary shadow h-100 py-2">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                    Total Volume Servers
+                                </div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                    {fmt.Sprintf("%d", data.TotalVolumeServers)}
+                                </div>
+                            </div>
+                            <div class="col-auto">
+                                <i class="fas fa-server fa-2x text-gray-300"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card border-left-info shadow h-100 py-2">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                                    Total Volumes
+                                </div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                    {fmt.Sprintf("%d", data.TotalVolumes)}
+                                </div>
+                            </div>
+                            <div class="col-auto">
+                                <i class="fas fa-database fa-2x text-gray-300"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card border-left-warning shadow h-100 py-2">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                                    Total Capacity
+                                </div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                    {formatBytes(data.TotalCapacity)}
+                                </div>
+                            </div>
+                            <div class="col-auto">
+                                <i class="fas fa-hdd fa-2x text-gray-300"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hosts Table -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">
+                    <i class="fas fa-server me-2"></i>Volume Servers
+                </h6>
+            </div>
+            <div class="card-body">
+                if len(data.VolumeServers) > 0 {
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="hostsTable">
+                            <thead>
+                                <tr>
+                                    <th>Address</th>
+                                    <th>Data Center</th>
+                                    <th>Rack</th>
+                                    <th>Volumes</th>
+                                    <th>Max Volumes</th>
+                                    <th>EC Shards</th>
+                                    <th>Capacity</th>
+                                    <th>Usage</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                for _, host := range data.VolumeServers {
+                                    <tr>
+                                        <td>
+                                            if host.PublicURL != "" {
+                                                <a href={templ.SafeURL(fmt.Sprintf("http://%s/ui/index.html", host.PublicURL))} target="_blank" class="text-decoration-none">
+                                                    {host.Address}
+                                                    <i class="fas fa-external-link-alt ms-1 text-muted"></i>
+                                                </a>
+                                            } else {
+                                                <a href={templ.SafeURL(fmt.Sprintf("http://%s/ui/index.html", host.Address))} target="_blank" class="text-decoration-none">
+                                                    {host.Address}
+                                                    <i class="fas fa-external-link-alt ms-1 text-muted"></i>
+                                                </a>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-light text-dark">{host.DataCenter}</span>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-light text-dark">{host.Rack}</span>
+                                        </td>
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                <div class="progress me-2" style="width: 60px; height: 16px;">
+                                                    <div class="progress-bar" role="progressbar" 
+                                                         style={fmt.Sprintf("width: %d%%", calculatePercent(host.Volumes, host.MaxVolumes))}>
+                                                    </div>
+                                                </div>
+                                                <span class="badge bg-primary">{fmt.Sprintf("%d", host.Volumes)}</span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-secondary">{fmt.Sprintf("%d", host.MaxVolumes)}</span>
+                                        </td>
+                                        <td>
+                                            if host.EcShards > 0 {
+                                                <div class="d-flex align-items-center">
+                                                    <i class="fas fa-layer-group me-1 text-info"></i>
+                                                    <span class="badge bg-info text-white me-1">{fmt.Sprintf("%d", host.EcShards)}</span>
+                                                    <small class="text-muted">shards</small>
+                                                </div>
+                                                if host.EcVolumes > 0 {
+                                                    <div class="mt-1">
+                                                        <small class="text-muted">{fmt.Sprintf("%d EC volumes", host.EcVolumes)}</small>
+                                                    </div>
+                                                }
+                                            } else {
+                                                <span class="text-muted">-</span>
+                                            }
+                                        </td>
+                                        <td>{formatBytes(host.DiskCapacity)}</td>
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                <div class="progress me-2" style="width: 60px; height: 16px;">
+                                                    <div class="progress-bar" role="progressbar" 
+                                                         style={fmt.Sprintf("width: %d%%", calculatePercent(int(host.DiskUsage), int(host.DiskCapacity)))}>
+                                                    </div>
+                                                </div>
+                                                <small>{formatBytes(host.DiskUsage)}</small>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            if host.PublicURL != "" {
+                                                <button type="button" 
+                                                        class="btn btn-outline-primary btn-sm" 
+                                                        title="View Details"
+                                                        data-action="view-details"
+                                                        data-id={host.ID}
+                                                        data-address={host.Address}
+                                                        data-public-url={host.PublicURL}
+                                                        data-datacenter={host.DataCenter}
+                                                        data-rack={host.Rack}
+                                                        data-volumes={fmt.Sprintf("%d", host.Volumes)}
+                                                        data-max-volumes={fmt.Sprintf("%d", host.MaxVolumes)}
+                                                        data-disk-usage={fmt.Sprintf("%d", host.DiskUsage)}
+                                                        data-disk-capacity={fmt.Sprintf("%d", host.DiskCapacity)}
+                                                        data-ec-volumes={fmt.Sprintf("%d", host.EcVolumes)}
+                                                        data-ec-shards={fmt.Sprintf("%d", host.EcShards)}
+                                                        data-last-heartbeat={host.LastHeartbeat.Format("2006-01-02 15:04:05")}>
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                            } else {
+                                                <button type="button" 
+                                                        class="btn btn-outline-primary btn-sm" 
+                                                        title="View Details"
+                                                        data-action="view-details"
+                                                        data-id={host.ID}
+                                                        data-address={host.Address}
+                                                        data-public-url={host.Address}
+                                                        data-datacenter={host.DataCenter}
+                                                        data-rack={host.Rack}
+                                                        data-volumes={fmt.Sprintf("%d", host.Volumes)}
+                                                        data-max-volumes={fmt.Sprintf("%d", host.MaxVolumes)}
+                                                        data-disk-usage={fmt.Sprintf("%d", host.DiskUsage)}
+                                                        data-disk-capacity={fmt.Sprintf("%d", host.DiskCapacity)}
+                                                        data-ec-volumes={fmt.Sprintf("%d", host.EcVolumes)}
+                                                        data-ec-shards={fmt.Sprintf("%d", host.EcShards)}
+                                                        data-last-heartbeat={host.LastHeartbeat.Format("2006-01-02 15:04:05")}>
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                } else {
+                    <div class="text-center py-5">
+                        <i class="fas fa-server fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No Volume Servers Found</h5>
+                        <p class="text-muted">No volume servers are currently available in the cluster.</p>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Last Updated -->
+        <div class="row">
+            <div class="col-12">
+                <small class="text-muted">
+                    <i class="fas fa-clock me-1"></i>
+                    Last updated: {data.LastUpdated.Format("2006-01-02 15:04:05")}
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript for cluster volume servers functionality -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle volume server action buttons
+        document.addEventListener('click', function(e) {
+            const button = e.target.closest('[data-action]');
+            if (!button) return;
+            
+            const action = button.getAttribute('data-action');
+            
+            switch(action) {
+                case 'view-details':
+                    const serverData = {
+                        id: button.getAttribute('data-id'),
+                        address: button.getAttribute('data-address'),
+                        publicUrl: button.getAttribute('data-public-url'),
+                        datacenter: button.getAttribute('data-datacenter'),
+                        rack: button.getAttribute('data-rack'),
+                        volumes: parseInt(button.getAttribute('data-volumes')),
+                        maxVolumes: parseInt(button.getAttribute('data-max-volumes')),
+                        diskUsage: parseInt(button.getAttribute('data-disk-usage')),
+                        diskCapacity: parseInt(button.getAttribute('data-disk-capacity')),
+                        ecVolumes: parseInt(button.getAttribute('data-ec-volumes')),
+                        ecShards: parseInt(button.getAttribute('data-ec-shards')),
+                        lastHeartbeat: button.getAttribute('data-last-heartbeat')
+                    };
+                    showVolumeServerDetails(serverData);
+                    break;
+            }
+        });
+    });
+    
+    function showVolumeServerDetails(server) {
+        const volumePercent = server.maxVolumes > 0 ? Math.round((server.volumes / server.maxVolumes) * 100) : 0;
+        const diskPercent = server.diskCapacity > 0 ? Math.round((server.diskUsage / server.diskCapacity) * 100) : 0;
+        
+        const modalHtml = '<div class="modal fade" id="volumeServerDetailsModal" tabindex="-1">' +
+            '<div class="modal-dialog modal-lg">' +
+            '<div class="modal-content">' +
+            '<div class="modal-header">' +
+            '<h5 class="modal-title"><i class="fas fa-server me-2"></i>Volume Server Details: ' + server.address + '</h5>' +
+            '<button type="button" class="btn-close" data-bs-dismiss="modal"></button>' +
+            '</div>' +
+            '<div class="modal-body">' +
+            '<div class="row">' +
+            '<div class="col-md-6">' +
+            '<h6 class="text-primary"><i class="fas fa-info-circle me-1"></i>Basic Information</h6>' +
+            '<table class="table table-sm">' +
+            '<tr><td><strong>Server ID:</strong></td><td><code>' + server.id + '</code></td></tr>' +
+            '<tr><td><strong>Address:</strong></td><td>' + server.address + '</td></tr>' +
+            '<tr><td><strong>Public URL:</strong></td><td>' + server.publicUrl + '</td></tr>' +
+            '<tr><td><strong>Data Center:</strong></td><td><span class="badge bg-light text-dark">' + server.datacenter + '</span></td></tr>' +
+            '<tr><td><strong>Rack:</strong></td><td><span class="badge bg-light text-dark">' + server.rack + '</span></td></tr>' +
+            '<tr><td><strong>Last Heartbeat:</strong></td><td>' + server.lastHeartbeat + '</td></tr>' +
+            '</table>' +
+            '</div>' +
+            '<div class="col-md-6">' +
+            '<h6 class="text-primary"><i class="fas fa-chart-bar me-1"></i>Usage Statistics</h6>' +
+            '<table class="table table-sm">' +
+            '<tr><td><strong>Volumes:</strong></td><td>' +
+            '<div class="d-flex align-items-center">' +
+            '<div class="progress me-2" style="width: 100px; height: 20px;">' +
+            '<div class="progress-bar" role="progressbar" style="width: ' + volumePercent + '%"></div>' +
+            '</div>' +
+            '<span>' + server.volumes + '/' + server.maxVolumes + ' (' + volumePercent + '%)</span>' +
+            '</div>' +
+            '</td></tr>' +
+            '<tr><td><strong>Disk Usage:</strong></td><td>' +
+            '<div class="d-flex align-items-center">' +
+            '<div class="progress me-2" style="width: 100px; height: 20px;">' +
+            '<div class="progress-bar" role="progressbar" style="width: ' + diskPercent + '%"></div>' +
+            '</div>' +
+            '<span>' + formatBytes(server.diskUsage) + '/' + formatBytes(server.diskCapacity) + ' (' + diskPercent + '%)</span>' +
+            '</div>' +
+            '</td></tr>' +
+            '<tr><td><strong>Available Space:</strong></td><td>' + formatBytes(server.diskCapacity - server.diskUsage) + '</td></tr>' +
+            '</table>' +
+            '</div>' +
+            '</div>' +
+            
+            // Add EC Shard information if available
+            (server.ecShards > 0 ? 
+            '<div class="row mt-3">' +
+            '<div class="col-12">' +
+            '<h6 class="text-primary"><i class="fas fa-layer-group me-1"></i>Erasure Coding Information</h6>' +
+            '<table class="table table-sm">' +
+            '<tr><td><strong>EC Volumes:</strong></td><td><span class="badge bg-info text-white">' + server.ecVolumes + '</span></td></tr>' +
+            '<tr><td><strong>EC Shards:</strong></td><td><span class="badge bg-info text-white">' + server.ecShards + '</span></td></tr>' +
+            '</table>' +
+            '</div>' +
+            '</div>' : '') +
+            
+            '<div class="row mt-3">' +
+            '<div class="col-12">' +
+            '<h6 class="text-primary"><i class="fas fa-link me-1"></i>Quick Actions</h6>' +
+            '<div class="d-grid gap-2 d-md-flex">' +
+            '<a href="http://' + (server.publicUrl || server.address) + '/ui/index.html" target="_blank" class="btn btn-outline-primary">' +
+            '<i class="fas fa-external-link-alt me-1"></i>Open Volume Server UI' +
+            '</a>' +
+            '<a href="/cluster/volumes?server=' + encodeURIComponent(server.address) + '" class="btn btn-outline-info">' +
+            '<i class="fas fa-database me-1"></i>View Volumes' +
+            '</a>' +
+            '</div>' +
+            '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="modal-footer">' +
+            '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>' +
+            '</div>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+        
+        // Remove existing modal if present
+        const existingModal = document.getElementById('volumeServerDetailsModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        // Add modal to body and show
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('volumeServerDetailsModal'));
+        modal.show();
+        
+        // Remove modal when hidden
+        document.getElementById('volumeServerDetailsModal').addEventListener('hidden.bs.modal', function() {
+            this.remove();
+        });
+    }
+    
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    function exportVolumeServers() {
+        // Simple CSV export of volume servers list
+        const rows = Array.from(document.querySelectorAll('#hostsTable tbody tr')).map(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length > 1) {
+                return {
+                    id: cells[0].textContent.trim(),
+                    address: cells[1].textContent.trim(),
+                    datacenter: cells[2].textContent.trim(),
+                    rack: cells[3].textContent.trim(),
+                    volumes: cells[4].textContent.trim(),
+                    capacity: cells[5].textContent.trim(),
+                    usage: cells[6].textContent.trim()
+                };
+            }
+            return null;
+        }).filter(row => row !== null);
+        
+        const csvContent = "data:text/csv;charset=utf-8," + 
+            "Server ID,Address,Data Center,Rack,Volumes,Capacity,Usage\n" +
+            rows.map(r => '"' + r.id + '","' + r.address + '","' + r.datacenter + '","' + r.rack + '","' + r.volumes + '","' + r.capacity + '","' + r.usage + '"').join("\n");
+        
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "volume_servers.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+    </script>
+}
+
+ 

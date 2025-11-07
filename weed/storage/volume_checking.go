@@ -14,7 +14,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
-func CheckAndFixVolumeDataIntegrity(v *Volume, indexFile *os.File) (lastAppendAtNs uint64, err error) {
+func CheckVolumeDataIntegrity(v *Volume, indexFile *os.File) (lastAppendAtNs uint64, err error) {
 	var indexSize int64
 	if indexSize, err = verifyIndexFileIntegrity(indexFile); err != nil {
 		return 0, fmt.Errorf("verifyIndexFileIntegrity %s failed: %v", indexFile.Name(), err)
@@ -35,11 +35,7 @@ func CheckAndFixVolumeDataIntegrity(v *Volume, indexFile *os.File) (lastAppendAt
 		}
 	}
 	if healthyIndexSize < indexSize {
-		glog.Warningf("CheckAndFixVolumeDataIntegrity truncate idx file %s from %d to %d", indexFile.Name(), indexSize, healthyIndexSize)
-		err = indexFile.Truncate(healthyIndexSize)
-		if err != nil {
-			glog.Warningf("CheckAndFixVolumeDataIntegrity truncate idx file %s from %d to %d: %v", indexFile.Name(), indexSize, healthyIndexSize, err)
-		}
+		return 0, fmt.Errorf("CheckVolumeDataIntegrity %s failed: index size %d differs from healthy size %d", indexFile.Name(), indexSize, healthyIndexSize)
 	}
 	return
 }
@@ -84,7 +80,11 @@ func readIndexEntryAtOffset(indexFile *os.File, offset int64) (bytes []byte, err
 		return
 	}
 	bytes = make([]byte, NeedleMapEntrySize)
-	_, err = indexFile.ReadAt(bytes, offset)
+	var readCount int
+	readCount, err = indexFile.ReadAt(bytes, offset)
+	if err == io.EOF && readCount == NeedleMapEntrySize {
+		err = nil
+	}
 	return
 }
 
@@ -101,7 +101,11 @@ func verifyNeedleIntegrity(datFile backend.BackendStorageFile, v needle.Version,
 	}
 	if v == needle.Version3 {
 		bytes := make([]byte, TimestampSize)
-		_, err = datFile.ReadAt(bytes, offset+NeedleHeaderSize+int64(size)+needle.NeedleChecksumSize)
+		var readCount int
+		readCount, err = datFile.ReadAt(bytes, offset+NeedleHeaderSize+int64(size)+needle.NeedleChecksumSize)
+		if err == io.EOF && readCount == TimestampSize {
+			err = nil
+		}
 		if err == io.EOF {
 			return 0, err
 		}
@@ -138,7 +142,7 @@ func verifyDeletedNeedleIntegrity(datFile backend.BackendStorageFile, v needle.V
 	var fileSize int64
 	fileSize, _, err = datFile.GetStat()
 	if err != nil {
-		return 0, fmt.Errorf("GetStat: %v", err)
+		return 0, fmt.Errorf("GetStat: %w", err)
 	}
 	if err = n.ReadData(datFile, fileSize-size, Size(0), v); err != nil {
 		return n.AppendAtNs, fmt.Errorf("read data [%d,%d) : %v", fileSize-size, size, err)

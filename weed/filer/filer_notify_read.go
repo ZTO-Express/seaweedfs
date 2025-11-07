@@ -4,14 +4,15 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
-	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
-	"github.com/seaweedfs/seaweedfs/weed/wdclient"
-	"google.golang.org/protobuf/proto"
 	"io"
 	"math"
 	"strings"
 	"time"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
+	"github.com/seaweedfs/seaweedfs/weed/wdclient"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -28,15 +29,28 @@ func (f *Filer) collectPersistedLogBuffer(startPosition log_buffer.MessagePositi
 		return nil, io.EOF
 	}
 
-	startDate := fmt.Sprintf("%04d-%02d-%02d", startPosition.Year(), startPosition.Month(), startPosition.Day())
+	startDate := fmt.Sprintf("%04d-%02d-%02d", startPosition.Time.Year(), startPosition.Time.Month(), startPosition.Time.Day())
 
 	dayEntries, _, listDayErr := f.ListDirectoryEntries(context.Background(), SystemLogDir, startDate, true, math.MaxInt32, "", "", "")
 	if listDayErr != nil {
-		return nil, fmt.Errorf("fail to list log by day: %v", listDayErr)
+		return nil, fmt.Errorf("fail to list log by day: %w", listDayErr)
 	}
 
 	return NewOrderedLogVisitor(f, startPosition, stopTsNs, dayEntries)
 
+}
+
+func (f *Filer) HasPersistedLogFiles(startPosition log_buffer.MessagePosition) (bool, error) {
+	startDate := fmt.Sprintf("%04d-%02d-%02d", startPosition.Time.Year(), startPosition.Time.Month(), startPosition.Time.Day())
+	dayEntries, _, listDayErr := f.ListDirectoryEntries(context.Background(), SystemLogDir, startDate, true, 1, "", "", "")
+
+	if listDayErr != nil {
+		return false, fmt.Errorf("fail to list log by day: %w", listDayErr)
+	}
+	if len(dayEntries) == 0 {
+		return false, nil
+	}
+	return true, nil
 }
 
 // ----------
@@ -103,8 +117,8 @@ func (o *OrderedLogVisitor) GetNext() (logEntry *filer_pb.LogEntry, err error) {
 	if nextErr != nil {
 		if nextErr == io.EOF {
 			// do nothing since the filer has no more log entries
-		}else {
-			return nil, fmt.Errorf("failed to get next log entry: %v", nextErr)
+		} else {
+			return nil, fmt.Errorf("failed to get next log entry: %w", nextErr)
 		}
 	} else {
 		heap.Push(o.pq, &LogEntryItem{
@@ -143,18 +157,18 @@ func NewLogFileEntryCollector(f *Filer, startPosition log_buffer.MessagePosition
 		// println("enqueue day entry", dayEntry.Name())
 	}
 
-	startDate := fmt.Sprintf("%04d-%02d-%02d", startPosition.Year(), startPosition.Month(), startPosition.Day())
-	startHourMinute := fmt.Sprintf("%02d-%02d", startPosition.Hour(), startPosition.Minute())
+	startDate := fmt.Sprintf("%04d-%02d-%02d", startPosition.Time.Year(), startPosition.Time.Month(), startPosition.Time.Day())
+	startHourMinute := fmt.Sprintf("%02d-%02d", startPosition.Time.Hour(), startPosition.Time.Minute())
 	var stopDate, stopHourMinute string
 	if stopTsNs != 0 {
-		stopTime := time.Unix(0, stopTsNs+24*60*60*int64(time.Nanosecond)).UTC()
+		stopTime := time.Unix(0, stopTsNs+24*60*60*int64(time.Second)).UTC()
 		stopDate = fmt.Sprintf("%04d-%02d-%02d", stopTime.Year(), stopTime.Month(), stopTime.Day())
 		stopHourMinute = fmt.Sprintf("%02d-%02d", stopTime.Hour(), stopTime.Minute())
 	}
 
 	return &LogFileEntryCollector{
 		f:               f,
-		startTsNs:       startPosition.UnixNano(),
+		startTsNs:       startPosition.Time.UnixNano(),
 		stopTsNs:        stopTsNs,
 		dayEntryQueue:   dayEntryQueue,
 		startDate:       startDate,
@@ -207,6 +221,10 @@ func (c *LogFileEntryCollector) collectMore(v *OrderedLogVisitor) (err error) {
 			continue
 		}
 		filerId := getFilerId(hourMinuteEntry.Name())
+		if filerId == "" {
+			glog.Warningf("Invalid log file name format: %s", hourMinuteEntry.Name())
+			continue // Skip files with invalid format
+		}
 		iter, found := v.perFilerIteratorMap[filerId]
 		if !found {
 			iter = newLogFileQueueIterator(c.f.MasterClient, util.NewQueue[*LogFileEntry](), c.startTsNs, c.stopTsNs)
@@ -230,8 +248,8 @@ func (c *LogFileEntryCollector) collectMore(v *OrderedLogVisitor) (err error) {
 		if nextErr != nil {
 			if nextErr == io.EOF {
 				// do nothing since the filer has no more log entries
-			}else {
-				return fmt.Errorf("failed to get next log entry for %v: %v", entryName, err)
+			} else {
+				return fmt.Errorf("failed to get next log entry for %v: %w", entryName, nextErr)
 			}
 		} else {
 			heap.Push(v.pq, &LogEntryItem{
@@ -289,6 +307,7 @@ func (iter *LogFileQueueIterator) getNext(v *OrderedLogVisitor) (logEntry *filer
 			if collectErr := v.logFileEntryCollector.collectMore(v); collectErr != nil && collectErr != io.EOF {
 				return nil, collectErr
 			}
+			next = iter.q.Peek() // Re-peek after collectMore
 		}
 		// skip the file if the next entry is before the startTsNs
 		if next != nil && next.TsNs <= iter.startTsNs {
@@ -309,7 +328,7 @@ type LogFileIterator struct {
 
 func newLogFileIterator(masterClient *wdclient.MasterClient, fileEntry *Entry, startTsNs, stopTsNs int64) *LogFileIterator {
 	return &LogFileIterator{
-		r:         NewChunkStreamReaderFromFiler(masterClient, fileEntry.Chunks),
+		r:         NewChunkStreamReaderFromFiler(context.Background(), masterClient, fileEntry.Chunks),
 		sizeBuf:   make([]byte, 4),
 		startTsNs: startTsNs,
 		stopTsNs:  stopTsNs,

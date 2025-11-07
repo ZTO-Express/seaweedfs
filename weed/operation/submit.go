@@ -3,18 +3,16 @@ package operation
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/pb"
-	"github.com/seaweedfs/seaweedfs/weed/util"
-	"github.com/shirou/gopsutil/v4/mem"
 	"io"
-	"math"
+	"math/rand/v2"
 	"mime"
 	"net/url"
 	"os"
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 
 	"google.golang.org/grpc"
 
@@ -23,19 +21,15 @@ import (
 )
 
 type FilePart struct {
-	Reader      io.Reader
-	FileName    string
-	FileSize    int64
-	MimeType    string
-	ModTime     int64 //in seconds
-	Replication string
-	Collection  string
-	DataCenter  string
-	Ttl         string
-	DiskType    string
-	Server      string //this comes from assign result
-	Fid         string //this comes from assign result, but customizable
-	Fsync       bool
+	Reader   io.Reader
+	FileName string
+	FileSize int64
+	MimeType string
+	ModTime  int64 //in seconds
+	Pref     StoragePreference
+	Server   string //this comes from assign result
+	Fid      string //this comes from assign result, but customizable
+	Fsync    bool
 }
 
 type SubmitResult struct {
@@ -46,30 +40,31 @@ type SubmitResult struct {
 	Error    string `json:"error,omitempty"`
 }
 
-type AsyncChunkUploadResult struct {
-	index int64
-	fid   string
-	count uint32
-	err   error
+type StoragePreference struct {
+	Replication string
+	Collection  string
+	DataCenter  string
+	Ttl         string
+	DiskType    string
+	MaxMB       int
 }
 
 type GetMasterFn func(ctx context.Context) pb.ServerAddress
 
-func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []FilePart, replication string, collection string,
-	dataCenter string, ttl string, diskType string, maxMB int, usePublicUrl bool, username, password string, chunkConcurrent int) ([]SubmitResult, error) {
+func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []*FilePart, pref StoragePreference, usePublicUrl bool, username, password string) ([]SubmitResult, error) {
 	results := make([]SubmitResult, len(files))
 	for index, file := range files {
 		results[index].FileName = file.FileName
 	}
 	ar := &VolumeAssignRequest{
 		Count:       uint64(len(files)),
-		Replication: replication,
-		Collection:  collection,
-		DataCenter:  dataCenter,
-		Ttl:         ttl,
-		DiskType:    diskType,
+		Replication: pref.Replication,
+		Collection:  pref.Collection,
+		DataCenter:  pref.DataCenter,
+		Ttl:         pref.Ttl,
+		DiskType:    pref.DiskType,
 	}
-	ret, err := Assign(masterFn, grpcDialOption, ar)
+	ret, err := Assign(context.Background(), masterFn, grpcDialOption, ar)
 	if err != nil {
 		for index := range files {
 			results[index].Error = err.Error()
@@ -90,12 +85,8 @@ func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []F
 		if usePublicUrl {
 			file.Server = ret.PublicUrl
 		}
-		file.Replication = replication
-		file.Collection = collection
-		file.DataCenter = dataCenter
-		file.Ttl = ttl
-		file.DiskType = diskType
-		results[index].Size, err = file.Upload(maxMB, masterFn, usePublicUrl, ret.Auth, basicAuth, grpcDialOption, chunkConcurrent)
+		file.Pref = pref
+		results[index].Size, err = file.Upload(pref.MaxMB, masterFn, usePublicUrl, ret.Auth, basicAuth, grpcDialOption)
 		if err != nil {
 			results[index].Error = err.Error()
 		}
@@ -105,8 +96,8 @@ func SubmitFiles(masterFn GetMasterFn, grpcDialOption grpc.DialOption, files []F
 	return results, nil
 }
 
-func NewFileParts(fullPathFilenames []string) (ret []FilePart, err error) {
-	ret = make([]FilePart, len(fullPathFilenames))
+func NewFileParts(fullPathFilenames []string) (ret []*FilePart, err error) {
+	ret = make([]*FilePart, len(fullPathFilenames))
 	for index, file := range fullPathFilenames {
 		if ret[index], err = newFilePart(file); err != nil {
 			return
@@ -114,7 +105,8 @@ func NewFileParts(fullPathFilenames []string) (ret []FilePart, err error) {
 	}
 	return
 }
-func newFilePart(fullPathFilename string) (ret FilePart, err error) {
+func newFilePart(fullPathFilename string) (ret *FilePart, err error) {
+	ret = &FilePart{}
 	fh, openErr := os.Open(fullPathFilename)
 	if openErr != nil {
 		glog.V(0).Info("Failed to open file: ", fullPathFilename)
@@ -138,7 +130,7 @@ func newFilePart(fullPathFilename string) (ret FilePart, err error) {
 	return ret, nil
 }
 
-func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jwt security.EncodedJwt, authHeader string, grpcDialOption grpc.DialOption, chunkConcurrent int) (retSize uint32, err error) {
+func (fi *FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jwt security.EncodedJwt, authHeader string, grpcDialOption grpc.DialOption) (retSize uint32, err error) {
 	fileUrl := "http://" + fi.Server + "/" + fi.Fid
 	if fi.ModTime != 0 {
 		fileUrl += "?ts=" + strconv.Itoa(int(fi.ModTime))
@@ -161,69 +153,66 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 		}
 
 		var ret *AssignResult
-		//var id string
-		if fi.DataCenter != "" {
+		var id string
+		if fi.Pref.DataCenter != "" {
 			ar := &VolumeAssignRequest{
 				Count:       uint64(chunks),
-				Replication: fi.Replication,
-				Collection:  fi.Collection,
-				Ttl:         fi.Ttl,
-				DiskType:    fi.DiskType,
+				Replication: fi.Pref.Replication,
+				Collection:  fi.Pref.Collection,
+				Ttl:         fi.Pref.Ttl,
+				DiskType:    fi.Pref.DiskType,
 			}
-			ret, err = Assign(masterFn, grpcDialOption, ar)
+			ret, err = Assign(context.Background(), masterFn, grpcDialOption, ar)
 			if err != nil {
 				return
 			}
 		}
 
-		var offset int64
-		var concurrent = chunkConcurrent
-		var response = make(chan *AsyncChunkUploadResult, chunks)
-		var sem = util.NewSemaphore(concurrent)
-
-		fmt.Println("Upload file, chunks ", chunks, "concurrent", concurrent, "baseName", baseName, "maxMB", maxMB, "collection", fi.Collection, "ttl", fi.Ttl, "diskType", fi.DiskType)
-
 		for i := int64(0); i < chunks; i++ {
-			filename := baseName + "-" + strconv.FormatInt(i+1, 10)
-			//reader := io.LimitReader(fi.Reader, chunkSize)
-			ar := &VolumeAssignRequest{
-				Count:       1,
-				Replication: fi.Replication,
-				Collection:  fi.Collection,
-				Ttl:         fi.Ttl,
-				DiskType:    fi.DiskType,
+			if fi.Pref.DataCenter == "" {
+				ar := &VolumeAssignRequest{
+					Count:       1,
+					Replication: fi.Pref.Replication,
+					Collection:  fi.Pref.Collection,
+					Ttl:         fi.Pref.Ttl,
+					DiskType:    fi.Pref.DiskType,
+				}
+				ret, err = Assign(context.Background(), masterFn, grpcDialOption, ar)
+				if err != nil {
+					// delete all uploaded chunks
+					cm.DeleteChunks(masterFn, usePublicUrl, authHeader, grpcDialOption)
+					return
+				}
+				id = ret.Fid
+			} else {
+				id = ret.Fid
+				if i > 0 {
+					id += "_" + strconv.FormatInt(i, 10)
+				}
 			}
-			newReader := io.NewSectionReader(fi.Reader.(*os.File), offset, chunkSize)
-			offset += chunkSize
-
-			sem.Acquire()
-			go uploadAsync(i, filename, fi.DataCenter, newReader, masterFn, usePublicUrl, authHeader, grpcDialOption, ar, ret, response, sem)
+			fileUrl := genFileUrl(ret, id, usePublicUrl)
+			count, e := uploadOneChunk(
+				baseName+"-"+strconv.FormatInt(i+1, 10),
+				io.LimitReader(fi.Reader, chunkSize),
+				masterFn, fileUrl, ret.Auth, authHeader)
+			if e != nil {
+				// delete all uploaded chunks
+				cm.DeleteChunks(masterFn, usePublicUrl, authHeader, grpcDialOption)
+				return 0, e
+			}
+			cm.Chunks = append(cm.Chunks,
+				&ChunkInfo{
+					Offset: i * chunkSize,
+					Size:   int64(count),
+					Fid:    id,
+				},
+			)
+			retSize += count
 		}
-
-		for i := 0; i < int(chunks); i++ {
-			r := <-response
-			if r.err != nil {
-				err = r.err
-				break
-			}
-			cm.Chunks[r.index] = &ChunkInfo{
-				Offset: r.index * chunkSize,
-				Size:   int64(r.count),
-				Fid:    r.fid,
-			}
-			retSize += r.count
-		}
-		close(response)
+		err = uploadChunkedFileManifest(fileUrl, &cm, jwt, authHeader)
 		if err != nil {
 			// delete all uploaded chunks
-			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
-			return
-		}
-
-		err = upload_chunked_file_manifest(fileUrl, &cm, jwt, authHeader)
-		if err != nil {
-			// delete all uploaded chunks
-			cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
+			cm.DeleteChunks(masterFn, usePublicUrl, authHeader, grpcDialOption)
 		}
 	} else {
 		uploadOption := &UploadOption{
@@ -236,7 +225,13 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 			Jwt:               jwt,
 			AuthHeader:        authHeader,
 		}
-		ret, e, _ := Upload(fi.Reader, uploadOption)
+
+		uploader, e := NewUploader()
+		if e != nil {
+			return 0, e
+		}
+
+		ret, e, _ := uploader.Upload(context.Background(), fi.Reader, uploadOption)
 		if e != nil {
 			return 0, e
 		}
@@ -245,69 +240,23 @@ func (fi FilePart) Upload(maxMB int, masterFn GetMasterFn, usePublicUrl bool, jw
 	return
 }
 
-// 计算多大的并发数同时上传chunks
-func calculateConcurrent(chunkSize int64, chunks int64) int {
-	v, err := mem.VirtualMemory()
-	if err != nil {
-		return int(math.Min(float64(chunks), 10))
-	}
-	avail := (float64(v.Available) * 0.7) / float64(chunkSize) //基于70%的可用内存计算
-	if avail < 10 {
-		return int(math.Min(float64(chunks), 10))
-	}
-	return int(math.Min(float64(chunks), avail))
-}
-
-func uploadAsync(index int64, filename, dataCenter string, reader io.Reader, masterFn GetMasterFn, usePublicUrl bool, authHeader string,
-	grpcDialOption grpc.DialOption, ar *VolumeAssignRequest, ret *AssignResult, resp chan<- *AsyncChunkUploadResult, sem *util.Semaphore) {
-	defer func() {
-		sem.Release()
-	}()
-
-	fmt.Println("Uploading chunks async,index ", index, "filename ", filename, " dataCenter ", dataCenter, "usePublicUrl", usePublicUrl, "authHeader", authHeader)
-
-	var res = AsyncChunkUploadResult{}
-	var id string
-	var err error
-	if dataCenter == "" {
-		ret, err = Assign(masterFn, grpcDialOption, ar)
-		if err != nil {
-			res.err = err
-			return
-		}
-		id = ret.Fid
-	} else {
-		id = ret.Fid
-		if index > 0 {
-			id += "_" + strconv.FormatInt(index, 10)
-		}
-	}
+func genFileUrl(ret *AssignResult, id string, usePublicUrl bool) string {
 	fileUrl := "http://" + ret.Url + "/" + id
 	if usePublicUrl {
 		fileUrl = "http://" + ret.PublicUrl + "/" + id
 	}
-
-	for i := 0; i < 3; i++ { //重试
-		count, e := upload_one_chunk(filename, reader, masterFn, fileUrl, ret.Auth, authHeader)
-		if e == nil {
-			res.count = count
-			res.err = nil
-			break
+	for _, replica := range ret.Replicas {
+		if rand.IntN(len(ret.Replicas)+1) == 0 {
+			fileUrl = "http://" + replica.Url + "/" + id
+			if usePublicUrl {
+				fileUrl = "http://" + replica.PublicUrl + "/" + id
+			}
 		}
-		res.err = e
 	}
-	res.fid = id
-	res.index = index
-	resp <- &res
-
-	//if e != nil {
-	//	// delete all uploaded chunks
-	//	cm.DeleteChunks(masterFn, usePublicUrl, grpcDialOption)
-	//	return 0, e
-	//}
+	return fileUrl
 }
 
-func upload_one_chunk(filename string, reader io.Reader, masterFn GetMasterFn,
+func uploadOneChunk(filename string, reader io.Reader, masterFn GetMasterFn,
 	fileUrl string, jwt security.EncodedJwt, basicAuth string,
 ) (size uint32, e error) {
 	glog.V(4).Info("Uploading part ", filename, " to ", fileUrl, "...")
@@ -321,14 +270,20 @@ func upload_one_chunk(filename string, reader io.Reader, masterFn GetMasterFn,
 		Jwt:               jwt,
 		AuthHeader:        basicAuth,
 	}
-	uploadResult, uploadError, _ := Upload(reader, uploadOption)
+
+	uploader, uploaderError := NewUploader()
+	if uploaderError != nil {
+		return 0, uploaderError
+	}
+
+	uploadResult, uploadError, _ := uploader.Upload(context.Background(), reader, uploadOption)
 	if uploadError != nil {
 		return 0, uploadError
 	}
 	return uploadResult.Size, nil
 }
 
-func upload_chunked_file_manifest(fileUrl string, manifest *ChunkManifest, jwt security.EncodedJwt, basicAuth string) error {
+func uploadChunkedFileManifest(fileUrl string, manifest *ChunkManifest, jwt security.EncodedJwt, basicAuth string) error {
 	buf, e := manifest.Marshal()
 	if e != nil {
 		return e
@@ -348,10 +303,15 @@ func upload_chunked_file_manifest(fileUrl string, manifest *ChunkManifest, jwt s
 		Jwt:               jwt,
 		AuthHeader:        basicAuth,
 	}
-	_, e = UploadData(buf, uploadOption)
+
+	uploader, e := NewUploader()
+	if e != nil {
+		return e
+	}
+
+	_, e = uploader.UploadData(context.Background(), buf, uploadOption)
 	return e
 }
-
 func genBasicAuth(username, password string) string {
 	auth := username + ":" + password
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))

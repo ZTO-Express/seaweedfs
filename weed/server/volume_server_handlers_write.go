@@ -16,8 +16,9 @@ import (
 )
 
 func (vs *VolumeServer) PostHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	if e := r.ParseForm(); e != nil {
-		glog.V(0).Infoln("form parse error:", e)
+		glog.V(0).InfolnCtx(ctx, "form parse error:", e)
 		writeJsonError(w, r, http.StatusBadRequest, e)
 		return
 	}
@@ -25,7 +26,7 @@ func (vs *VolumeServer) PostHandler(w http.ResponseWriter, r *http.Request) {
 	vid, fid, _, _, _ := parseURLPath(r.URL.Path)
 	volumeId, ve := needle.NewVolumeId(vid)
 	if ve != nil {
-		glog.V(0).Infoln("NewVolumeId error:", ve)
+		glog.V(0).InfolnCtx(ctx, "NewVolumeId error:", ve)
 		writeJsonError(w, r, http.StatusBadRequest, ve)
 		return
 	}
@@ -45,7 +46,7 @@ func (vs *VolumeServer) PostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ret := operation.UploadResult{}
-	isUnchanged, writeError := topology.ReplicatedWrite(vs.GetMaster, vs.grpcDialOption, vs.store, volumeId, reqNeedle, r, contentMd5)
+	isUnchanged, writeError := topology.ReplicatedWrite(ctx, vs.GetMaster, vs.grpcDialOption, vs.store, volumeId, reqNeedle, r, contentMd5)
 	if writeError != nil {
 		writeJsonError(w, r, http.StatusInternalServerError, writeError)
 		return
@@ -68,7 +69,6 @@ func (vs *VolumeServer) PostHandler(w http.ResponseWriter, r *http.Request) {
 	SetEtag(w, ret.ETag)
 	w.Header().Set("Content-MD5", contentMd5)
 	writeJsonQuiet(w, r, httpStatus, ret)
-
 }
 
 func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
@@ -117,7 +117,7 @@ func (vs *VolumeServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// make sure all chunks had deleted before delete manifest
-		if e := chunkManifest.DeleteChunks(vs.GetMaster, false, vs.grpcDialOption); e != nil {
+		if e := chunkManifest.DeleteChunks(vs.GetMaster, false, r.Header.Get("Authorization"), vs.grpcDialOption); e != nil {
 			writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Delete chunks error: %v", e))
 			return
 		}
@@ -144,7 +144,7 @@ func writeDeleteResult(err error, count int64, w http.ResponseWriter, r *http.Re
 		m["size"] = count
 		writeJsonQuiet(w, r, http.StatusAccepted, m)
 	} else {
-		writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Deletion Failed: %v", err))
+		writeJsonError(w, r, http.StatusInternalServerError, fmt.Errorf("Deletion Failed: %w", err))
 	}
 }
 

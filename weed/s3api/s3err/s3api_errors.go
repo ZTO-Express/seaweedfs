@@ -4,6 +4,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+
+	"github.com/seaweedfs/seaweedfs/weed/util/constants"
 )
 
 // APIError structure
@@ -57,7 +59,9 @@ const (
 	ErrNoSuchKey
 	ErrNoSuchUpload
 	ErrInvalidBucketName
+	ErrInvalidBucketState
 	ErrInvalidDigest
+	ErrBadDigest
 	ErrInvalidMaxKeys
 	ErrInvalidMaxUploads
 	ErrInvalidMaxParts
@@ -83,6 +87,8 @@ const (
 	ErrMalformedDate
 	ErrMalformedPresignedDate
 	ErrMalformedCredentialDate
+	ErrMalformedPolicy
+	ErrInvalidPolicyDocument
 	ErrMissingSignHeadersTag
 	ErrMissingSignTag
 	ErrUnsignedHeaders
@@ -96,11 +102,13 @@ const (
 	ErrContentSHA256Mismatch
 	ErrInvalidAccessKeyID
 	ErrRequestNotReadyYet
+	ErrRequestTimeTooSkewed
 	ErrMissingDateHeader
 	ErrInvalidRequest
 	ErrAuthNotSetup
 	ErrNotImplemented
 	ErrPreconditionFailed
+	ErrNotModified
 
 	ErrExistingObjectIsDirectory
 	ErrExistingObjectIsFile
@@ -109,6 +117,36 @@ const (
 	ErrRequestBytesExceed
 
 	OwnershipControlsNotFoundError
+	ErrNoSuchTagSet
+	ErrNoSuchObjectLockConfiguration
+	ErrNoSuchObjectLegalHold
+	ErrInvalidRetentionPeriod
+	ErrObjectLockConfigurationNotFoundError
+	ErrInvalidUnorderedWithDelimiter
+
+	// SSE-C related errors
+	ErrInvalidEncryptionAlgorithm
+	ErrInvalidEncryptionKey
+	ErrSSECustomerKeyMD5Mismatch
+	ErrSSECustomerKeyMissing
+	ErrSSECustomerKeyNotNeeded
+	ErrSSEEncryptionTypeMismatch
+
+	// SSE-KMS related errors
+	ErrKMSKeyNotFound
+	ErrKMSAccessDenied
+	ErrKMSDisabled
+	ErrKMSInvalidCiphertext
+
+	// Bucket encryption errors
+	ErrNoSuchBucketEncryptionConfiguration
+)
+
+// Error message constants for checksum validation
+const (
+	ErrMsgPayloadChecksumMismatch   = "payload checksum does not match"
+	ErrMsgChunkSignatureMismatch    = "chunk signature does not match"
+	ErrMsgChecksumAlgorithmMismatch = "checksum algorithm mismatch"
 )
 
 // error code to APIError structure, these fields carry respective
@@ -144,9 +182,19 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "The specified bucket is not valid.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
+	ErrInvalidBucketState: {
+		Code:           "InvalidBucketState",
+		Description:    "The bucket is not in a valid state for the requested operation",
+		HTTPStatusCode: http.StatusConflict,
+	},
 	ErrInvalidDigest: {
 		Code:           "InvalidDigest",
 		Description:    "The Content-Md5 you specified is not valid.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrBadDigest: {
+		Code:           "BadDigest",
+		Description:    constants.ErrMsgBadDigest,
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidMaxUploads: {
@@ -183,6 +231,26 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "NoSuchBucketPolicy",
 		Description:    "The bucket policy does not exist",
 		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrNoSuchTagSet: {
+		Code:           "NoSuchTagSet",
+		Description:    "The TagSet does not exist",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrNoSuchObjectLockConfiguration: {
+		Code:           "NoSuchObjectLockConfiguration",
+		Description:    "The specified object does not have an ObjectLock configuration",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrNoSuchObjectLegalHold: {
+		Code:           "NoSuchObjectLegalHold",
+		Description:    "The specified object does not have a legal hold configuration",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrInvalidRetentionPeriod: {
+		Code:           "InvalidRetentionPeriod",
+		Description:    "The retention period specified is invalid",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNoSuchCORSConfiguration: {
 		Code:           "NoSuchCORSConfiguration",
@@ -234,6 +302,16 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrMalformedXML: {
 		Code:           "MalformedXML",
 		Description:    "The XML you provided was not well-formed or did not validate against our published schema.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMalformedPolicy: {
+		Code:           "MalformedPolicy",
+		Description:    "Policy has invalid resource.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidPolicyDocument: {
+		Code:           "InvalidPolicyDocument",
+		Description:    "The content of the policy document is invalid.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrAuthHeaderEmpty: {
@@ -355,6 +433,12 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		HTTPStatusCode: http.StatusForbidden,
 	},
 
+	ErrRequestTimeTooSkewed: {
+		Code:           "RequestTimeTooSkewed",
+		Description:    "The difference between the request time and the server's time is too large.",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+
 	ErrSignatureDoesNotMatch: {
 		Code:           "SignatureDoesNotMatch",
 		Description:    "The request signature we calculated does not match the signature you provided. Check your key and signing method.",
@@ -396,6 +480,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "At least one of the pre-conditions you specified did not hold",
 		HTTPStatusCode: http.StatusPreconditionFailed,
 	},
+	ErrNotModified: {
+		Code:           "NotModified",
+		Description:    "The object was not modified since the specified time",
+		HTTPStatusCode: http.StatusNotModified,
+	},
 	ErrExistingObjectIsDirectory: {
 		Code:           "ExistingObjectIsDirectory",
 		Description:    "Existing Object is a directory.",
@@ -420,6 +509,77 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	OwnershipControlsNotFoundError: {
 		Code:           "OwnershipControlsNotFoundError",
 		Description:    "The bucket ownership controls were not found",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrObjectLockConfigurationNotFoundError: {
+		Code:           "ObjectLockConfigurationNotFoundError",
+		Description:    "Object Lock configuration does not exist for this bucket",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrInvalidUnorderedWithDelimiter: {
+		Code:           "InvalidArgument",
+		Description:    "Unordered listing cannot be used with delimiter",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+
+	// SSE-C related error mappings
+	ErrInvalidEncryptionAlgorithm: {
+		Code:           "InvalidEncryptionAlgorithmError",
+		Description:    "The encryption algorithm specified is not valid.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidEncryptionKey: {
+		Code:           "InvalidArgument",
+		Description:    "Invalid encryption key. Encryption key must be 256-bit AES256.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrSSECustomerKeyMD5Mismatch: {
+		Code:           "InvalidArgument",
+		Description:    "The provided customer encryption key MD5 does not match the key.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrSSECustomerKeyMissing: {
+		Code:           "InvalidArgument",
+		Description:    "Requests specifying Server Side Encryption with Customer provided keys must provide the customer key.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrSSECustomerKeyNotNeeded: {
+		Code:           "InvalidArgument",
+		Description:    "The object was not encrypted with customer provided keys.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrSSEEncryptionTypeMismatch: {
+		Code:           "InvalidRequest",
+		Description:    "The encryption method specified in the request does not match the encryption method used to encrypt the object.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+
+	// SSE-KMS error responses
+	ErrKMSKeyNotFound: {
+		Code:           "KMSKeyNotFoundException",
+		Description:    "The specified KMS key does not exist.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrKMSAccessDenied: {
+		Code:           "KMSAccessDeniedException",
+		Description:    "Access denied to the specified KMS key.",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrKMSDisabled: {
+		Code:           "KMSKeyDisabledException",
+		Description:    "The specified KMS key is disabled.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrKMSInvalidCiphertext: {
+		Code:           "InvalidCiphertext",
+		Description:    "The provided ciphertext is invalid or corrupted.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+
+	// Bucket encryption error responses
+	ErrNoSuchBucketEncryptionConfiguration: {
+		Code:           "ServerSideEncryptionConfigurationNotFoundError",
+		Description:    "The server side encryption configuration was not found.",
 		HTTPStatusCode: http.StatusNotFound,
 	},
 }

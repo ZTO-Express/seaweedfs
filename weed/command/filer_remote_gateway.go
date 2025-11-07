@@ -71,14 +71,14 @@ var cmdFilerRemoteGateway = &Command{
 	filer.remote.gateway listens on filer local buckets update events. 
 	If any bucket is created, deleted, or updated, it will mirror the changes to remote object store.
 
-		weed filer.remote.sync -createBucketAt=cloud1
+		weed filer.remote.gateway -createBucketAt=cloud1
 
 `,
 }
 
 func runFilerRemoteGateway(cmd *Command, args []string) bool {
 
-	util.LoadConfiguration("security", false)
+	util.LoadSecurityConfiguration()
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 	remoteGatewayOptions.grpcDialOption = grpcDialOption
 

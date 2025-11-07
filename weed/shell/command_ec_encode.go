@@ -4,15 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/glog"
-	"github.com/seaweedfs/seaweedfs/weed/pb"
-	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"io"
 	"math/rand"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 
 	"google.golang.org/grpc"
 
@@ -29,6 +30,10 @@ func init() {
 }
 
 type commandEcEncode struct {
+}
+
+func (c *commandEcEncode) HasTag(CommandTag) bool {
+	return false
 }
 
 func (c *commandEcEncode) Name() string {
@@ -85,7 +90,7 @@ func (c *commandEcEncode) Do(args []string, commandEnv *CommandEnv, writer io.Wr
 
 	if !*forceChanges {
 		var nodeCount int
-		eachDataNode(topologyInfo, func(dc string, rack RackId, dn *master_pb.DataNodeInfo) {
+		eachDataNode(topologyInfo, func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo) {
 			nodeCount++
 		})
 		if nodeCount < erasure_coding.ParityShardsCount {
@@ -144,7 +149,7 @@ func doEcEncode(commandEnv *CommandEnv, collection string, vid needle.VolumeId, 
 	// fmt.Printf("found ec %d shards on %v\n", vid, locations)
 
 	// mark the volume as readonly
-	err = markVolumeReplicasWritable(commandEnv.option.GrpcDialOption, vid, locations, false)
+	err = markVolumeReplicasWritable(commandEnv.option.GrpcDialOption, vid, locations, false, true)
 	if err != nil {
 		return fmt.Errorf("mark volume %d as readonly on %s: %v", vid, locations[0].Url, err)
 	}
@@ -186,7 +191,7 @@ func generateEcShards(grpcDialOption grpc.DialOption, volumeId needle.VolumeId, 
 
 func spreadEcShards(commandEnv *CommandEnv, volumeId needle.VolumeId, collection string, existingLocations []wdclient.Location, parallelCopy bool, isDifferentDiskType bool, toDiskType types.DiskType) (err error) {
 
-	allEcNodes, totalFreeEcSlots, err := collectEcNodes(commandEnv, "", toDiskType)
+	allEcNodes, totalFreeEcSlots, err := collectEcNodes(commandEnv, toDiskType)
 	if err != nil {
 		return err
 	}
@@ -362,7 +367,7 @@ func collectVolumeIdsForEcEncode(commandEnv *CommandEnv, selectedCollection stri
 	fmt.Printf("collect volumes quiet for: %d seconds and %.1f%% full\n", quietSeconds, fullPercentage)
 
 	vidMap := make(map[uint32]bool)
-	eachDataNode(topologyInfo, func(dc string, rack RackId, dn *master_pb.DataNodeInfo) {
+	eachDataNode(topologyInfo, func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo) {
 		for _, diskInfo := range dn.DiskInfos {
 			for _, v := range diskInfo.VolumeInfos {
 				// ignore remote volumes

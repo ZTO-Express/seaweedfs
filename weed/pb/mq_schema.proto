@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package schema_pb;
+
+option go_package = "github.com/seaweedfs/seaweedfs/weed/pb/schema_pb";
+
+///////////////////////////
+// Topic definition
+///////////////////////////
+
+message Topic {
+    string namespace = 1;
+    string name = 2;
+}
+message Partition {
+    int32 ring_size = 1;
+    int32 range_start = 2;
+    int32 range_stop = 3;
+    int64 unix_time_ns = 4;
+}
+
+message Offset {
+    Topic topic = 1;
+    repeated PartitionOffset partition_offsets = 2;
+}
+
+enum OffsetType {
+    RESUME_OR_EARLIEST = 0;
+    RESET_TO_EARLIEST = 5;
+    EXACT_TS_NS = 10;
+    RESET_TO_LATEST = 15;
+    RESUME_OR_LATEST = 20;
+    // Offset-based positioning
+    EXACT_OFFSET = 25;
+    RESET_TO_OFFSET = 30;
+}
+
+message PartitionOffset {
+    Partition partition = 1;
+    int64 start_ts_ns = 2;
+    int64 start_offset = 3;  // For offset-based positioning
+}
+
+///////////////////////////
+// schema definition
+///////////////////////////
+
+message RecordType {
+    repeated Field fields = 1;
+}
+
+message Field {
+    string name = 1;
+    int32 field_index = 2;
+    Type type = 3;
+    bool is_repeated = 4;
+    bool is_required = 5;
+}
+
+message Type {
+    oneof kind {
+        ScalarType scalar_type = 1;
+        RecordType record_type = 2;
+        ListType list_type = 3;
+    }
+}
+
+enum ScalarType {
+    BOOL = 0;
+    INT32 = 1;
+    INT64 = 3;
+    FLOAT = 4;
+    DOUBLE = 5;
+    BYTES = 6;
+    STRING = 7;
+    // Parquet logical types for analytics
+    TIMESTAMP = 8;  // UTC timestamp (microseconds since epoch)
+    DATE = 9;       // Date (days since epoch)
+    DECIMAL = 10;   // Arbitrary precision decimal
+    TIME = 11;      // Time of day (microseconds)
+}
+
+message ListType {
+    Type element_type = 1;
+}
+
+///////////////////////////
+// value definition
+///////////////////////////
+message RecordValue {
+    map<string, Value> fields = 1;
+}
+message Value {
+    oneof kind {
+        bool bool_value = 1;
+        int32 int32_value = 2;
+        int64 int64_value = 3;
+        float float_value = 4;
+        double double_value = 5;
+        bytes bytes_value = 6;
+        string string_value = 7;
+        // Parquet logical type values
+        TimestampValue timestamp_value = 8;
+        DateValue date_value = 9;
+        DecimalValue decimal_value = 10;
+        TimeValue time_value = 11;
+        // Complex types
+        ListValue list_value = 14;
+        RecordValue record_value = 15;
+    }
+}
+// Parquet logical type value messages
+message TimestampValue {
+    int64 timestamp_micros = 1;  // Microseconds since Unix epoch (UTC)
+    bool is_utc = 2;             // True if UTC, false if local time
+}
+
+message DateValue {
+    int32 days_since_epoch = 1;  // Days since Unix epoch (1970-01-01)
+}
+
+message DecimalValue {
+    bytes value = 1;             // Arbitrary precision decimal as bytes
+    int32 precision = 2;         // Total number of digits
+    int32 scale = 3;             // Number of digits after decimal point
+}
+
+message TimeValue {
+    int64 time_micros = 1;       // Microseconds since midnight
+}
+
+message ListValue {
+    repeated Value values = 1;
+}

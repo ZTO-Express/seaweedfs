@@ -1,3 +1,10 @@
+// Package postgres provides PostgreSQL filer store implementation
+// Migrated from github.com/lib/pq to github.com/jackc/pgx for:
+// - Active development and support
+// - Better performance and PostgreSQL-specific features
+// - Improved error handling (no more panics)
+// - Built-in logging capabilities
+// - Superior SSL certificate support
 package postgres
 
 import (
@@ -6,7 +13,7 @@ import (
 	"strconv"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/filer/abstract_sql"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -35,13 +42,18 @@ func (store *PostgresStore) Initialize(configuration util.Configuration, prefix 
 		configuration.GetString(prefix+"database"),
 		configuration.GetString(prefix+"schema"),
 		configuration.GetString(prefix+"sslmode"),
+		configuration.GetString(prefix+"sslcert"),
+		configuration.GetString(prefix+"sslkey"),
+		configuration.GetString(prefix+"sslrootcert"),
+		configuration.GetString(prefix+"sslcrl"),
+		configuration.GetBool(prefix+"pgbouncer_compatible"),
 		configuration.GetInt(prefix+"connection_max_idle"),
 		configuration.GetInt(prefix+"connection_max_open"),
 		configuration.GetInt(prefix+"connection_max_lifetime_seconds"),
 	)
 }
 
-func (store *PostgresStore) initialize(upsertQuery string, enableUpsert bool, user, password, hostname string, port int, database, schema, sslmode string, maxIdle, maxOpen, maxLifetimeSeconds int) (err error) {
+func (store *PostgresStore) initialize(upsertQuery string, enableUpsert bool, user, password, hostname string, port int, database, schema, sslmode, sslcert, sslkey, sslrootcert, sslcrl string, pgbouncerCompatible bool, maxIdle, maxOpen, maxLifetimeSeconds int) (err error) {
 
 	store.SupportBucketTable = false
 	if !enableUpsert {
@@ -53,15 +65,37 @@ func (store *PostgresStore) initialize(upsertQuery string, enableUpsert bool, us
 		UpsertQueryTemplate:    upsertQuery,
 	}
 
+	// pgx-optimized connection string with better timeouts and connection handling
 	sqlUrl := "connect_timeout=30"
+
+	// PgBouncer compatibility: add prefer_simple_protocol=true when needed
+	// This avoids prepared statement issues with PgBouncer's transaction pooling mode
+	if pgbouncerCompatible {
+		sqlUrl += " prefer_simple_protocol=true"
+	}
+
 	if hostname != "" {
 		sqlUrl += " host=" + hostname
 	}
 	if port != 0 {
 		sqlUrl += " port=" + strconv.Itoa(port)
 	}
+
+	// SSL configuration - pgx provides better SSL support than lib/pq
 	if sslmode != "" {
 		sqlUrl += " sslmode=" + sslmode
+	}
+	if sslcert != "" {
+		sqlUrl += " sslcert=" + sslcert
+	}
+	if sslkey != "" {
+		sqlUrl += " sslkey=" + sslkey
+	}
+	if sslrootcert != "" {
+		sqlUrl += " sslrootcert=" + sslrootcert
+	}
+	if sslcrl != "" {
+		sqlUrl += " sslcrl=" + sslcrl
 	}
 	if user != "" {
 		sqlUrl += " user=" + user
@@ -75,16 +109,18 @@ func (store *PostgresStore) initialize(upsertQuery string, enableUpsert bool, us
 		sqlUrl += " dbname=" + database
 		adaptedSqlUrl += " dbname=" + database
 	}
-	if schema != "" {
+	if schema != "" && !pgbouncerCompatible {
 		sqlUrl += " search_path=" + schema
 		adaptedSqlUrl += " search_path=" + schema
 	}
 	var dbErr error
-	store.DB, dbErr = sql.Open("postgres", sqlUrl)
+	store.DB, dbErr = sql.Open("pgx", sqlUrl)
 	if dbErr != nil {
-		store.DB.Close()
+		if store.DB != nil {
+			store.DB.Close()
+		}
 		store.DB = nil
-		return fmt.Errorf("can not connect to %s error:%v", adaptedSqlUrl, err)
+		return fmt.Errorf("can not connect to %s error:%v", adaptedSqlUrl, dbErr)
 	}
 
 	store.DB.SetMaxIdleConns(maxIdle)

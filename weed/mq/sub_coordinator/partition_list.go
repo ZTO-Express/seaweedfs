@@ -1,13 +1,14 @@
 package sub_coordinator
 
-import "github.com/seaweedfs/seaweedfs/weed/mq/topic"
+import "time"
 
 type PartitionSlotToConsumerInstance struct {
 	RangeStart         int32
 	RangeStop          int32
 	UnixTimeNs         int64
 	Broker             string
-	AssignedInstanceId string
+	AssignedInstanceId ConsumerGroupInstanceId
+	FollowerBroker     string
 }
 
 type PartitionSlotToConsumerInstanceList struct {
@@ -16,17 +17,9 @@ type PartitionSlotToConsumerInstanceList struct {
 	Version        int64
 }
 
-func NewPartitionSlotToConsumerInstanceList(ringSize int32, version int64) *PartitionSlotToConsumerInstanceList {
+func NewPartitionSlotToConsumerInstanceList(ringSize int32, version time.Time) *PartitionSlotToConsumerInstanceList {
 	return &PartitionSlotToConsumerInstanceList{
 		RingSize: ringSize,
-		Version:  version,
+		Version:  version.UnixNano(),
 	}
-}
-
-func ToPartitions(ringSize int32, slots []*PartitionSlotToConsumerInstance) []*topic.Partition {
-	partitions := make([]*topic.Partition, 0, len(slots))
-	for _, slot := range slots {
-		partitions = append(partitions, topic.NewPartition(slot.RangeStart, slot.RangeStop, ringSize, slot.UnixTimeNs))
-	}
-	return partitions
 }

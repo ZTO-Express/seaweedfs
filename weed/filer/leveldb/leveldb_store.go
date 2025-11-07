@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"os"
+
 	"github.com/syndtr/goleveldb/leveldb"
 	leveldb_errors "github.com/syndtr/goleveldb/leveldb/errors"
 	"github.com/syndtr/goleveldb/leveldb/filter"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	leveldb_util "github.com/syndtr/goleveldb/leveldb/util"
-	"io"
-	"os"
 
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
@@ -44,7 +45,7 @@ func (store *LevelDBStore) Initialize(configuration weed_util.Configuration, pre
 }
 
 func (store *LevelDBStore) initialize(dir string) (err error) {
-	glog.Infof("filer store dir: %s", dir)
+	glog.V(0).Infof("filer store dir: %s", dir)
 	os.MkdirAll(dir, 0755)
 	if err := weed_util.TestFolderWritable(dir); err != nil {
 		return fmt.Errorf("Check Level Folder %s Writable: %s", dir, err)
@@ -205,7 +206,7 @@ func (store *LevelDBStore) ListDirectoryPrefixedEntries(ctx context.Context, dir
 		}
 		if decodeErr := entry.DecodeAttributesAndChunks(weed_util.MaybeDecompressData(iter.Value())); decodeErr != nil {
 			err = decodeErr
-			glog.V(0).Infof("list %s : %v", entry.FullPath, err)
+			glog.V(0).InfofCtx(ctx, "list %s : %v", entry.FullPath, err)
 			break
 		}
 		if !eachEntryFunc(entry) {

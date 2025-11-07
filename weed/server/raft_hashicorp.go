@@ -5,6 +5,14 @@ package weed_server
 
 import (
 	"fmt"
+	"math/rand/v2"
+	"os"
+	"path"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
 	transport "github.com/Jille/raft-grpc-transport"
 	"github.com/armon/go-metrics"
 	"github.com/armon/go-metrics/prometheus"
@@ -14,13 +22,6 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"google.golang.org/grpc"
-	"math/rand"
-	"os"
-	"path"
-	"path/filepath"
-	"sort"
-	"strings"
-	"time"
 )
 
 const (
@@ -56,43 +57,59 @@ func (s *RaftServer) AddPeersConfiguration() (cfg raft.Configuration) {
 	return cfg
 }
 
-func (s *RaftServer) UpdatePeers() {
+func (s *RaftServer) monitorLeaderLoop(updatePeers bool) {
 	for {
+		prevLeader, _ := s.RaftHashicorp.LeaderWithID()
 		select {
 		case isLeader := <-s.RaftHashicorp.LeaderCh():
+			leader, _ := s.RaftHashicorp.LeaderWithID()
 			if isLeader {
-				peerLeader := string(s.serverAddr)
-				existsPeerName := make(map[string]bool)
-				for _, server := range s.RaftHashicorp.GetConfiguration().Configuration().Servers {
-					if string(server.ID) == peerLeader {
-						continue
-					}
-					existsPeerName[string(server.ID)] = true
+
+				if updatePeers {
+					s.updatePeers()
+					updatePeers = false
 				}
-				for _, peer := range s.peers {
-					peerName := string(peer)
-					if peerName == peerLeader || existsPeerName[peerName] {
-						continue
-					}
-					glog.V(0).Infof("adding new peer: %s", peerName)
-					s.RaftHashicorp.AddVoter(
-						raft.ServerID(peerName), raft.ServerAddress(peer.ToGrpcAddress()), 0, 0)
-				}
-				for peer := range existsPeerName {
-					if _, found := s.peers[peer]; !found {
-						glog.V(0).Infof("removing old peer: %s", peer)
-						s.RaftHashicorp.RemoveServer(raft.ServerID(peer), 0, 0)
-					}
-				}
-				if _, found := s.peers[peerLeader]; !found {
-					glog.V(0).Infof("removing old leader peer: %s", peerLeader)
-					s.RaftHashicorp.RemoveServer(raft.ServerID(peerLeader), 0, 0)
-				}
+
+				s.topo.DoBarrier()
+
+				stats.MasterLeaderChangeCounter.WithLabelValues(fmt.Sprintf("%+v", leader)).Inc()
+			} else {
+				s.topo.BarrierReset()
 			}
-			return
-		case <-time.After(updatePeersTimeout):
-			return
+			glog.V(0).Infof("is leader %+v change event: %+v => %+v", isLeader, prevLeader, leader)
+			prevLeader = leader
+			s.topo.LastLeaderChangeTime = time.Now()
 		}
+	}
+}
+
+func (s *RaftServer) updatePeers() {
+	peerLeader := string(s.serverAddr)
+	existsPeerName := make(map[string]bool)
+	for _, server := range s.RaftHashicorp.GetConfiguration().Configuration().Servers {
+		if string(server.ID) == peerLeader {
+			continue
+		}
+		existsPeerName[string(server.ID)] = true
+	}
+	for _, peer := range s.peers {
+		peerName := string(peer)
+		if peerName == peerLeader || existsPeerName[peerName] {
+			continue
+		}
+		glog.V(0).Infof("adding new peer: %s", peerName)
+		s.RaftHashicorp.AddVoter(
+			raft.ServerID(peerName), raft.ServerAddress(peer.ToGrpcAddress()), 0, 0)
+	}
+	for peer := range existsPeerName {
+		if _, found := s.peers[peer]; !found {
+			glog.V(0).Infof("removing old peer: %s", peer)
+			s.RaftHashicorp.RemoveServer(raft.ServerID(peer), 0, 0)
+		}
+	}
+	if _, found := s.peers[peerLeader]; !found {
+		glog.V(0).Infof("removing old leader peer: %s", peerLeader)
+		s.RaftHashicorp.RemoveServer(raft.ServerID(peerLeader), 0, 0)
 	}
 }
 
@@ -122,7 +139,7 @@ func NewHashicorpRaftServer(option *RaftServerOption) (*RaftServer, error) {
 	}
 
 	if err := raft.ValidateConfig(c); err != nil {
-		return nil, fmt.Errorf(`raft.ValidateConfig: %v`, err)
+		return nil, fmt.Errorf("raft.ValidateConfig: %w", err)
 	}
 
 	if option.RaftBootstrap {
@@ -137,17 +154,17 @@ func NewHashicorpRaftServer(option *RaftServerOption) (*RaftServer, error) {
 
 	ldb, err := boltdb.NewBoltStore(filepath.Join(baseDir, ldbFile))
 	if err != nil {
-		return nil, fmt.Errorf(`boltdb.NewBoltStore(%q): %v`, filepath.Join(baseDir, "logs.dat"), err)
+		return nil, fmt.Errorf("boltdb.NewBoltStore(%q): %v", filepath.Join(baseDir, "logs.dat"), err)
 	}
 
 	sdb, err := boltdb.NewBoltStore(filepath.Join(baseDir, sdbFile))
 	if err != nil {
-		return nil, fmt.Errorf(`boltdb.NewBoltStore(%q): %v`, filepath.Join(baseDir, "stable.dat"), err)
+		return nil, fmt.Errorf("boltdb.NewBoltStore(%q): %v", filepath.Join(baseDir, "stable.dat"), err)
 	}
 
 	fss, err := raft.NewFileSnapshotStore(baseDir, 3, os.Stderr)
 	if err != nil {
-		return nil, fmt.Errorf(`raft.NewFileSnapshotStore(%q, ...): %v`, baseDir, err)
+		return nil, fmt.Errorf("raft.NewFileSnapshotStore(%q, ...): %v", baseDir, err)
 	}
 
 	s.TransportManager = transport.New(raft.ServerAddress(s.serverAddr), []grpc.DialOption{option.GrpcDialOption})
@@ -155,8 +172,10 @@ func NewHashicorpRaftServer(option *RaftServerOption) (*RaftServer, error) {
 	stateMachine := StateMachine{topo: option.Topo}
 	s.RaftHashicorp, err = raft.NewRaft(c, &stateMachine, ldb, sdb, fss, s.TransportManager.Transport())
 	if err != nil {
-		return nil, fmt.Errorf("raft.NewRaft: %v", err)
+		return nil, fmt.Errorf("raft.NewRaft: %w", err)
 	}
+
+	updatePeers := false
 	if option.RaftBootstrap || len(s.RaftHashicorp.GetConfiguration().Configuration().Servers) == 0 {
 		cfg := s.AddPeersConfiguration()
 		// Need to get lock, in case all servers do this at the same time.
@@ -166,11 +185,13 @@ func NewHashicorpRaftServer(option *RaftServerOption) (*RaftServer, error) {
 		time.Sleep(timeSleep)
 		f := s.RaftHashicorp.BootstrapCluster(cfg)
 		if err := f.Error(); err != nil {
-			return nil, fmt.Errorf("raft.Raft.BootstrapCluster: %v", err)
+			return nil, fmt.Errorf("raft.Raft.BootstrapCluster: %w", err)
 		}
 	} else {
-		go s.UpdatePeers()
+		updatePeers = true
 	}
+
+	go s.monitorLeaderLoop(updatePeers)
 
 	ticker := time.NewTicker(c.HeartbeatTimeout * 10)
 	if glog.V(4) {
@@ -193,12 +214,12 @@ func NewHashicorpRaftServer(option *RaftServerOption) (*RaftServer, error) {
 	if sink, err := prometheus.NewPrometheusSinkFrom(prometheus.PrometheusOpts{
 		Registerer: stats.Gather,
 	}); err != nil {
-		return nil, fmt.Errorf("NewPrometheusSink: %v", err)
+		return nil, fmt.Errorf("NewPrometheusSink: %w", err)
 	} else {
 		metricsConf := metrics.DefaultConfig(stats.Namespace)
 		metricsConf.EnableRuntimeMetrics = false
 		if _, err = metrics.NewGlobal(metricsConf, sink); err != nil {
-			return nil, fmt.Errorf("metrics.NewGlobal: %v", err)
+			return nil, fmt.Errorf("metrics.NewGlobal: %w", err)
 		}
 	}
 

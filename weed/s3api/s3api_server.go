@@ -2,14 +2,21 @@ package s3api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/seaweedfs/seaweedfs/weed/credential"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/iam/integration"
+	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
+	"github.com/seaweedfs/seaweedfs/weed/iam/sts"
 	"github.com/seaweedfs/seaweedfs/weed/pb/s3_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util/grace"
 
@@ -19,6 +26,8 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3err"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/util"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
+	util_http_client "github.com/seaweedfs/seaweedfs/weed/util/http/client"
 	"google.golang.org/grpc"
 )
 
@@ -35,22 +44,30 @@ type S3ApiServerOption struct {
 	LocalFilerSocket          string
 	DataCenter                string
 	FilerGroup                string
-	Username                  string
-	Password                  string
+	IamConfig                 string // Advanced IAM configuration file path
 }
 
 type S3ApiServer struct {
 	s3_pb.UnimplementedSeaweedS3Server
-	option         *S3ApiServerOption
-	iam            *IdentityAccessManagement
-	cb             *CircuitBreaker
-	randomClientId int32
-	filerGuard     *security.Guard
-	client         *http.Client
-	bucketRegistry *BucketRegistry
+	option            *S3ApiServerOption
+	iam               *IdentityAccessManagement
+	iamIntegration    *S3IAMIntegration // Advanced IAM integration for JWT authentication
+	cb                *CircuitBreaker
+	randomClientId    int32
+	filerGuard        *security.Guard
+	client            util_http_client.HTTPClientInterface
+	bucketRegistry    *BucketRegistry
+	credentialManager *credential.CredentialManager
+	bucketConfigCache *BucketConfigCache
 }
 
 func NewS3ApiServer(router *mux.Router, option *S3ApiServerOption) (s3ApiServer *S3ApiServer, err error) {
+	return NewS3ApiServerWithStore(router, option, "")
+}
+
+func NewS3ApiServerWithStore(router *mux.Router, option *S3ApiServerOption, explicitStore string) (s3ApiServer *S3ApiServer, err error) {
+	startTsNs := time.Now().UnixNano()
+
 	v := util.GetViper()
 	signingKey := v.GetString("jwt.filer_signing.key")
 	v.SetDefault("jwt.filer_signing.expires_after_seconds", 10)
@@ -62,19 +79,49 @@ func NewS3ApiServer(router *mux.Router, option *S3ApiServerOption) (s3ApiServer 
 
 	v.SetDefault("cors.allowed_origins.values", "*")
 
-	if (option.AllowedOrigins == nil) || (len(option.AllowedOrigins) == 0) {
+	if len(option.AllowedOrigins) == 0 {
 		allowedOrigins := v.GetString("cors.allowed_origins.values")
 		domains := strings.Split(allowedOrigins, ",")
 		option.AllowedOrigins = domains
 	}
 
+	var iam *IdentityAccessManagement
+
+	iam = NewIdentityAccessManagementWithStore(option, explicitStore)
+
 	s3ApiServer = &S3ApiServer{
-		option:         option,
-		iam:            NewIdentityAccessManagement(option),
-		randomClientId: util.RandomInt32(),
-		filerGuard:     security.NewGuard([]string{}, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec, option.Username, option.Password),
-		cb:             NewCircuitBreaker(option),
+		option:            option,
+		iam:               iam,
+		randomClientId:    util.RandomInt32(),
+		filerGuard:        security.NewGuard([]string{}, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec, "", ""),
+		cb:                NewCircuitBreaker(option),
+		credentialManager: iam.credentialManager,
+		bucketConfigCache: NewBucketConfigCache(60 * time.Minute), // Increased TTL since cache is now event-driven
 	}
+
+	// Initialize advanced IAM system if config is provided
+	if option.IamConfig != "" {
+		glog.V(0).Infof("Loading advanced IAM configuration from: %s", option.IamConfig)
+
+		iamManager, err := loadIAMManagerFromConfig(option.IamConfig, func() string {
+			return string(option.Filer)
+		})
+		if err != nil {
+			glog.Errorf("Failed to load IAM configuration: %v", err)
+		} else {
+			// Create S3 IAM integration with the loaded IAM manager
+			s3iam := NewS3IAMIntegration(iamManager, string(option.Filer))
+
+			// Set IAM integration in server
+			s3ApiServer.iamIntegration = s3iam
+
+			// Set the integration in the traditional IAM for compatibility
+			iam.SetIAMIntegration(s3iam)
+
+			glog.V(0).Infof("Advanced IAM system initialized successfully")
+		}
+	}
+
 	if option.Config != "" {
 		grace.OnReload(func() {
 			if err := s3ApiServer.iam.loadS3ApiConfigurationFromFile(option.Config); err != nil {
@@ -86,10 +133,9 @@ func NewS3ApiServer(router *mux.Router, option *S3ApiServerOption) (s3ApiServer 
 	}
 	s3ApiServer.bucketRegistry = NewBucketRegistry(s3ApiServer)
 	if option.LocalFilerSocket == "" {
-		s3ApiServer.client = &http.Client{Transport: &http.Transport{
-			MaxIdleConns:        1024,
-			MaxIdleConnsPerHost: 1024,
-		}}
+		if s3ApiServer.client, err = util_http.NewGlobalHttpClient(); err != nil {
+			return nil, err
+		}
 	} else {
 		s3ApiServer.client = &http.Client{
 			Transport: &http.Transport{
@@ -102,8 +148,66 @@ func NewS3ApiServer(router *mux.Router, option *S3ApiServerOption) (s3ApiServer 
 
 	s3ApiServer.registerRouter(router)
 
-	go s3ApiServer.subscribeMetaEvents("s3", time.Now().UnixNano(), filer.DirectoryEtcRoot, []string{option.BucketsPath})
+	// Initialize the global SSE-S3 key manager with filer access
+	if err := InitializeGlobalSSES3KeyManager(s3ApiServer); err != nil {
+		return nil, fmt.Errorf("failed to initialize SSE-S3 key manager: %w", err)
+	}
+
+	go s3ApiServer.subscribeMetaEvents("s3", startTsNs, filer.DirectoryEtcRoot, []string{option.BucketsPath})
 	return s3ApiServer, nil
+}
+
+// classifyDomainNames classifies domains into path-style and virtual-host style domains.
+// A domain is considered path-style if:
+//  1. It contains a dot (has subdomains)
+//  2. Its parent domain is also in the list of configured domains
+//
+// For example, if domains are ["s3.example.com", "develop.s3.example.com"],
+// then "develop.s3.example.com" is path-style (parent "s3.example.com" is in the list),
+// while "s3.example.com" is virtual-host style.
+func classifyDomainNames(domainNames []string) (pathStyleDomains, virtualHostDomains []string) {
+	for _, domainName := range domainNames {
+		parts := strings.SplitN(domainName, ".", 2)
+		if len(parts) == 2 && slices.Contains(domainNames, parts[1]) {
+			// This is a subdomain and its parent is also in the list
+			// Register as path-style: domain.com/bucket/object
+			pathStyleDomains = append(pathStyleDomains, domainName)
+		} else {
+			// This is a top-level domain or its parent is not in the list
+			// Register as virtual-host style: bucket.domain.com/object
+			virtualHostDomains = append(virtualHostDomains, domainName)
+		}
+	}
+	return pathStyleDomains, virtualHostDomains
+}
+
+// handleCORSOriginValidation handles the common CORS origin validation logic
+func (s3a *S3ApiServer) handleCORSOriginValidation(w http.ResponseWriter, r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin != "" {
+		if len(s3a.option.AllowedOrigins) == 0 || s3a.option.AllowedOrigins[0] == "*" {
+			origin = "*"
+		} else {
+			originFound := false
+			for _, allowedOrigin := range s3a.option.AllowedOrigins {
+				if origin == allowedOrigin {
+					originFound = true
+					break
+				}
+			}
+			if !originFound {
+				writeFailureResponse(w, r, http.StatusForbidden)
+				return false
+			}
+		}
+	}
+
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Access-Control-Expose-Headers", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	return true
 }
 
 func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
@@ -112,47 +216,36 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 
 	// Readiness Probe
 	apiRouter.Methods(http.MethodGet).Path("/status").HandlerFunc(s3a.StatusHandler)
-
-	apiRouter.Methods(http.MethodOptions).HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
-			if origin != "" {
-				if s3a.option.AllowedOrigins == nil || len(s3a.option.AllowedOrigins) == 0 || s3a.option.AllowedOrigins[0] == "*" {
-					origin = "*"
-				} else {
-					originFound := false
-					for _, allowedOrigin := range s3a.option.AllowedOrigins {
-						if origin == allowedOrigin {
-							originFound = true
-						}
-					}
-					if !originFound {
-						writeFailureResponse(w, r, http.StatusForbidden)
-						return
-					}
-				}
-			}
-
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Expose-Headers", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "*")
-			w.Header().Set("Access-Control-Allow-Headers", "*")
-			writeSuccessResponseEmpty(w, r)
-		})
+	apiRouter.Methods(http.MethodGet).Path("/healthz").HandlerFunc(s3a.StatusHandler)
 
 	var routers []*mux.Router
 	if s3a.option.DomainName != "" {
 		domainNames := strings.Split(s3a.option.DomainName, ",")
-		for _, domainName := range domainNames {
+		pathStyleDomains, virtualHostDomains := classifyDomainNames(domainNames)
+
+		// Register path-style domains
+		for _, domain := range pathStyleDomains {
+			routers = append(routers, apiRouter.Host(domain).PathPrefix("/{bucket}").Subrouter())
+		}
+
+		// Register virtual-host style domains
+		for _, virtualHost := range virtualHostDomains {
 			routers = append(routers, apiRouter.Host(
-				fmt.Sprintf("%s.%s:%d", "{bucket:.+}", domainName, s3a.option.Port)).Subrouter())
-			routers = append(routers, apiRouter.Host(
-				fmt.Sprintf("%s.%s", "{bucket:.+}", domainName)).Subrouter())
+				fmt.Sprintf("%s.%s", "{bucket:.+}", virtualHost)).Subrouter())
 		}
 	}
 	routers = append(routers, apiRouter.PathPrefix("/{bucket}").Subrouter())
 
+	// Get CORS middleware instance with caching
+	corsMiddleware := s3a.getCORSMiddleware()
+
 	for _, bucket := range routers {
+		// Apply CORS middleware to bucket routers for automatic CORS header handling
+		bucket.Use(corsMiddleware.Handler)
+
+		// Bucket-specific OPTIONS handler for CORS preflight requests
+		// Use PathPrefix to catch all bucket-level preflight routes including /bucket/object
+		bucket.PathPrefix("/").Methods(http.MethodOptions).HandlerFunc(corsMiddleware.HandleOptionsRequest)
 
 		// each case should follow the next rule:
 		// - requesting object with query must precede any other methods
@@ -190,21 +283,29 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		bucket.Methods(http.MethodPut).Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.PutObjectRetentionHandler, ACTION_WRITE)), "PUT")).Queries("retention", "")
 		// PutObjectLegalHold
 		bucket.Methods(http.MethodPut).Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.PutObjectLegalHoldHandler, ACTION_WRITE)), "PUT")).Queries("legal-hold", "")
-		// PutObjectLockConfiguration
-		bucket.Methods(http.MethodPut).Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.PutObjectLockConfigurationHandler, ACTION_WRITE)), "PUT")).Queries("object-lock", "")
 
 		// GetObjectACL
 		bucket.Methods(http.MethodGet).Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.GetObjectAclHandler, ACTION_READ_ACP)), "GET")).Queries("acl", "")
+		// GetObjectRetention
+		bucket.Methods(http.MethodGet).Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.GetObjectRetentionHandler, ACTION_READ)), "GET")).Queries("retention", "")
+		// GetObjectLegalHold
+		bucket.Methods(http.MethodGet).Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.GetObjectLegalHoldHandler, ACTION_READ)), "GET")).Queries("legal-hold", "")
 
 		// objects with query
 
 		// raw objects
 
 		// HeadObject
-		bucket.Methods(http.MethodHead).Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.HeadObjectHandler, ACTION_READ)), "GET"))
+		bucket.Methods(http.MethodHead).Path("/{object:.+}").HandlerFunc(track(s3a.AuthWithPublicRead(func(w http.ResponseWriter, r *http.Request) {
+			limitedHandler, _ := s3a.cb.Limit(s3a.HeadObjectHandler, ACTION_READ)
+			limitedHandler(w, r)
+		}, ACTION_READ), "GET"))
 
 		// GetObject, but directory listing is not supported
-		bucket.Methods(http.MethodGet).Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.GetObjectHandler, ACTION_READ)), "GET"))
+		bucket.Methods(http.MethodGet).Path("/{object:.+}").HandlerFunc(track(s3a.AuthWithPublicRead(func(w http.ResponseWriter, r *http.Request) {
+			limitedHandler, _ := s3a.cb.Limit(s3a.GetObjectHandler, ACTION_READ)
+			limitedHandler(w, r)
+		}, ACTION_READ), "GET"))
 
 		// CopyObject
 		bucket.Methods(http.MethodPut).Path("/{object:.+}").HeadersRegexp("X-Amz-Copy-Source", ".*?(\\/|%2F).*?").HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.CopyObjectHandler, ACTION_WRITE)), "COPY"))
@@ -256,8 +357,33 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.GetBucketVersioningHandler, ACTION_READ)), "GET")).Queries("versioning", "")
 		bucket.Methods(http.MethodPut).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.PutBucketVersioningHandler, ACTION_WRITE)), "PUT")).Queries("versioning", "")
 
+		// GetObjectLockConfiguration / PutObjectLockConfiguration (bucket-level operations)
+		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.GetObjectLockConfigurationHandler, ACTION_READ)), "GET")).Queries("object-lock", "")
+		bucket.Methods(http.MethodPut).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.PutObjectLockConfigurationHandler, ACTION_WRITE)), "PUT")).Queries("object-lock", "")
+
+		// GetBucketTagging
+		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.GetBucketTaggingHandler, ACTION_TAGGING)), "GET")).Queries("tagging", "")
+		bucket.Methods(http.MethodPut).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.PutBucketTaggingHandler, ACTION_TAGGING)), "PUT")).Queries("tagging", "")
+		bucket.Methods(http.MethodDelete).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.DeleteBucketTaggingHandler, ACTION_TAGGING)), "DELETE")).Queries("tagging", "")
+
+		// GetBucketEncryption
+		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.GetBucketEncryptionHandler, ACTION_ADMIN)), "GET")).Queries("encryption", "")
+		bucket.Methods(http.MethodPut).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.PutBucketEncryptionHandler, ACTION_ADMIN)), "PUT")).Queries("encryption", "")
+		bucket.Methods(http.MethodDelete).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.DeleteBucketEncryptionHandler, ACTION_ADMIN)), "DELETE")).Queries("encryption", "")
+
+		// GetPublicAccessBlockHandler
+		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.GetPublicAccessBlockHandler, ACTION_ADMIN)), "GET")).Queries("publicAccessBlock", "")
+		bucket.Methods(http.MethodPut).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.PutPublicAccessBlockHandler, ACTION_ADMIN)), "PUT")).Queries("publicAccessBlock", "")
+		bucket.Methods(http.MethodDelete).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.DeletePublicAccessBlockHandler, ACTION_ADMIN)), "DELETE")).Queries("publicAccessBlock", "")
+
 		// ListObjectsV2
-		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.ListObjectsV2Handler, ACTION_LIST)), "LIST")).Queries("list-type", "2")
+		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.AuthWithPublicRead(func(w http.ResponseWriter, r *http.Request) {
+			limitedHandler, _ := s3a.cb.Limit(s3a.ListObjectsV2Handler, ACTION_LIST)
+			limitedHandler(w, r)
+		}, ACTION_LIST), "LIST")).Queries("list-type", "2")
+
+		// ListObjectVersions
+		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.ListObjectVersionsHandler, ACTION_LIST)), "LIST")).Queries("versions", "")
 
 		// buckets with query
 		// PutBucketOwnershipControls
@@ -275,7 +401,10 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		bucket.Methods(http.MethodPost).HeadersRegexp("Content-Type", "multipart/form-data*").HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.PostPolicyBucketHandler, ACTION_WRITE)), "POST"))
 
 		// HeadBucket
-		bucket.Methods(http.MethodHead).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.HeadBucketHandler, ACTION_READ)), "GET"))
+		bucket.Methods(http.MethodHead).HandlerFunc(track(s3a.AuthWithPublicRead(func(w http.ResponseWriter, r *http.Request) {
+			limitedHandler, _ := s3a.cb.Limit(s3a.HeadBucketHandler, ACTION_READ)
+			limitedHandler(w, r)
+		}, ACTION_READ), "GET"))
 
 		// PutBucket
 		bucket.Methods(http.MethodPut).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.PutBucketHandler, ACTION_ADMIN)), "PUT"))
@@ -284,11 +413,33 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		bucket.Methods(http.MethodDelete).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.DeleteBucketHandler, ACTION_DELETE_BUCKET)), "DELETE"))
 
 		// ListObjectsV1 (Legacy)
-		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.ListObjectsV1Handler, ACTION_LIST)), "LIST"))
+		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.AuthWithPublicRead(func(w http.ResponseWriter, r *http.Request) {
+			limitedHandler, _ := s3a.cb.Limit(s3a.ListObjectsV1Handler, ACTION_LIST)
+			limitedHandler(w, r)
+		}, ACTION_LIST), "LIST"))
 
 		// raw buckets
 
 	}
+
+	// Global OPTIONS handler for service-level requests (non-bucket requests)
+	// This handles requests like OPTIONS /, OPTIONS /status, OPTIONS /healthz
+	// Place this after bucket handlers to avoid interfering with bucket CORS middleware
+	apiRouter.Methods(http.MethodOptions).PathPrefix("/").HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			// Only handle if this is not a bucket-specific request
+			vars := mux.Vars(r)
+			bucket := vars["bucket"]
+			if bucket != "" {
+				// This is a bucket-specific request, let bucket CORS middleware handle it
+				http.NotFound(w, r)
+				return
+			}
+
+			if s3a.handleCORSOriginValidation(w, r) {
+				writeSuccessResponseEmpty(w, r)
+			}
+		})
 
 	// ListBuckets
 	apiRouter.Methods(http.MethodGet).Path("/").HandlerFunc(track(s3a.ListBucketsHandler, "LIST"))
@@ -296,4 +447,95 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 	// NotFound
 	apiRouter.NotFoundHandler = http.HandlerFunc(s3err.NotFoundHandler)
 
+}
+
+// loadIAMManagerFromConfig loads the advanced IAM manager from configuration file
+func loadIAMManagerFromConfig(configPath string, filerAddressProvider func() string) (*integration.IAMManager, error) {
+	// Read configuration file
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	// Parse configuration structure
+	var configRoot struct {
+		STS       *sts.STSConfig                `json:"sts"`
+		Policy    *policy.PolicyEngineConfig    `json:"policy"`
+		Providers []map[string]interface{}      `json:"providers"`
+		Roles     []*integration.RoleDefinition `json:"roles"`
+		Policies  []struct {
+			Name     string                 `json:"name"`
+			Document *policy.PolicyDocument `json:"document"`
+		} `json:"policies"`
+	}
+
+	if err := json.Unmarshal(configData, &configRoot); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Ensure a valid policy engine config exists
+	if configRoot.Policy == nil {
+		// Provide a secure default if not specified in the config file
+		// Default to Deny with in-memory store so that JSON-defined policies work without filer
+		glog.V(0).Infof("No policy engine config provided; using defaults (DefaultEffect=%s, StoreType=%s)", sts.EffectDeny, sts.StoreTypeMemory)
+		configRoot.Policy = &policy.PolicyEngineConfig{
+			DefaultEffect: sts.EffectDeny,
+			StoreType:     sts.StoreTypeMemory,
+		}
+	}
+
+	// Create IAM configuration
+	iamConfig := &integration.IAMConfig{
+		STS:    configRoot.STS,
+		Policy: configRoot.Policy,
+		Roles: &integration.RoleStoreConfig{
+			StoreType: sts.StoreTypeMemory, // Use memory store for JSON config-based setup
+		},
+	}
+
+	// Initialize IAM manager
+	iamManager := integration.NewIAMManager()
+	if err := iamManager.Initialize(iamConfig, filerAddressProvider); err != nil {
+		return nil, fmt.Errorf("failed to initialize IAM manager: %w", err)
+	}
+
+	// Load identity providers
+	providerFactory := sts.NewProviderFactory()
+	for _, providerConfig := range configRoot.Providers {
+		provider, err := providerFactory.CreateProvider(&sts.ProviderConfig{
+			Name:    providerConfig["name"].(string),
+			Type:    providerConfig["type"].(string),
+			Enabled: true,
+			Config:  providerConfig["config"].(map[string]interface{}),
+		})
+		if err != nil {
+			glog.Warningf("Failed to create provider %s: %v", providerConfig["name"], err)
+			continue
+		}
+		if provider != nil {
+			if err := iamManager.RegisterIdentityProvider(provider); err != nil {
+				glog.Warningf("Failed to register provider %s: %v", providerConfig["name"], err)
+			} else {
+				glog.V(1).Infof("Registered identity provider: %s", providerConfig["name"])
+			}
+		}
+	}
+
+	// Load policies
+	for _, policyDef := range configRoot.Policies {
+		if err := iamManager.CreatePolicy(context.Background(), "", policyDef.Name, policyDef.Document); err != nil {
+			glog.Warningf("Failed to create policy %s: %v", policyDef.Name, err)
+		}
+	}
+
+	// Load roles
+	for _, roleDef := range configRoot.Roles {
+		if err := iamManager.CreateRole(context.Background(), "", roleDef.RoleName, roleDef); err != nil {
+			glog.Warningf("Failed to create role %s: %v", roleDef.RoleName, err)
+		}
+	}
+
+	glog.V(0).Infof("Loaded %d providers, %d policies and %d roles from config", len(configRoot.Providers), len(configRoot.Policies), len(configRoot.Roles))
+
+	return iamManager, nil
 }

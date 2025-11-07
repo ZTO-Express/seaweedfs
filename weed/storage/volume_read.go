@@ -2,11 +2,13 @@ package storage
 
 import (
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/util/mem"
 	"io"
 	"time"
 
+	"github.com/seaweedfs/seaweedfs/weed/util/mem"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"github.com/seaweedfs/seaweedfs/weed/storage/backend"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/storage/super_block"
@@ -163,8 +165,18 @@ func (v *Volume) readNeedleDataInto(n *needle.Needle, readOption *ReadOption, wr
 		toWrite := min(count, int(offset+size-x))
 		if toWrite > 0 {
 			crc = crc.Update(buf[0:toWrite])
+			// the crc.Value() function is to be deprecated. this double checking is for backward compatibility
+			// with seaweed version using crc.Value() instead of uint32(crc), which appears in commit 056c480eb
+			// and switch appeared in version 3.09.
+			if offset == 0 && size == int64(n.DataSize) && int64(count) == size && (n.Checksum != crc && uint32(n.Checksum) != crc.Value()) {
+				// This check works only if the buffer is big enough to hold the whole needle data
+				// and we ask for all needle data.
+				// Otherwise we cannot check the validity of partially aquired data.
+				stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorCRC).Inc()
+				return fmt.Errorf("ReadNeedleData checksum %v expected %v for Needle: %v,%v", crc, n.Checksum, v.Id, n)
+			}
 			if _, err = writer.Write(buf[0:toWrite]); err != nil {
-				return fmt.Errorf("ReadNeedleData write: %v", err)
+				return fmt.Errorf("ReadNeedleData write: %w", err)
 			}
 		}
 		if err != nil {
@@ -172,15 +184,18 @@ func (v *Volume) readNeedleDataInto(n *needle.Needle, readOption *ReadOption, wr
 				err = nil
 				break
 			}
-			return fmt.Errorf("ReadNeedleData: %v", err)
+			return fmt.Errorf("ReadNeedleData: %w", err)
 		}
 		if count <= 0 {
 			break
 		}
 	}
 	if offset == 0 && size == int64(n.DataSize) && (n.Checksum != crc && uint32(n.Checksum) != crc.Value()) {
-		// the crc.Value() function is to be deprecated. this double checking is for backward compatible.
-		return fmt.Errorf("ReadNeedleData checksum %v expected %v", crc, n.Checksum)
+		// the crc.Value() function is to be deprecated. this double checking is for backward compatibility
+		// with seaweed version using crc.Value() instead of uint32(crc), which appears in commit 056c480eb
+		// and switch appeared in version 3.09.
+		stats.VolumeServerHandlerCounter.WithLabelValues(stats.ErrorCRC).Inc()
+		return fmt.Errorf("ReadNeedleData checksum %v expected %v for Needle: %v,%v", crc, n.Checksum, v.Id, n)
 	}
 	return nil
 
@@ -211,7 +226,7 @@ func ScanVolumeFile(dirname string, collection string, id needle.VolumeId,
 	needleMapKind NeedleMapKind,
 	volumeFileScanner VolumeFileScanner) (err error) {
 	var v *Volume
-	if v, err = loadVolumeWithoutIndex(dirname, collection, id, needleMapKind); err != nil {
+	if v, err = loadVolumeWithoutIndex(dirname, collection, id, needleMapKind, needle.GetCurrentVersion()); err != nil {
 		return fmt.Errorf("failed to load volume %d: %v", id, err)
 	}
 	if err = volumeFileScanner.VisitSuperBlock(v.SuperBlock); err != nil {
@@ -250,7 +265,7 @@ func ScanVolumeFileFrom(version needle.Version, datBackend backend.BackendStorag
 		}
 		if err != nil {
 			glog.V(0).Infof("visit needle error: %v", err)
-			return fmt.Errorf("visit needle error: %v", err)
+			return fmt.Errorf("visit needle error: %w", err)
 		}
 		offset += NeedleHeaderSize + rest
 		glog.V(4).Infof("==> new entry offset %d", offset)

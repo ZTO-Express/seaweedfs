@@ -1,14 +1,16 @@
 package wdclient
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
@@ -21,7 +23,7 @@ type HasLookupFileIdFunction interface {
 	GetLookupFileIdFunction() LookupFileIdFunctionType
 }
 
-type LookupFileIdFunctionType func(fileId string) (targetUrls []string, err error)
+type LookupFileIdFunctionType func(ctx context.Context, fileId string) (targetUrls []string, err error)
 
 type Location struct {
 	Url        string `json:"url,omitempty"`
@@ -40,7 +42,7 @@ type vidMap struct {
 	ecVid2Locations map[uint32][]Location
 	DataCenter      string
 	cursor          int32
-	cache           *vidMap
+	cache           atomic.Pointer[vidMap]
 }
 
 func newVidMap(dataCenter string) *vidMap {
@@ -99,7 +101,7 @@ func (vc *vidMap) LookupVolumeServerUrl(vid string) (serverUrls []string, err er
 	return
 }
 
-func (vc *vidMap) LookupFileId(fileId string) (fullUrls []string, err error) {
+func (vc *vidMap) LookupFileId(ctx context.Context, fileId string) (fullUrls []string, err error) {
 	parts := strings.Split(fileId, ",")
 	if len(parts) != 2 {
 		return nil, errors.New("Invalid fileId " + fileId)
@@ -134,8 +136,8 @@ func (vc *vidMap) GetLocations(vid uint32) (locations []Location, found bool) {
 		return locations, found
 	}
 
-	if vc.cache != nil {
-		return vc.cache.GetLocations(vid)
+	if cachedMap := vc.cache.Load(); cachedMap != nil {
+		return cachedMap.GetLocations(vid)
 	}
 
 	return nil, false
@@ -211,8 +213,8 @@ func (vc *vidMap) addEcLocation(vid uint32, location Location) {
 }
 
 func (vc *vidMap) deleteLocation(vid uint32, location Location) {
-	if vc.cache != nil {
-		vc.cache.deleteLocation(vid, location)
+	if cachedMap := vc.cache.Load(); cachedMap != nil {
+		cachedMap.deleteLocation(vid, location)
 	}
 
 	vc.Lock()
@@ -234,8 +236,8 @@ func (vc *vidMap) deleteLocation(vid uint32, location Location) {
 }
 
 func (vc *vidMap) deleteEcLocation(vid uint32, location Location) {
-	if vc.cache != nil {
-		vc.cache.deleteLocation(vid, location)
+	if cachedMap := vc.cache.Load(); cachedMap != nil {
+		cachedMap.deleteEcLocation(vid, location)
 	}
 
 	vc.Lock()

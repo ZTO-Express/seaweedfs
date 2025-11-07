@@ -3,6 +3,7 @@ package weed_server
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,18 +18,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"github.com/google/uuid"
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
+	"github.com/seaweedfs/seaweedfs/weed/util/request_id"
+	"github.com/seaweedfs/seaweedfs/weed/util/version"
+	"google.golang.org/grpc/metadata"
+
+	"github.com/seaweedfs/seaweedfs/weed/filer"
 
 	"google.golang.org/grpc"
 
+	"github.com/gorilla/mux"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/stats"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
-	"github.com/seaweedfs/seaweedfs/weed/util"
-
-	"github.com/gorilla/mux"
 )
 
 var serverStats *stats.ServerStats
@@ -126,6 +130,7 @@ func debug(params ...interface{}) {
 }
 
 func submitForClientHandler(w http.ResponseWriter, r *http.Request, masterFn operation.GetMasterFn, grpcDialOption grpc.DialOption) {
+	ctx := r.Context()
 	m := make(map[string]interface{})
 	if r.Method != http.MethodPost {
 		writeJsonError(w, r, http.StatusMethodNotAllowed, errors.New("Only submit via POST!"))
@@ -160,7 +165,7 @@ func submitForClientHandler(w http.ResponseWriter, r *http.Request, masterFn ope
 		Ttl:         r.FormValue("ttl"),
 		DiskType:    r.FormValue("disk"),
 	}
-	assignResult, ae := operation.Assign(masterFn, grpcDialOption, ar)
+	assignResult, ae := operation.Assign(ctx, masterFn, grpcDialOption, ar)
 	if ae != nil {
 		writeJsonError(w, r, http.StatusInternalServerError, ae)
 		return
@@ -181,8 +186,12 @@ func submitForClientHandler(w http.ResponseWriter, r *http.Request, masterFn ope
 		PairMap:           pu.PairMap,
 		Jwt:               assignResult.Auth,
 	}
-	uploadOption.FillRemoteAuthHeader(r)
-	uploadResult, err := operation.UploadData(pu.Data, uploadOption)
+	uploader, err := operation.NewUploader()
+	if err != nil {
+		writeJsonError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	uploadResult, err := uploader.UploadData(ctx, pu.Data, uploadOption)
 	if err != nil {
 		writeJsonError(w, r, http.StatusInternalServerError, err)
 		return
@@ -232,19 +241,19 @@ func parseURLPath(path string) (vid, fid, filename, ext string, isVolumeIdOnly b
 
 func statsHealthHandler(w http.ResponseWriter, r *http.Request) {
 	m := make(map[string]interface{})
-	m["Version"] = util.Version()
+	m["Version"] = version.Version()
 	writeJsonQuiet(w, r, http.StatusOK, m)
 }
 func statsCounterHandler(w http.ResponseWriter, r *http.Request) {
 	m := make(map[string]interface{})
-	m["Version"] = util.Version()
+	m["Version"] = version.Version()
 	m["Counters"] = serverStats
 	writeJsonQuiet(w, r, http.StatusOK, m)
 }
 
 func statsMemoryHandler(w http.ResponseWriter, r *http.Request) {
 	m := make(map[string]interface{})
-	m["Version"] = util.Version()
+	m["Version"] = version.Version()
 	m["Memory"] = stats.MemStat()
 	writeJsonQuiet(w, r, http.StatusOK, m)
 }
@@ -262,9 +271,12 @@ func handleStaticResources2(r *mux.Router) {
 }
 
 func AdjustPassthroughHeaders(w http.ResponseWriter, r *http.Request, filename string) {
-	for header, values := range r.Header {
-		if normalizedHeader, ok := s3_constants.PassThroughHeaders[strings.ToLower(header)]; ok {
-			w.Header()[normalizedHeader] = values
+	// Apply S3 passthrough headers from query parameters
+	// AWS S3 supports overriding response headers via query parameters like:
+	// ?response-cache-control=no-cache&response-content-type=application/json
+	for queryParam, headerValue := range r.URL.Query() {
+		if normalizedHeader, ok := s3_constants.PassThroughHeaders[strings.ToLower(queryParam)]; ok && len(headerValue) > 0 {
+			w.Header().Set(normalizedHeader, headerValue[0])
 		}
 	}
 	adjustHeaderContentDisposition(w, r, filename)
@@ -299,13 +311,15 @@ func ProcessRangeRequest(r *http.Request, w http.ResponseWriter, totalSize int64
 		writeFn, err := prepareWriteFn(0, totalSize)
 		if err != nil {
 			glog.Errorf("ProcessRangeRequest: %v", err)
+			w.Header().Del("Content-Length")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return fmt.Errorf("ProcessRangeRequest: %v", err)
+			return fmt.Errorf("ProcessRangeRequest: %w", err)
 		}
 		if err = writeFn(bufferedWriter); err != nil {
 			glog.Errorf("ProcessRangeRequest: %v", err)
+			w.Header().Del("Content-Length")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return fmt.Errorf("ProcessRangeRequest: %v", err)
+			return fmt.Errorf("ProcessRangeRequest: %w", err)
 		}
 		return nil
 	}
@@ -316,7 +330,7 @@ func ProcessRangeRequest(r *http.Request, w http.ResponseWriter, totalSize int64
 	if err != nil {
 		glog.Errorf("ProcessRangeRequest headers: %+v err: %v", w.Header(), err)
 		http.Error(w, err.Error(), http.StatusRequestedRangeNotSatisfiable)
-		return fmt.Errorf("ProcessRangeRequest header: %v", err)
+		return fmt.Errorf("ProcessRangeRequest header: %w", err)
 	}
 	if sumRangesSize(ranges) > totalSize {
 		// The total number of bytes in all the ranges
@@ -347,15 +361,16 @@ func ProcessRangeRequest(r *http.Request, w http.ResponseWriter, totalSize int64
 		writeFn, err := prepareWriteFn(ra.start, ra.length)
 		if err != nil {
 			glog.Errorf("ProcessRangeRequest range[0]: %+v err: %v", w.Header(), err)
+			w.Header().Del("Content-Length")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return fmt.Errorf("ProcessRangeRequest: %v", err)
+			return fmt.Errorf("ProcessRangeRequest: %w", err)
 		}
 		w.WriteHeader(http.StatusPartialContent)
 		err = writeFn(bufferedWriter)
 		if err != nil {
 			glog.Errorf("ProcessRangeRequest range[0]: %+v err: %v", w.Header(), err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return fmt.Errorf("ProcessRangeRequest range[0]: %v", err)
+			// Cannot call http.Error() here because WriteHeader was already called
+			return fmt.Errorf("ProcessRangeRequest range[0]: %w", err)
 		}
 		return nil
 	}
@@ -366,7 +381,7 @@ func ProcessRangeRequest(r *http.Request, w http.ResponseWriter, totalSize int64
 	for i, ra := range ranges {
 		if ra.start > totalSize {
 			http.Error(w, "Out of Range", http.StatusRequestedRangeNotSatisfiable)
-			return fmt.Errorf("out of range: %v", err)
+			return fmt.Errorf("out of range: %w", err)
 		}
 		writeFn, err := prepareWriteFn(ra.start, ra.length)
 		if err != nil {
@@ -408,8 +423,26 @@ func ProcessRangeRequest(r *http.Request, w http.ResponseWriter, totalSize int64
 	w.WriteHeader(http.StatusPartialContent)
 	if _, err := io.CopyN(bufferedWriter, sendContent, sendSize); err != nil {
 		glog.Errorf("ProcessRangeRequest err: %v", err)
-		http.Error(w, "Internal Error", http.StatusInternalServerError)
-		return fmt.Errorf("ProcessRangeRequest err: %v", err)
+		// Cannot call http.Error() here because WriteHeader was already called
+		return fmt.Errorf("ProcessRangeRequest err: %w", err)
 	}
 	return nil
+}
+
+func requestIDMiddleware(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		reqID := r.Header.Get(request_id.AmzRequestIDHeader)
+		if reqID == "" {
+			reqID = uuid.New().String()
+		}
+
+		ctx := context.WithValue(r.Context(), request_id.AmzRequestIDHeader, reqID)
+		ctx = metadata.NewOutgoingContext(ctx,
+			metadata.New(map[string]string{
+				request_id.AmzRequestIDHeader: reqID,
+			}))
+
+		w.Header().Set(request_id.AmzRequestIDHeader, reqID)
+		h(w, r.WithContext(ctx))
+	}
 }

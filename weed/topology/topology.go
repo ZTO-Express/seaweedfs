@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	transport "github.com/Jille/raft-grpc-transport"
 	"math/rand"
+	"slices"
 	"sync"
 	"time"
+
+	transport "github.com/Jille/raft-grpc-transport"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
@@ -52,8 +54,13 @@ type Topology struct {
 	RaftServerAccessLock          sync.RWMutex
 	HashicorpRaft                 *hashicorpRaft.Raft
 	HashicorpRaftTransportManager *transport.Manager
-	UuidAccessLock                sync.RWMutex
-	UuidMap                       map[string][]string
+
+	barrierLock    sync.Mutex
+	barrierDone    bool
+	UuidAccessLock sync.RWMutex
+	UuidMap        map[string][]string
+
+	LastLeaderChangeTime time.Time
 }
 
 func NewTopology(id string, seq sequence.Sequencer, volumeSizeLimit uint64, pulse int, replicationAsMin bool) *Topology {
@@ -63,6 +70,7 @@ func NewTopology(id string, seq sequence.Sequencer, volumeSizeLimit uint64, puls
 	t.NodeImpl.value = t
 	t.diskUsages = newDiskUsages()
 	t.children = make(map[NodeId]Node)
+	t.capacityReservations = newCapacityReservations()
 	t.collectionMap = util.NewConcurrentReadMap()
 	t.ecShardMap = make(map[needle.VolumeId]*EcShardLocations)
 	t.pulse = int64(pulse)
@@ -120,6 +128,42 @@ func (t *Topology) IsLeader() bool {
 		}
 	}
 	return false
+}
+
+func (t *Topology) IsLeaderAndCanRead() bool {
+	if t.RaftServer != nil {
+		return t.IsLeader()
+	} else if t.HashicorpRaft != nil {
+		return t.IsLeader() && t.DoBarrier()
+	} else {
+		return false
+	}
+}
+
+func (t *Topology) DoBarrier() bool {
+	t.barrierLock.Lock()
+	defer t.barrierLock.Unlock()
+	if t.barrierDone {
+		return true
+	}
+
+	glog.V(0).Infof("raft do barrier")
+	barrier := t.HashicorpRaft.Barrier(2 * time.Minute)
+	if err := barrier.Error(); err != nil {
+		glog.Errorf("failed to wait for barrier, error %s", err)
+		return false
+
+	}
+
+	t.barrierDone = true
+	glog.V(0).Infof("raft do barrier success")
+	return true
+}
+
+func (t *Topology) BarrierReset() {
+	t.barrierLock.Lock()
+	defer t.barrierLock.Unlock()
+	t.barrierDone = false
 }
 
 func (t *Topology) Leader() (l pb.ServerAddress, err error) {
@@ -184,6 +228,10 @@ func (t *Topology) Lookup(collection string, vid needle.VolumeId) (dataNodes []*
 }
 
 func (t *Topology) NextVolumeId() (needle.VolumeId, error) {
+	if !t.IsLeaderAndCanRead() {
+		return 0, fmt.Errorf("as leader can not read yet")
+
+	}
 	vid := t.GetMaxVolumeId()
 	next := vid.Next()
 
@@ -212,8 +260,8 @@ func (t *Topology) PickForWrite(requestedCount uint64, option *VolumeGrowOption,
 	if err != nil {
 		return "", 0, nil, shouldGrow, fmt.Errorf("failed to find writable volumes for collection:%s replication:%s ttl:%s error: %v", option.Collection, option.ReplicaPlacement.String(), option.Ttl.String(), err)
 	}
-	if volumeLocationList.Length() == 0 {
-		return "", 0, nil, shouldGrow, fmt.Errorf("no writable volumes available for collection:%s replication:%s ttl:%s", option.Collection, option.ReplicaPlacement.String(), option.Ttl.String())
+	if volumeLocationList == nil || volumeLocationList.Length() == 0 {
+		return "", 0, nil, shouldGrow, fmt.Errorf("%s available for collection:%s replication:%s ttl:%s", NoWritableVolumes, option.Collection, option.ReplicaPlacement.String(), option.Ttl.String())
 	}
 	nextFileId := t.Sequence.NextFileId(requestedCount)
 	fileId = needle.NewFileId(vid, nextFileId, rand.Uint32()).String()
@@ -227,23 +275,29 @@ func (t *Topology) GetVolumeLayout(collectionName string, rp *super_block.Replic
 }
 
 func (t *Topology) ListCollections(includeNormalVolumes, includeEcVolumes bool) (ret []string) {
+	found := make(map[string]bool)
 
-	mapOfCollections := make(map[string]bool)
-	for _, c := range t.collectionMap.Items() {
-		mapOfCollections[c.(*Collection).Name] = true
+	if includeNormalVolumes {
+		t.collectionMap.RLock()
+		for _, c := range t.collectionMap.Items() {
+			found[c.(*Collection).Name] = true
+		}
+		t.collectionMap.RUnlock()
 	}
 
 	if includeEcVolumes {
 		t.ecShardMapLock.RLock()
 		for _, ecVolumeLocation := range t.ecShardMap {
-			mapOfCollections[ecVolumeLocation.Collection] = true
+			found[ecVolumeLocation.Collection] = true
 		}
 		t.ecShardMapLock.RUnlock()
 	}
 
-	for k := range mapOfCollections {
+	for k := range found {
 		ret = append(ret, k)
 	}
+	slices.Sort(ret)
+
 	return ret
 }
 
@@ -276,6 +330,7 @@ func (t *Topology) RegisterVolumeLayout(v storage.VolumeInfo, dn *DataNode) {
 	vl.RegisterVolume(&v, dn)
 	vl.EnsureCorrectWritables(&v)
 }
+
 func (t *Topology) UnRegisterVolumeLayout(v storage.VolumeInfo, dn *DataNode) {
 	glog.Infof("removing volume info: %+v from %v", v, dn.id)
 	if v.ReplicaPlacement.GetCopyCount() > 1 {
@@ -290,7 +345,7 @@ func (t *Topology) UnRegisterVolumeLayout(v storage.VolumeInfo, dn *DataNode) {
 }
 
 func (t *Topology) DataCenterExists(dcName string) bool {
-	return dcName == "" || t.GetOrCreateDataCenter(dcName) != nil
+	return dcName == "" || t.GetDataCenter(dcName) != nil
 }
 
 func (t *Topology) GetDataCenter(dcName string) (dc *DataCenter) {
@@ -317,6 +372,28 @@ func (t *Topology) GetOrCreateDataCenter(dcName string) *DataCenter {
 	dc := NewDataCenter(dcName)
 	t.doLinkChildNode(dc)
 	return dc
+}
+
+func (t *Topology) ListDataCenters() (dcs []string) {
+	t.RLock()
+	defer t.RUnlock()
+	for _, c := range t.children {
+		dcs = append(dcs, string(c.(*DataCenter).Id()))
+	}
+	return dcs
+}
+
+func (t *Topology) ListDCAndRacks() (dcs map[NodeId][]NodeId) {
+	t.RLock()
+	defer t.RUnlock()
+	dcs = make(map[NodeId][]NodeId)
+	for _, dcNode := range t.children {
+		dcNodeId := dcNode.(*DataCenter).Id()
+		for _, rackNode := range dcNode.Children() {
+			dcs[dcNodeId] = append(dcs[dcNodeId], rackNode.(*Rack).Id())
+		}
+	}
+	return dcs
 }
 
 func (t *Topology) SyncDataNodeRegistration(volumes []*master_pb.VolumeInformationMessage, dn *DataNode) (newVolumes, deletedVolumes []storage.VolumeInfo) {

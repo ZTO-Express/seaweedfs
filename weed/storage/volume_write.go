@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
+	"syscall"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/storage/backend"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	. "github.com/seaweedfs/seaweedfs/weed/storage/types"
-	"os"
 )
 
 var ErrorNotFound = errors.New("not found")
@@ -22,7 +24,7 @@ func (v *Volume) checkReadWriteError(err error) {
 		}
 		return
 	}
-	if err.Error() == "input/output error" {
+	if errors.Is(err, syscall.EIO) {
 		v.lastIoError = err
 	}
 }
@@ -80,8 +82,6 @@ func (v *Volume) Destroy(onlyEmpty bool) (err error) {
 		}
 	}
 	v.doClose()
-
-	//skipVif := util.FileExists(VolumeFileName(v.dir, v.Collection, int(v.Id)) + ".ecx") //如果目录下面有ec的文件，不要删除vif
 	removeVolumeFiles(v.DataFileName())
 	removeVolumeFiles(v.IndexFileName())
 	return
@@ -91,7 +91,6 @@ func removeVolumeFiles(filename string) {
 	// basic
 	os.Remove(filename + ".dat")
 	os.Remove(filename + ".idx")
-
 	os.Remove(filename + ".vif")
 	// sorted index file
 	os.Remove(filename + ".sdx")
@@ -150,7 +149,7 @@ func (v *Volume) doWriteRequest(n *needle.Needle, checkCookie bool) (offset uint
 	if ok {
 		existingNeedle, _, _, existingNeedleReadErr := needle.ReadNeedleHeader(v.DataBackend, v.Version(), nv.Offset.ToActualOffset())
 		if existingNeedleReadErr != nil {
-			err = fmt.Errorf("reading existing needle: %v", existingNeedleReadErr)
+			err = fmt.Errorf("reading existing needle: %w", existingNeedleReadErr)
 			return
 		}
 		if n.Cookie == 0 && !checkCookie {
@@ -168,9 +167,11 @@ func (v *Volume) doWriteRequest(n *needle.Needle, checkCookie bool) (offset uint
 
 	// append to dat file
 	n.UpdateAppendAtNs(v.lastAppendAtNs)
-	offset, size, _, err = n.Append(v.DataBackend, v.Version())
+	var actualSize int64
+	offset, size, actualSize, err = n.Append(v.DataBackend, v.Version())
 	v.checkReadWriteError(err)
 	if err != nil {
+		err = fmt.Errorf("append to volume %d size %d actualSize %d: %v", v.Id, size, actualSize, err)
 		return
 	}
 	v.lastAppendAtNs = n.AppendAtNs
@@ -220,7 +221,7 @@ func (v *Volume) doDeleteRequest(n *needle.Needle) (Size, error) {
 	glog.V(4).Infof("delete needle %s", needle.NewFileIdFromNeedle(v.Id, n).String())
 	nv, ok := v.nm.Get(n.Id)
 	// fmt.Println("key", n.Id, "volume offset", nv.Offset, "data_size", n.Size, "cached size", nv.Size)
-	if ok && nv.Size.IsValid() {
+	if ok && !nv.Size.IsDeleted() {
 		var offset uint64
 		var err error
 		size := nv.Size
@@ -326,6 +327,19 @@ func (v *Volume) WriteNeedleBlob(needleId NeedleId, needleBlob []byte, size Size
 		return fmt.Errorf("volume size limit %d exceeded! current size is %d", MaxPossibleVolumeSize, v.nm.ContentSize())
 	}
 
+	nv, ok := v.nm.Get(needleId)
+	if ok && nv.Size == size {
+		oldNeedle := new(needle.Needle)
+		err := oldNeedle.ReadData(v.DataBackend, nv.Offset.ToActualOffset(), nv.Size, v.Version())
+		if err == nil {
+			newNeedle := new(needle.Needle)
+			err = newNeedle.ReadBytes(needleBlob, nv.Offset.ToActualOffset(), size, v.Version())
+			if err == nil && oldNeedle.Cookie == newNeedle.Cookie && oldNeedle.Checksum == newNeedle.Checksum && bytes.Equal(oldNeedle.Data, newNeedle.Data) {
+				glog.V(0).Infof("needle %v already exists", needleId)
+				return nil
+			}
+		}
+	}
 	appendAtNs := needle.GetAppendAtNs(v.lastAppendAtNs)
 	offset, err := needle.WriteNeedleBlob(v.DataBackend, needleBlob, size, appendAtNs, v.Version())
 

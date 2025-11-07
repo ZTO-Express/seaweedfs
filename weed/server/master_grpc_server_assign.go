@@ -3,9 +3,11 @@ package weed_server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
+	"github.com/seaweedfs/seaweedfs/weed/stats"
 
 	"github.com/seaweedfs/raft"
 
@@ -58,6 +60,7 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 	}
 	diskType := types.ToDiskType(req.DiskType)
 
+	ver := needle.GetCurrentVersion()
 	option := &topology.VolumeGrowOption{
 		Collection:         req.Collection,
 		ReplicaPlacement:   replicaPlacement,
@@ -68,6 +71,7 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 		Rack:               req.Rack,
 		DataNode:           req.DataNode,
 		MemoryMapMaxSizeMb: req.MemoryMapMaxSizeMb,
+		Version:            uint32(ver),
 	}
 
 	if !ms.Topo.DataCenterExists(option.DataCenter) {
@@ -75,6 +79,7 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 	}
 
 	vl := ms.Topo.GetVolumeLayout(option.Collection, option.ReplicaPlacement, option.Ttl, option.DiskType)
+	vl.SetLastGrowCount(req.WritableVolumeCount)
 
 	var (
 		lastErr    error
@@ -84,20 +89,24 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 
 	for time.Now().Sub(startTime) < maxTimeout {
 		fid, count, dnList, shouldGrow, err := ms.Topo.PickForWrite(req.Count, option, vl)
-		if shouldGrow && !vl.HasGrowRequest() && vl.ShouldGrowVolumes(option) {
-			// if picked volume is almost full, trigger a volume-grow request
-			if ms.Topo.AvailableSpaceFor(option) <= 0 {
-				return nil, fmt.Errorf("no free volumes left for " + option.String())
+		if shouldGrow && !vl.HasGrowRequest() && vl.ShouldGrowVolumes() && !ms.option.VolumeGrowthDisabled {
+			if err != nil && ms.Topo.AvailableSpaceFor(option) <= 0 {
+				err = fmt.Errorf("%s and no free volumes left for %s", err.Error(), option.String())
 			}
 			vl.AddGrowRequest()
 			ms.volumeGrowthRequestChan <- &topology.VolumeGrowRequest{
 				Option: option,
-				Count:  int(req.WritableVolumeCount),
+				Count:  req.WritableVolumeCount,
+				Reason: "grpc assign",
 			}
 		}
 		if err != nil {
-			// glog.Warningf("PickForWrite %+v: %v", req, err)
+			glog.V(1).Infof("assign %v %v: %v", req, option.String(), err)
+			stats.MasterPickForWriteErrorCounter.Inc()
 			lastErr = err
+			if (req.DataCenter != "" || req.Rack != "") && strings.Contains(err.Error(), topology.NoWritableVolumes) {
+				break
+			}
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
@@ -126,6 +135,9 @@ func (ms *MasterServer) Assign(ctx context.Context, req *master_pb.AssignRequest
 			Auth:     string(security.GenJwtForVolumeServer(ms.guard.SigningKey, ms.guard.ExpiresAfterSec, fid)),
 			Replicas: replicas,
 		}, nil
+	}
+	if lastErr != nil {
+		glog.V(0).Infof("assign %v %v: %v", req, option.String(), lastErr)
 	}
 	return nil, lastErr
 }

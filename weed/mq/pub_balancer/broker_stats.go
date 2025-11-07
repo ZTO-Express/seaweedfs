@@ -5,6 +5,7 @@ import (
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 )
 
 type BrokerStats struct {
@@ -53,7 +54,7 @@ func (bs *BrokerStats) UpdateStats(stats *mq_pb.BrokerStats) {
 		}
 		publisherCount += topicPartitionStats.PublisherCount
 		subscriberCount += topicPartitionStats.SubscriberCount
-		key := tps.TopicPartition.String()
+		key := tps.TopicPartition.TopicPartitionId()
 		bs.TopicPartitionStats.Set(key, tps)
 		delete(currentTopicPartitions, key)
 	}
@@ -65,7 +66,7 @@ func (bs *BrokerStats) UpdateStats(stats *mq_pb.BrokerStats) {
 	bs.SubscriberCount = subscriberCount
 }
 
-func (bs *BrokerStats) RegisterAssignment(t *mq_pb.Topic, partition *mq_pb.Partition, isAdd bool) {
+func (bs *BrokerStats) RegisterAssignment(t *schema_pb.Topic, partition *schema_pb.Partition, isAdd bool) {
 	tps := &TopicPartitionStats{
 		TopicPartition: topic.TopicPartition{
 			Topic: topic.Topic{Namespace: t.Namespace, Name: t.Name},
@@ -79,7 +80,7 @@ func (bs *BrokerStats) RegisterAssignment(t *mq_pb.Topic, partition *mq_pb.Parti
 		PublisherCount:  0,
 		SubscriberCount: 0,
 	}
-	key := tps.TopicPartition.String()
+	key := tps.TopicPartition.TopicPartitionId()
 	if isAdd {
 		bs.TopicPartitionStats.SetIfAbsent(key, tps)
 	} else {

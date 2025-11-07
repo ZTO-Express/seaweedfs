@@ -10,23 +10,21 @@ import (
 	"sort"
 	"strings"
 
+	"slices"
+
+	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
 	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-)
-
-var (
-	client *http.Client
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 )
 
 func init() {
-	client = &http.Client{}
 	Commands = append(Commands, &commandFsMergeVolumes{})
 }
 
@@ -46,6 +44,10 @@ func (c *commandFsMergeVolumes) Help() string {
 
 	fs.mergeVolumes [-toVolumeId=y] [-fromVolumeId=x] [-collection="*"] [-dir=/] [-apply]
 `
+}
+
+func (c *commandFsMergeVolumes) HasTag(CommandTag) bool {
+	return false
 }
 
 func (c *commandFsMergeVolumes) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
@@ -88,7 +90,7 @@ func (c *commandFsMergeVolumes) Do(args []string, commandEnv *CommandEnv, writer
 				"volume %d (%d MB) cannot merge into volume %d (%d MB_ due to volume size limit (%d MB)",
 				fromVolumeId, fromSize/1024/1024,
 				toVolumeId, toSize/1024/1024,
-				c.volumeSizeLimit/1024/102,
+				c.volumeSizeLimit/1024/1024,
 			)
 		}
 	}
@@ -104,7 +106,7 @@ func (c *commandFsMergeVolumes) Do(args []string, commandEnv *CommandEnv, writer
 		return nil
 	}
 
-	defer client.CloseIdleConnections()
+	defer util_http.GetGlobalHttpClient().CloseIdleConnections()
 
 	return commandEnv.WithFilerClient(false, func(filerClient filer_pb.SeaweedFilerClient) error {
 		return filer_pb.TraverseBfs(commandEnv, util.FullPath(dir), func(parentPath util.FullPath, entry *filer_pb.Entry) {
@@ -112,13 +114,13 @@ func (c *commandFsMergeVolumes) Do(args []string, commandEnv *CommandEnv, writer
 				return
 			}
 			for _, chunk := range entry.Chunks {
-				if chunk.IsChunkManifest {
-					fmt.Printf("Change volume id for large file is not implemented yet: %s/%s\n", parentPath, entry.Name)
-					continue
-				}
 				chunkVolumeId := needle.VolumeId(chunk.Fid.VolumeId)
 				toVolumeId, found := plan[chunkVolumeId]
 				if !found {
+					continue
+				}
+				if chunk.IsChunkManifest {
+					fmt.Printf("Change volume id for large file is not implemented yet: %s/%s\n", parentPath, entry.Name)
 					continue
 				}
 				path := parentPath.Child(entry.Name)
@@ -132,7 +134,7 @@ func (c *commandFsMergeVolumes) Do(args []string, commandEnv *CommandEnv, writer
 					continue
 				}
 
-				if err = filer_pb.UpdateEntry(filerClient, &filer_pb.UpdateEntryRequest{
+				if err = filer_pb.UpdateEntry(context.Background(), filerClient, &filer_pb.UpdateEntryRequest{
 					Directory: string(parentPath),
 					Entry:     entry,
 				}); err != nil {
@@ -197,44 +199,58 @@ func (c *commandFsMergeVolumes) reloadVolumesInfo(masterClient *wdclient.MasterC
 
 func (c *commandFsMergeVolumes) createMergePlan(collection string, toVolumeId needle.VolumeId, fromVolumeId needle.VolumeId) (map[needle.VolumeId]needle.VolumeId, error) {
 	plan := make(map[needle.VolumeId]needle.VolumeId)
-	volumes := maps.Keys(c.volumes)
-	sort.Slice(volumes, func(a, b int) bool {
-		return c.volumes[volumes[b]].Size < c.volumes[volumes[a]].Size
+	volumeIds := maps.Keys(c.volumes)
+	sort.Slice(volumeIds, func(a, b int) bool {
+		return c.volumes[volumeIds[b]].Size < c.volumes[volumeIds[a]].Size
 	})
 
-	l := len(volumes)
+	l := len(volumeIds)
 	for i := 0; i < l; i++ {
-		volume := c.volumes[volumes[i]]
+		volume := c.volumes[volumeIds[i]]
 		if volume.GetReadOnly() || c.getVolumeSize(volume) == 0 || (collection != "*" && collection != volume.GetCollection()) {
-			volumes = slices.Delete(volumes, i, i+1)
+
+			if fromVolumeId != 0 && volumeIds[i] == fromVolumeId || toVolumeId != 0 && volumeIds[i] == toVolumeId {
+				if volume.GetReadOnly() {
+					return nil, fmt.Errorf("volume %d is readonly", volumeIds[i])
+				}
+				if c.getVolumeSize(volume) == 0 {
+					return nil, fmt.Errorf("volume %d is empty", volumeIds[i])
+				}
+			}
+			volumeIds = slices.Delete(volumeIds, i, i+1)
 			i--
 			l--
 		}
 	}
 	for i := l - 1; i >= 0; i-- {
-		src := volumes[i]
+		src := volumeIds[i]
 		if fromVolumeId != 0 && src != fromVolumeId {
 			continue
 		}
 		for j := 0; j < i; j++ {
-			condidate := volumes[j]
-			if toVolumeId != 0 && condidate != toVolumeId {
+			candidate := volumeIds[j]
+			if toVolumeId != 0 && candidate != toVolumeId {
 				continue
 			}
-			if _, moving := plan[condidate]; moving {
+			if _, moving := plan[candidate]; moving {
 				continue
 			}
-			compatible, err := c.volumesAreCompatible(src, condidate)
+			compatible, err := c.volumesAreCompatible(src, candidate)
 			if err != nil {
 				return nil, err
 			}
 			if !compatible {
+				fmt.Printf("volume %d is not compatible with volume %d\n", src, candidate)
 				continue
 			}
-			if c.getVolumeSizeBasedOnPlan(plan, condidate)+c.getVolumeSizeById(src) > c.volumeSizeLimit {
+			if c.getVolumeSizeBasedOnPlan(plan, candidate)+c.getVolumeSizeById(src) > c.volumeSizeLimit {
+				fmt.Printf("volume %d (%d MB) merge into volume %d (%d MB) exceeds volume size limit (%d MB)\n",
+					src, c.getVolumeSizeById(src)/1024/1024,
+					candidate, c.getVolumeSizeById(candidate)/1024/1024,
+					c.volumeSizeLimit/1024/1024)
 				continue
 			}
-			plan[src] = condidate
+			plan[src] = candidate
 			break
 		}
 	}
@@ -304,7 +320,7 @@ func moveChunk(chunk *filer_pb.FileChunk, toVolumeId needle.VolumeId, masterClie
 	if err != nil {
 		return err
 	}
-	defer util.CloseResponse(resp)
+	defer util_http.CloseResponse(resp)
 	defer reader.Close()
 
 	var filename string
@@ -322,7 +338,20 @@ func moveChunk(chunk *filer_pb.FileChunk, toVolumeId needle.VolumeId, masterClie
 	isCompressed := resp.Header.Get("Content-Encoding") == "gzip"
 	md5 := resp.Header.Get("Content-MD5")
 
-	_, err, _ = operation.Upload(reader, &operation.UploadOption{
+	uploader, err := operation.NewUploader()
+	if err != nil {
+		return err
+	}
+
+	v := util.GetViper()
+	signingKey := v.GetString("jwt.signing.key")
+	var jwt security.EncodedJwt
+	if signingKey != "" {
+		expiresAfterSec := v.GetInt("jwt.signing.expires_after_seconds")
+		jwt = security.GenJwtForVolumeServer(security.SigningKey(signingKey), expiresAfterSec, toFid.String())
+	}
+
+	_, err, _ = uploader.Upload(context.Background(), reader, &operation.UploadOption{
 		UploadUrl:         uploadURL,
 		Filename:          filename,
 		IsInputCompressed: isCompressed,
@@ -330,6 +359,7 @@ func moveChunk(chunk *filer_pb.FileChunk, toVolumeId needle.VolumeId, masterClie
 		MimeType:          contentType,
 		PairMap:           nil,
 		Md5:               md5,
+		Jwt:               security.EncodedJwt(jwt),
 	})
 	if err != nil {
 		return err
@@ -348,12 +378,12 @@ func readUrl(fileUrl string) (*http.Response, io.ReadCloser, error) {
 	}
 	req.Header.Add("Accept-Encoding", "gzip")
 
-	r, err := client.Do(req)
+	r, err := util_http.GetGlobalHttpClient().Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
 	if r.StatusCode >= 400 {
-		util.CloseResponse(r)
+		util_http.CloseResponse(r)
 		return nil, nil, fmt.Errorf("%s: %s", fileUrl, r.Status)
 	}
 

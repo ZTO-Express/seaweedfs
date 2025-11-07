@@ -10,20 +10,27 @@ import (
 
 type EcShardLocations struct {
 	Collection string
-	Locations  [erasure_coding.TotalShardsCount][]*DataNode
+	// Use MaxShardCount (32) to support custom EC ratios
+	Locations [erasure_coding.MaxShardCount][]*DataNode
 }
 
 func (t *Topology) SyncDataNodeEcShards(shardInfos []*master_pb.VolumeEcShardInformationMessage, dn *DataNode) (newShards, deletedShards []*erasure_coding.EcVolumeInfo) {
 	// convert into in memory struct storage.VolumeInfo
 	var shards []*erasure_coding.EcVolumeInfo
 	for _, shardInfo := range shardInfos {
-		shards = append(shards,
-			erasure_coding.NewEcVolumeInfo(
-				shardInfo.DiskType,
-				shardInfo.Collection,
-				needle.VolumeId(shardInfo.Id),
-				erasure_coding.ShardBits(shardInfo.EcIndexBits),
-				shardInfo.DestroyTime, shardInfo.Dir))
+		// Create EcVolumeInfo directly with optimized format
+		ecVolumeInfo := &erasure_coding.EcVolumeInfo{
+			VolumeId:    needle.VolumeId(shardInfo.Id),
+			Collection:  shardInfo.Collection,
+			ShardBits:   erasure_coding.ShardBits(shardInfo.EcIndexBits),
+			DiskType:    shardInfo.DiskType,
+			DiskId:      shardInfo.DiskId,
+			DestroyTime: shardInfo.DestroyTime,
+			ShardSizes:  shardInfo.ShardSizes,
+			Dir:         shardInfo.Dir,
+		}
+
+		shards = append(shards, ecVolumeInfo)
 	}
 	// find out the delta volumes
 	newShards, deletedShards = dn.UpdateEcShards(shards)
@@ -40,20 +47,32 @@ func (t *Topology) IncrementalSyncDataNodeEcShards(newEcShards, deletedEcShards 
 	// convert into in memory struct storage.VolumeInfo
 	var newShards, deletedShards []*erasure_coding.EcVolumeInfo
 	for _, shardInfo := range newEcShards {
-		newShards = append(newShards,
-			erasure_coding.NewEcVolumeInfo(
-				shardInfo.DiskType,
-				shardInfo.Collection,
-				needle.VolumeId(shardInfo.Id),
-				erasure_coding.ShardBits(shardInfo.EcIndexBits), shardInfo.DestroyTime, shardInfo.Dir))
+		// Create EcVolumeInfo directly with optimized format
+		ecVolumeInfo := &erasure_coding.EcVolumeInfo{
+			VolumeId:    needle.VolumeId(shardInfo.Id),
+			Collection:  shardInfo.Collection,
+			ShardBits:   erasure_coding.ShardBits(shardInfo.EcIndexBits),
+			DiskType:    shardInfo.DiskType,
+			DiskId:      shardInfo.DiskId,
+			DestroyTime: shardInfo.DestroyTime,
+			ShardSizes:  shardInfo.ShardSizes,
+		}
+
+		newShards = append(newShards, ecVolumeInfo)
 	}
 	for _, shardInfo := range deletedEcShards {
-		deletedShards = append(deletedShards,
-			erasure_coding.NewEcVolumeInfo(
-				shardInfo.DiskType,
-				shardInfo.Collection,
-				needle.VolumeId(shardInfo.Id),
-				erasure_coding.ShardBits(shardInfo.EcIndexBits), shardInfo.DestroyTime, shardInfo.Dir))
+		// Create EcVolumeInfo directly with optimized format
+		ecVolumeInfo := &erasure_coding.EcVolumeInfo{
+			VolumeId:    needle.VolumeId(shardInfo.Id),
+			Collection:  shardInfo.Collection,
+			ShardBits:   erasure_coding.ShardBits(shardInfo.EcIndexBits),
+			DiskType:    shardInfo.DiskType,
+			DiskId:      shardInfo.DiskId,
+			DestroyTime: shardInfo.DestroyTime,
+			ShardSizes:  shardInfo.ShardSizes,
+		}
+
+		deletedShards = append(deletedShards, ecVolumeInfo)
 	}
 
 	dn.DeltaUpdateEcShards(newShards, deletedShards)
@@ -74,6 +93,10 @@ func NewEcShardLocations(collection string) *EcShardLocations {
 }
 
 func (loc *EcShardLocations) AddShard(shardId erasure_coding.ShardId, dn *DataNode) (added bool) {
+	// Defensive bounds check to prevent panic with out-of-range shard IDs
+	if int(shardId) >= erasure_coding.MaxShardCount {
+		return false
+	}
 	dataNodes := loc.Locations[shardId]
 	for _, n := range dataNodes {
 		if n.Id() == dn.Id() {
@@ -85,6 +108,10 @@ func (loc *EcShardLocations) AddShard(shardId erasure_coding.ShardId, dn *DataNo
 }
 
 func (loc *EcShardLocations) DeleteShard(shardId erasure_coding.ShardId, dn *DataNode) (deleted bool) {
+	// Defensive bounds check to prevent panic with out-of-range shard IDs
+	if int(shardId) >= erasure_coding.MaxShardCount {
+		return false
+	}
 	dataNodes := loc.Locations[shardId]
 	foundIndex := -1
 	for index, n := range dataNodes {

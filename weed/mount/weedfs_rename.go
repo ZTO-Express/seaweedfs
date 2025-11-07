@@ -3,15 +3,16 @@ package mount
 import (
 	"context"
 	"fmt"
+	"io"
+	"strings"
+	"syscall"
+
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"io"
-	"strings"
-	"syscall"
 )
 
 /** Rename a file
@@ -160,6 +161,15 @@ func (wfs *WFS) Rename(cancel <-chan struct{}, in *fuse.RenameIn, oldName string
 	}
 	newPath := newDir.Child(newName)
 
+	oldEntry, status := wfs.maybeLoadEntry(oldPath)
+	if status != fuse.OK {
+		return status
+	}
+
+	if wormEnforced, _ := wfs.wormEnforcedForEntry(oldPath, oldEntry); wormEnforced {
+		return fuse.EPERM
+	}
+
 	glog.V(4).Infof("dir Rename %s => %s", oldPath, newPath)
 
 	// update remote filer
@@ -235,7 +245,7 @@ func (wfs *WFS) handleRenameResponse(ctx context.Context, resp *filer_pb.StreamR
 
 		sourceInode, targetInode := wfs.inodeToPath.MovePath(oldPath, newPath)
 		if sourceInode != 0 {
-			fh, foundFh := wfs.fhmap.FindFileHandle(sourceInode)
+			fh, foundFh := wfs.fhMap.FindFileHandle(sourceInode)
 			if foundFh {
 				if entry := fh.GetEntry(); entry != nil {
 					entry.Name = newName

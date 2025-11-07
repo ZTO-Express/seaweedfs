@@ -44,6 +44,10 @@ func (c *commandRemoteMount) Help() string {
 `
 }
 
+func (c *commandRemoteMount) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandRemoteMount) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
 
 	remoteMountCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
@@ -74,12 +78,12 @@ func (c *commandRemoteMount) Do(args []string, commandEnv *CommandEnv, writer io
 
 	// sync metadata from remote
 	if err = syncMetadata(commandEnv, writer, *dir, *nonEmpty, remoteConf, remoteStorageLocation); err != nil {
-		return fmt.Errorf("pull metadata: %v", err)
+		return fmt.Errorf("pull metadata: %w", err)
 	}
 
 	// store a mount configuration in filer
 	if err = filer.InsertMountMapping(commandEnv, *dir, remoteStorageLocation); err != nil {
-		return fmt.Errorf("save mount mapping: %v", err)
+		return fmt.Errorf("save mount mapping: %w", err)
 	}
 
 	return nil
@@ -134,7 +138,7 @@ func syncMetadata(commandEnv *CommandEnv, writer io.Writer, dir string, nonEmpty
 		}
 
 		mountToDirIsEmpty := true
-		listErr := filer_pb.SeaweedList(client, dir, "", func(entry *filer_pb.Entry, isLast bool) error {
+		listErr := filer_pb.SeaweedList(context.Background(), client, dir, "", func(entry *filer_pb.Entry, isLast bool) error {
 			mountToDirIsEmpty = false
 			return nil
 		}, "", false, 1)
@@ -157,7 +161,7 @@ func syncMetadata(commandEnv *CommandEnv, writer io.Writer, dir string, nonEmpty
 
 	// pull metadata from remote
 	if err = pullMetadata(commandEnv, writer, util.FullPath(dir), remote, util.FullPath(dir), remoteConf); err != nil {
-		return fmt.Errorf("cache metadata: %v", err)
+		return fmt.Errorf("cache metadata: %w", err)
 	}
 
 	return nil

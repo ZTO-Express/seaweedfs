@@ -2,9 +2,6 @@ package erasure_coding
 
 import (
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/stats"
-	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
-	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"io"
 	"os"
 	"path"
@@ -12,6 +9,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/seaweedfs/seaweedfs/weed/stats"
+	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
+	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 )
 
 type ShardId uint8
@@ -47,9 +48,17 @@ func NewEcVolumeShard(diskType types.DiskType, dirname string, collection string
 	}
 	v.ecdFileSize = ecdFi.Size()
 
-	stats.VolumeServerVolumeGauge.WithLabelValues(v.Collection, "ec_shards").Inc()
+	v.Mount()
 
 	return
+}
+
+func (shard *EcVolumeShard) Mount() {
+	stats.VolumeServerVolumeGauge.WithLabelValues(shard.Collection, "ec_shards").Inc()
+}
+
+func (shard *EcVolumeShard) Unmount() {
+	stats.VolumeServerVolumeGauge.WithLabelValues(shard.Collection, "ec_shards").Dec()
 }
 
 func (shard *EcVolumeShard) Size() int64 {
@@ -98,7 +107,6 @@ func (shard *EcVolumeShard) Destroy(soft bool) error {
 		return MoveFile(shardFilename, GetSoftDeleteDir(shardFilename))
 	}
 	err := os.Remove(shardFilename)
-	stats.VolumeServerVolumeGauge.WithLabelValues(shard.Collection, "ec_shards").Dec()
 	return err
 }
 

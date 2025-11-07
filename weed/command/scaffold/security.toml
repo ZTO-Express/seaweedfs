@@ -2,7 +2,7 @@
 #    ./security.toml
 #    $HOME/.seaweedfs/security.toml
 #    /etc/seaweedfs/security.toml
-# this file is read by master, volume server, and filer
+# this file is read by master, volume server, filer, and worker
 
 # comma separated origins allowed to make requests to the filer and s3 gateway. 
 # enter in this format: https://domain.com, or http://localhost:port
@@ -89,15 +89,39 @@ cert = ""
 key = ""
 allowed_commonNames = ""    # comma-separated SSL certificate common names
 
+[grpc.msg_agent]
+cert = ""
+key = ""
+allowed_commonNames = ""    # comma-separated SSL certificate common names
+
+[grpc.admin]
+cert = ""
+key = ""
+allowed_commonNames = ""    # comma-separated SSL certificate common names
+
+[grpc.worker]
+cert = ""
+key = ""
+allowed_commonNames = ""    # comma-separated SSL certificate common names
+
+[grpc.mq]
+cert = ""
+key = ""
+allowed_commonNames = ""    # comma-separated SSL certificate common names
+
 # use this for any place needs a grpc client
 # i.e., "weed backup|benchmark|filer.copy|filer.replicate|mount|s3|upload"
 [grpc.client]
 cert = ""
 key = ""
-# Note: work in progress!
-#     this does not work with other clients, e.g., "weed filer|mount" etc, yet.
+
+# https client for master|volume|filer|etc connection
+# It is necessary that the parameters  [https.volume]|[https.master]|[https.filer]|[https.admin] are set
 [https.client]
-enabled = true
+enabled = false
+cert = ""
+key = ""
+ca = ""
 
 # volume server https options
 [https.volume]
@@ -117,3 +141,13 @@ cert = ""
 key = ""
 ca = ""
 # disable_tls_verify_client_cert = true|false (default: false)
+
+# admin server https options
+[https.admin]
+cert = ""
+key = ""
+ca = ""
+
+# white list. It's checking request ip address.
+[guard]
+white_list = ""

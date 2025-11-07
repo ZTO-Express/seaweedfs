@@ -27,6 +27,10 @@ func (c *commandRaftServerAdd) Help() string {
 `
 }
 
+func (c *commandRaftServerAdd) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandRaftServerAdd) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
 
 	raftServerAddCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
@@ -48,7 +52,7 @@ func (c *commandRaftServerAdd) Do(args []string, commandEnv *CommandEnv, writer 
 			Voter:   *serverVoter,
 		})
 		if err != nil {
-			return fmt.Errorf("raft add server: %v", err)
+			return fmt.Errorf("raft add server: %w", err)
 		}
 		println("added server", *serverId)
 		return nil

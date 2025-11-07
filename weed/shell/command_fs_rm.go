@@ -34,7 +34,16 @@ func (c *commandFsRm) Help() string {
 `
 }
 
+func (c *commandFsRm) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandFsRm) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
+
+	if handleHelpRequest(c, args, writer) {
+		return nil
+	}
+
 	isRecursive := false
 	ignoreRecursiveError := false
 	var entries []string
@@ -70,7 +79,7 @@ func (c *commandFsRm) Do(args []string, commandEnv *CommandEnv, writer io.Writer
 				Directory: targetDir,
 				Name:      targetName,
 			}
-			_, err = filer_pb.LookupEntry(client, lookupRequest)
+			_, err = filer_pb.LookupEntry(context.Background(), client, lookupRequest)
 			if err != nil {
 				fmt.Fprintf(writer, "rm: %s: %v\n", targetPath, err)
 				continue

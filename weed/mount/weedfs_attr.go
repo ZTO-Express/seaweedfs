@@ -1,16 +1,19 @@
 package mount
 
 import (
+	"os"
+	"syscall"
+	"time"
+
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
-	"os"
-	"syscall"
-	"time"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 )
 
 func (wfs *WFS) GetAttr(cancel <-chan struct{}, input *fuse.GetAttrIn, out *fuse.AttrOut) (code fuse.Status) {
+	glog.V(4).Infof("GetAttr %v", input.NodeId)
 	if input.NodeId == 1 {
 		wfs.setRootAttr(out)
 		return fuse.OK
@@ -23,9 +26,12 @@ func (wfs *WFS) GetAttr(cancel <-chan struct{}, input *fuse.GetAttrIn, out *fuse
 		wfs.setAttrByPbEntry(&out.Attr, inode, entry, true)
 		return status
 	} else {
-		if fh, found := wfs.fhmap.FindFileHandle(inode); found {
+		if fh, found := wfs.fhMap.FindFileHandle(inode); found {
 			out.AttrValid = 1
+			// Use shared lock to prevent race with Write operations
+			fhActiveLock := wfs.fhLockTable.AcquireLock("GetAttr", fh.fh, util.SharedLock)
 			wfs.setAttrByPbEntry(&out.Attr, inode, fh.entry.GetEntry(), true)
+			wfs.fhLockTable.ReleaseLock(fh.fh, fhActiveLock)
 			out.Nlink = 0
 			return fuse.OK
 		}
@@ -41,7 +47,7 @@ func (wfs *WFS) SetAttr(cancel <-chan struct{}, input *fuse.SetAttrIn, out *fuse
 	}
 
 	path, fh, entry, status := wfs.maybeReadEntry(input.NodeId)
-	if status != fuse.OK {
+	if status != fuse.OK || entry == nil {
 		return status
 	}
 	if fh != nil {
@@ -49,7 +55,12 @@ func (wfs *WFS) SetAttr(cancel <-chan struct{}, input *fuse.SetAttrIn, out *fuse
 		defer fh.entryLock.Unlock()
 	}
 
-	if size, ok := input.GetSize(); ok && entry != nil {
+	wormEnforced, wormEnabled := wfs.wormEnforcedForEntry(path, entry)
+	if wormEnforced {
+		return fuse.EPERM
+	}
+
+	if size, ok := input.GetSize(); ok {
 		glog.V(4).Infof("%v setattr set size=%v chunks=%d", path, size, len(entry.GetChunks()))
 		if size < filer.FileSize(entry) {
 			// fmt.Printf("truncate %v \n", fullPath)
@@ -84,6 +95,11 @@ func (wfs *WFS) SetAttr(cancel <-chan struct{}, input *fuse.SetAttrIn, out *fuse
 	}
 
 	if mode, ok := input.GetMode(); ok {
+		// commit the file to worm when it is set to readonly at the first time
+		if entry.WormEnforcedAtTsNs == 0 && wormEnabled && !hasWritePermission(mode) {
+			entry.WormEnforcedAtTsNs = time.Now().UnixNano()
+		}
+
 		// glog.V(4).Infof("setAttr mode %o", mode)
 		entry.Attributes.FileMode = chmod(entry.Attributes.FileMode, mode)
 		if input.NodeId == 1 {
@@ -213,6 +229,14 @@ func (wfs *WFS) outputFilerEntry(out *fuse.EntryOut, inode uint64, entry *filer.
 
 func chmod(existing uint32, mode uint32) uint32 {
 	return existing&^07777 | mode&07777
+}
+
+const ownerWrite = 0o200
+const groupWrite = 0o020
+const otherWrite = 0o002
+
+func hasWritePermission(mode uint32) bool {
+	return (mode&ownerWrite != 0) || (mode&groupWrite != 0) || (mode&otherWrite != 0)
 }
 
 func toSyscallMode(mode os.FileMode) uint32 {

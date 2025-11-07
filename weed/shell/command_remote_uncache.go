@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -40,6 +41,10 @@ func (c *commandRemoteUncache) Help() string {
 `
 }
 
+func (c *commandRemoteUncache) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandRemoteUncache) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
 
 	remoteUncacheCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
@@ -70,7 +75,7 @@ func (c *commandRemoteUncache) Do(args []string, commandEnv *CommandEnv, writer 
 
 		// pull content from remote
 		if err = c.uncacheContentData(commandEnv, writer, util.FullPath(*dir), fileFiler); err != nil {
-			return fmt.Errorf("uncache content data: %v", err)
+			return fmt.Errorf("uncache content data: %w", err)
 		}
 		return nil
 	}
@@ -164,12 +169,12 @@ func (ff *FileFilter) matches(entry *filer_pb.Entry) bool {
 		}
 	}
 	if *ff.minAge != -1 {
-		if entry.Attributes.Crtime < *ff.minAge {
+		if entry.Attributes.Crtime+*ff.minAge > time.Now().Unix() {
 			return false
 		}
 	}
 	if *ff.maxAge != -1 {
-		if entry.Attributes.Crtime > *ff.maxAge {
+		if entry.Attributes.Crtime+*ff.maxAge < time.Now().Unix() {
 			return false
 		}
 	}

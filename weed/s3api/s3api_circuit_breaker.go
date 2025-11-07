@@ -32,17 +32,15 @@ func NewCircuitBreaker(option *S3ApiServerOption) *CircuitBreaker {
 	err := pb.WithFilerClient(false, 0, option.Filer, option.GrpcDialOption, func(client filer_pb.SeaweedFilerClient) error {
 		content, err := filer.ReadInsideFiler(client, s3_constants.CircuitBreakerConfigDir, s3_constants.CircuitBreakerConfigFile)
 		if errors.Is(err, filer_pb.ErrNotFound) {
-			glog.Infof("s3 circuit breaker not configured")
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("read S3 circuit breaker config: %v", err)
+			return fmt.Errorf("read S3 circuit breaker config: %w", err)
 		}
 		return cb.LoadS3ApiConfigurationFromBytes(content)
 	})
 
 	if err != nil {
-		glog.Infof("s3 circuit breaker not configured correctly: %v", err)
 	}
 
 	return cb
@@ -52,7 +50,7 @@ func (cb *CircuitBreaker) LoadS3ApiConfigurationFromBytes(content []byte) error 
 	cbCfg := &s3_pb.S3CircuitBreakerConfig{}
 	if err := filer.ParseS3ConfigurationFromBytes(content, cbCfg); err != nil {
 		glog.Warningf("unmarshal error: %v", err)
-		return fmt.Errorf("unmarshal error: %v", err)
+		return fmt.Errorf("unmarshal error: %w", err)
 	}
 	if err := cb.loadCircuitBreakerConfig(cbCfg); err != nil {
 		return err

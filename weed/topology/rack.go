@@ -1,12 +1,13 @@
 package topology
 
 import (
+	"slices"
+	"strings"
+	"time"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"golang.org/x/exp/slices"
-	"strings"
-	"time"
 )
 
 type Rack struct {
@@ -19,6 +20,7 @@ func NewRack(id string) *Rack {
 	r.nodeType = "Rack"
 	r.diskUsages = newDiskUsages()
 	r.children = make(map[NodeId]Node)
+	r.capacityReservations = newCapacityReservations()
 	r.NodeImpl.value = r
 	return r
 }

@@ -1,9 +1,12 @@
 package topology
 
 import (
+	"reflect"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/sequence"
 	"github.com/seaweedfs/seaweedfs/weed/storage"
+	"github.com/seaweedfs/seaweedfs/weed/storage/erasure_coding"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/storage/super_block"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
@@ -46,7 +49,7 @@ func TestHandlingVolumeServerHeartbeat(t *testing.T) {
 				DeletedByteCount: 34524,
 				ReadOnly:         false,
 				ReplicaPlacement: uint32(0),
-				Version:          uint32(needle.CurrentVersion),
+				Version:          uint32(needle.GetCurrentVersion()),
 				Ttl:              0,
 			}
 			volumeMessages = append(volumeMessages, volumeMessage)
@@ -62,7 +65,7 @@ func TestHandlingVolumeServerHeartbeat(t *testing.T) {
 				DeletedByteCount: 34524,
 				ReadOnly:         false,
 				ReplicaPlacement: uint32(0),
-				Version:          uint32(needle.CurrentVersion),
+				Version:          uint32(needle.GetCurrentVersion()),
 				Ttl:              0,
 				DiskType:         "ssd",
 			}
@@ -91,7 +94,7 @@ func TestHandlingVolumeServerHeartbeat(t *testing.T) {
 				DeletedByteCount: 345240,
 				ReadOnly:         false,
 				ReplicaPlacement: uint32(0),
-				Version:          uint32(needle.CurrentVersion),
+				Version:          uint32(needle.GetCurrentVersion()),
 				Ttl:              0,
 			}
 			volumeMessages = append(volumeMessages, volumeMessage)
@@ -114,7 +117,7 @@ func TestHandlingVolumeServerHeartbeat(t *testing.T) {
 			Id:               uint32(3),
 			Collection:       "",
 			ReplicaPlacement: uint32(0),
-			Version:          uint32(needle.CurrentVersion),
+			Version:          uint32(needle.GetCurrentVersion()),
 			Ttl:              0,
 		}
 		topo.IncrementalSyncDataNodeRegistration(
@@ -188,7 +191,7 @@ func TestAddRemoveVolume(t *testing.T) {
 		DeleteCount:      23,
 		DeletedByteCount: 45,
 		ReadOnly:         false,
-		Version:          needle.CurrentVersion,
+		Version:          needle.GetCurrentVersion(),
 		ReplicaPlacement: &super_block.ReplicaPlacement{},
 		Ttl:              needle.EMPTY_TTL,
 	}
@@ -206,5 +209,190 @@ func TestAddRemoveVolume(t *testing.T) {
 	if _, hasCollection := topo.FindCollection(v.Collection); hasCollection {
 		t.Errorf("collection %v should not exist", v.Collection)
 	}
+}
 
+func TestVolumeReadOnlyStatusChange(t *testing.T) {
+	topo := NewTopology("weedfs", sequence.NewMemorySequencer(), 32*1024, 5, false)
+
+	dc := topo.GetOrCreateDataCenter("dc1")
+	rack := dc.GetOrCreateRack("rack1")
+	maxVolumeCounts := make(map[string]uint32)
+	maxVolumeCounts[""] = 25
+	dn := rack.GetOrCreateDataNode("127.0.0.1", 34534, 0, "127.0.0.1", maxVolumeCounts)
+
+	// Create a writable volume
+	v := storage.VolumeInfo{
+		Id:               needle.VolumeId(1),
+		Size:             100,
+		Collection:       "",
+		DiskType:         "",
+		FileCount:        10,
+		DeleteCount:      0,
+		DeletedByteCount: 0,
+		ReadOnly:         false, // Initially writable
+		Version:          needle.GetCurrentVersion(),
+		ReplicaPlacement: &super_block.ReplicaPlacement{},
+		Ttl:              needle.EMPTY_TTL,
+	}
+
+	dn.UpdateVolumes([]storage.VolumeInfo{v})
+	topo.RegisterVolumeLayout(v, dn)
+
+	// Check initial active count (should be 1 since volume is writable)
+	usageCounts := topo.diskUsages.usages[types.HardDriveType]
+	assert(t, "initial activeVolumeCount", int(usageCounts.activeVolumeCount), 1)
+	assert(t, "initial remoteVolumeCount", int(usageCounts.remoteVolumeCount), 0)
+
+	// Change volume to read-only
+	v.ReadOnly = true
+	dn.UpdateVolumes([]storage.VolumeInfo{v})
+
+	// Check active count after marking read-only (should be 0)
+	usageCounts = topo.diskUsages.usages[types.HardDriveType]
+	assert(t, "activeVolumeCount after read-only", int(usageCounts.activeVolumeCount), 0)
+
+	// Change volume back to writable
+	v.ReadOnly = false
+	dn.UpdateVolumes([]storage.VolumeInfo{v})
+
+	// Check active count after marking writable again (should be 1)
+	usageCounts = topo.diskUsages.usages[types.HardDriveType]
+	assert(t, "activeVolumeCount after writable again", int(usageCounts.activeVolumeCount), 1)
+}
+
+func TestVolumeReadOnlyAndRemoteStatusChange(t *testing.T) {
+	topo := NewTopology("weedfs", sequence.NewMemorySequencer(), 32*1024, 5, false)
+
+	dc := topo.GetOrCreateDataCenter("dc1")
+	rack := dc.GetOrCreateRack("rack1")
+	maxVolumeCounts := make(map[string]uint32)
+	maxVolumeCounts[""] = 25
+	dn := rack.GetOrCreateDataNode("127.0.0.1", 34534, 0, "127.0.0.1", maxVolumeCounts)
+
+	// Create a writable, local volume
+	v := storage.VolumeInfo{
+		Id:                needle.VolumeId(1),
+		Size:              100,
+		Collection:        "",
+		DiskType:          "",
+		FileCount:         10,
+		DeleteCount:       0,
+		DeletedByteCount:  0,
+		ReadOnly:          false, // Initially writable
+		RemoteStorageName: "",    // Initially local
+		Version:           needle.GetCurrentVersion(),
+		ReplicaPlacement:  &super_block.ReplicaPlacement{},
+		Ttl:               needle.EMPTY_TTL,
+	}
+
+	dn.UpdateVolumes([]storage.VolumeInfo{v})
+	topo.RegisterVolumeLayout(v, dn)
+
+	// Check initial counts
+	usageCounts := topo.diskUsages.usages[types.HardDriveType]
+	assert(t, "initial activeVolumeCount", int(usageCounts.activeVolumeCount), 1)
+	assert(t, "initial remoteVolumeCount", int(usageCounts.remoteVolumeCount), 0)
+
+	// Simultaneously change to read-only AND remote
+	v.ReadOnly = true
+	v.RemoteStorageName = "s3"
+	v.RemoteStorageKey = "key1"
+	dn.UpdateVolumes([]storage.VolumeInfo{v})
+
+	// Check counts after both changes
+	usageCounts = topo.diskUsages.usages[types.HardDriveType]
+	assert(t, "activeVolumeCount after read-only+remote", int(usageCounts.activeVolumeCount), 0)
+	assert(t, "remoteVolumeCount after read-only+remote", int(usageCounts.remoteVolumeCount), 1)
+
+	// Change back to writable but keep remote
+	v.ReadOnly = false
+	dn.UpdateVolumes([]storage.VolumeInfo{v})
+
+	// Check counts - should be writable (active=1) and still remote
+	usageCounts = topo.diskUsages.usages[types.HardDriveType]
+	assert(t, "activeVolumeCount after writable+remote", int(usageCounts.activeVolumeCount), 1)
+	assert(t, "remoteVolumeCount after writable+remote", int(usageCounts.remoteVolumeCount), 1)
+
+	// Change back to local AND read-only simultaneously
+	v.ReadOnly = true
+	v.RemoteStorageName = ""
+	v.RemoteStorageKey = ""
+	dn.UpdateVolumes([]storage.VolumeInfo{v})
+
+	// Check final counts
+	usageCounts = topo.diskUsages.usages[types.HardDriveType]
+	assert(t, "final activeVolumeCount", int(usageCounts.activeVolumeCount), 0)
+	assert(t, "final remoteVolumeCount", int(usageCounts.remoteVolumeCount), 0)
+}
+
+func TestListCollections(t *testing.T) {
+	rp, _ := super_block.NewReplicaPlacementFromString("002")
+
+	topo := NewTopology("weedfs", sequence.NewMemorySequencer(), 32*1024, 5, false)
+	dc := topo.GetOrCreateDataCenter("dc1")
+	rack := dc.GetOrCreateRack("rack1")
+	dn := rack.GetOrCreateDataNode("127.0.0.1", 34534, 0, "127.0.0.1", nil)
+
+	topo.RegisterVolumeLayout(storage.VolumeInfo{
+		Id:               needle.VolumeId(1111),
+		ReplicaPlacement: rp,
+	}, dn)
+	topo.RegisterVolumeLayout(storage.VolumeInfo{
+		Id:               needle.VolumeId(2222),
+		ReplicaPlacement: rp,
+		Collection:       "vol_collection_a",
+	}, dn)
+	topo.RegisterVolumeLayout(storage.VolumeInfo{
+		Id:               needle.VolumeId(3333),
+		ReplicaPlacement: rp,
+		Collection:       "vol_collection_b",
+	}, dn)
+
+	topo.RegisterEcShards(&erasure_coding.EcVolumeInfo{
+		VolumeId:   needle.VolumeId(4444),
+		Collection: "ec_collection_a",
+	}, dn)
+	topo.RegisterEcShards(&erasure_coding.EcVolumeInfo{
+		VolumeId:   needle.VolumeId(5555),
+		Collection: "ec_collection_b",
+	}, dn)
+
+	testCases := []struct {
+		name                 string
+		includeNormalVolumes bool
+		includeEcVolumes     bool
+		want                 []string
+	}{
+		{
+			name:                 "no volume types selected",
+			includeNormalVolumes: false,
+			includeEcVolumes:     false,
+			want:                 nil,
+		}, {
+			name:                 "normal volumes",
+			includeNormalVolumes: true,
+			includeEcVolumes:     false,
+			want:                 []string{"", "vol_collection_a", "vol_collection_b"},
+		}, {
+			name:                 "EC volumes",
+			includeNormalVolumes: false,
+			includeEcVolumes:     true,
+			want:                 []string{"ec_collection_a", "ec_collection_b"},
+		}, {
+			name:                 "normal + EC volumes",
+			includeNormalVolumes: true,
+			includeEcVolumes:     true,
+			want:                 []string{"", "ec_collection_a", "ec_collection_b", "vol_collection_a", "vol_collection_b"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := topo.ListCollections(tc.includeNormalVolumes, tc.includeEcVolumes)
+
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
 }

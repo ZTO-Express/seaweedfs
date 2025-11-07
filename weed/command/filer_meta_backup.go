@@ -56,7 +56,7 @@ The backup writes to another filer store specified in a backup_filer.toml.
 
 func runFilerMetaBackup(cmd *Command, args []string) bool {
 
-	util.LoadConfiguration("security", false)
+	util.LoadSecurityConfiguration()
 	metaBackup.grpcDialOption = security.LoadClientTLS(util.GetViper(), "grpc.client")
 
 	// load backup_filer.toml
@@ -133,14 +133,14 @@ func (metaBackup *FilerMetaBackupOptions) traverseMetadata() (err error) {
 
 		println("+", parentPath.Child(entry.Name))
 		if err := metaBackup.store.InsertEntry(context.Background(), filer.FromPbEntry(string(parentPath), entry)); err != nil {
-			saveErr = fmt.Errorf("insert entry error: %v\n", err)
+			saveErr = fmt.Errorf("insert entry error: %w\n", err)
 			return
 		}
 
 	})
 
 	if traverseErr != nil {
-		return fmt.Errorf("traverse: %v", traverseErr)
+		return fmt.Errorf("traverse: %w", traverseErr)
 	}
 	return saveErr
 }

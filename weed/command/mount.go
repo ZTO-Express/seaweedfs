@@ -17,6 +17,7 @@ type MountOptions struct {
 	ttlSec             *int
 	chunkSizeLimitMB   *int
 	concurrentWriters  *int
+	cacheMetaTtlSec    *int
 	cacheDirForRead    *string
 	cacheDirForWrite   *string
 	cacheSizeMBForRead *int64
@@ -33,6 +34,15 @@ type MountOptions struct {
 	localSocket        *string
 	disableXAttr       *bool
 	extraOptions       []string
+	fuseCommandPid     int
+
+	// RDMA acceleration options
+	rdmaEnabled       *bool
+	rdmaSidecarAddr   *string
+	rdmaFallback      *bool
+	rdmaReadOnly      *bool
+	rdmaMaxConcurrent *int
+	rdmaTimeoutMs     *int
 }
 
 var (
@@ -56,8 +66,9 @@ func init() {
 	mountOptions.chunkSizeLimitMB = cmdMount.Flag.Int("chunkSizeLimitMB", 2, "local write buffer size, also chunk large files")
 	mountOptions.concurrentWriters = cmdMount.Flag.Int("concurrentWriters", 32, "limit concurrent goroutine writers")
 	mountOptions.cacheDirForRead = cmdMount.Flag.String("cacheDir", os.TempDir(), "local cache directory for file chunks and meta data")
-	mountOptions.cacheSizeMBForRead = cmdMount.Flag.Int64("cacheCapacityMB", 0, "file chunk read cache capacity in MB")
-	mountOptions.cacheDirForWrite = cmdMount.Flag.String("cacheDirWrite", os.TempDir(), "buffer writes mostly for large files")
+	mountOptions.cacheSizeMBForRead = cmdMount.Flag.Int64("cacheCapacityMB", 128, "file chunk read cache capacity in MB")
+	mountOptions.cacheDirForWrite = cmdMount.Flag.String("cacheDirWrite", "", "buffer writes mostly for large files")
+	mountOptions.cacheMetaTtlSec = cmdMount.Flag.Int("cacheMetaTtlSec", 60, "metadata cache validity seconds")
 	mountOptions.dataCenter = cmdMount.Flag.String("dataCenter", "", "prefer to write to the data center")
 	mountOptions.allowOthers = cmdMount.Flag.Bool("allowOthers", true, "allows other users to access the file system")
 	mountOptions.umaskString = cmdMount.Flag.String("umask", "022", "octal umask, e.g., 022, 0111")
@@ -70,6 +81,15 @@ func init() {
 	mountOptions.debugPort = cmdMount.Flag.Int("debug.port", 6061, "http port for debugging")
 	mountOptions.localSocket = cmdMount.Flag.String("localSocket", "", "default to /tmp/seaweedfs-mount-<mount_dir_hash>.sock")
 	mountOptions.disableXAttr = cmdMount.Flag.Bool("disableXAttr", false, "disable xattr")
+	mountOptions.fuseCommandPid = 0
+
+	// RDMA acceleration flags
+	mountOptions.rdmaEnabled = cmdMount.Flag.Bool("rdma.enabled", false, "enable RDMA acceleration for reads")
+	mountOptions.rdmaSidecarAddr = cmdMount.Flag.String("rdma.sidecar", "", "RDMA sidecar address (e.g., localhost:8081)")
+	mountOptions.rdmaFallback = cmdMount.Flag.Bool("rdma.fallback", true, "fallback to HTTP when RDMA fails")
+	mountOptions.rdmaReadOnly = cmdMount.Flag.Bool("rdma.readOnly", false, "use RDMA for reads only (writes use HTTP)")
+	mountOptions.rdmaMaxConcurrent = cmdMount.Flag.Int("rdma.maxConcurrent", 64, "max concurrent RDMA operations")
+	mountOptions.rdmaTimeoutMs = cmdMount.Flag.Int("rdma.timeoutMs", 5000, "RDMA operation timeout in milliseconds")
 
 	mountCpuProfile = cmdMount.Flag.String("cpuprofile", "", "cpu profile output file")
 	mountMemProfile = cmdMount.Flag.String("memprofile", "", "memory profile output file")
@@ -90,6 +110,19 @@ var cmdMount = &Command{
   Linux, and OS X.
 
   On OS X, it requires OSXFUSE (https://osxfuse.github.io/).
+
+  RDMA Acceleration:
+  For ultra-fast reads, enable RDMA acceleration with an RDMA sidecar:
+    weed mount -filer=localhost:8888 -dir=/mnt/seaweedfs \
+      -rdma.enabled=true -rdma.sidecar=localhost:8081
+
+  RDMA Options:
+    -rdma.enabled=false          Enable RDMA acceleration for reads
+    -rdma.sidecar=""             RDMA sidecar address (required if enabled)
+    -rdma.fallback=true          Fallback to HTTP when RDMA fails
+    -rdma.readOnly=false         Use RDMA for reads only (writes use HTTP)
+    -rdma.maxConcurrent=64       Max concurrent RDMA operations
+    -rdma.timeoutMs=5000         RDMA operation timeout in milliseconds
 
   `,
 }

@@ -3,23 +3,14 @@ package weed_server
 import (
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/security"
-	"github.com/seaweedfs/seaweedfs/weed/util"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 	"github.com/seaweedfs/seaweedfs/weed/util/mem"
+	"github.com/seaweedfs/seaweedfs/weed/util/request_id"
+
 	"io"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 )
-
-var (
-	client *http.Client
-)
-
-func init() {
-	client = &http.Client{Transport: &http.Transport{
-		MaxIdleConns:        1024,
-		MaxIdleConnsPerHost: 1024,
-	}}
-}
 
 func (fs *FilerServer) maybeAddVolumeJwtAuthorization(r *http.Request, fileId string, isWrite bool) {
 	encodedJwt := fs.maybeGetVolumeJwtAuthorizationToken(fileId, isWrite)
@@ -42,10 +33,10 @@ func (fs *FilerServer) maybeGetVolumeJwtAuthorizationToken(fileId string, isWrit
 }
 
 func (fs *FilerServer) proxyToVolumeServer(w http.ResponseWriter, r *http.Request, fileId string) {
-
-	urlStrings, err := fs.filer.MasterClient.GetLookupFileIdFunction()(fileId)
+	ctx := r.Context()
+	urlStrings, err := fs.filer.MasterClient.GetLookupFileIdFunction()(ctx, fileId)
 	if err != nil {
-		glog.Errorf("locate %s: %v", fileId, err)
+		glog.ErrorfCtx(ctx, "locate %s: %v", fileId, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -55,15 +46,16 @@ func (fs *FilerServer) proxyToVolumeServer(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	proxyReq, err := http.NewRequest(r.Method, urlStrings[rand.Intn(len(urlStrings))], r.Body)
+	proxyReq, err := http.NewRequest(r.Method, urlStrings[rand.IntN(len(urlStrings))], r.Body)
 	if err != nil {
-		glog.Errorf("NewRequest %s: %v", urlStrings[0], err)
+		glog.ErrorfCtx(ctx, "NewRequest %s: %v", urlStrings[0], err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	proxyReq.Header.Set("Host", r.Host)
 	proxyReq.Header.Set("X-Forwarded-For", r.RemoteAddr)
+	request_id.InjectToRequest(ctx, proxyReq)
 
 	for header, values := range r.Header {
 		for _, value := range values {
@@ -71,14 +63,14 @@ func (fs *FilerServer) proxyToVolumeServer(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	proxyResponse, postErr := client.Do(proxyReq)
+	proxyResponse, postErr := util_http.GetGlobalHttpClient().Do(proxyReq)
 
 	if postErr != nil {
-		glog.Errorf("post to filer: %v", postErr)
+		glog.ErrorfCtx(ctx, "post to filer: %v", postErr)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	defer util.CloseResponse(proxyResponse)
+	defer util_http.CloseResponse(proxyResponse)
 
 	for k, v := range proxyResponse.Header {
 		w.Header()[k] = v

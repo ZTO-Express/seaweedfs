@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3bucket"
+
 	"github.com/seaweedfs/seaweedfs/weed/cluster/lock_manager"
 
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
@@ -52,6 +54,8 @@ type Filer struct {
 	RemoteStorage       *FilerRemoteStorage
 	Dlm                 *lock_manager.DistributedLockManager
 	MaxFilenameLength   uint32
+	deletionQuit        chan struct{}
+	DeletionRetryQueue  *DeletionRetryQueue
 }
 
 func NewFiler(masters pb.ServerDiscovery, grpcDialOption grpc.DialOption, filerHost pb.ServerAddress, filerGroup string, collection string, replication string, dataCenter string, maxFilenameLength uint32, notifyFn func()) *Filer {
@@ -64,6 +68,8 @@ func NewFiler(masters pb.ServerDiscovery, grpcDialOption grpc.DialOption, filerH
 		UniqueFilerId:       util.RandomInt32(),
 		Dlm:                 lock_manager.NewDistributedLockManager(filerHost),
 		MaxFilenameLength:   maxFilenameLength,
+		deletionQuit:        make(chan struct{}),
+		DeletionRetryQueue:  NewDeletionRetryQueue(),
 	}
 	if f.UniqueFilerId < 0 {
 		f.UniqueFilerId = -f.UniqueFilerId
@@ -195,6 +201,10 @@ func (f *Filer) CreateEntry(ctx context.Context, entry *Entry, o_excl bool, isFr
 		return fmt.Errorf("entry name too long")
 	}
 
+	if entry.IsDirectory() {
+		entry.Attr.TtlSec = 0
+	}
+
 	oldEntry, _ := f.FindEntry(ctx, entry.FullPath)
 
 	/*
@@ -214,28 +224,28 @@ func (f *Filer) CreateEntry(ctx context.Context, entry *Entry, o_excl bool, isFr
 			}
 		}
 
-		glog.V(4).Infof("InsertEntry %s: new entry: %v", entry.FullPath, entry.Name())
+		glog.V(4).InfofCtx(ctx, "InsertEntry %s: new entry: %v", entry.FullPath, entry.Name())
 		if err := f.Store.InsertEntry(ctx, entry); err != nil {
-			glog.Errorf("insert entry %s: %v", entry.FullPath, err)
+			glog.ErrorfCtx(ctx, "insert entry %s: %v", entry.FullPath, err)
 			return fmt.Errorf("insert entry %s: %v", entry.FullPath, err)
 		}
 	} else {
 		if o_excl {
-			glog.V(3).Infof("EEXIST: entry %s already exists", entry.FullPath)
+			glog.V(3).InfofCtx(ctx, "EEXIST: entry %s already exists", entry.FullPath)
 			return fmt.Errorf("EEXIST: entry %s already exists", entry.FullPath)
 		}
-		glog.V(4).Infof("UpdateEntry %s: old entry: %v", entry.FullPath, oldEntry.Name())
+		glog.V(4).InfofCtx(ctx, "UpdateEntry %s: old entry: %v", entry.FullPath, oldEntry.Name())
 		if err := f.UpdateEntry(ctx, oldEntry, entry); err != nil {
-			glog.Errorf("update entry %s: %v", entry.FullPath, err)
+			glog.ErrorfCtx(ctx, "update entry %s: %v", entry.FullPath, err)
 			return fmt.Errorf("update entry %s: %v", entry.FullPath, err)
 		}
 	}
 
 	f.NotifyUpdateEvent(ctx, oldEntry, entry, true, isFromOtherCluster, signatures)
 
-	f.deleteChunksIfNotNew(oldEntry, entry)
+	f.deleteChunksIfNotNew(ctx, oldEntry, entry)
 
-	glog.V(4).Infof("CreateEntry %s: created", entry.FullPath)
+	glog.V(4).InfofCtx(ctx, "CreateEntry %s: created", entry.FullPath)
 
 	return nil
 }
@@ -247,14 +257,22 @@ func (f *Filer) ensureParentDirectoryEntry(ctx context.Context, entry *Entry, di
 	}
 
 	dirPath := "/" + util.Join(dirParts[:level]...)
-	// fmt.Printf("%d directory: %+v\n", i, dirPath)
+	// fmt.Printf("%d dirPath: %+v\n", level, dirPath)
 
 	// check the store directly
-	glog.V(4).Infof("find uncached directory: %s", dirPath)
+	glog.V(4).InfofCtx(ctx, "find uncached directory: %s", dirPath)
 	dirEntry, _ := f.FindEntry(ctx, util.FullPath(dirPath))
 
 	// no such existing directory
 	if dirEntry == nil {
+
+		// fmt.Printf("dirParts: %v %v %v\n", dirParts[0], dirParts[1], dirParts[2])
+		// dirParts[0] == "" and dirParts[1] == "buckets"
+		if len(dirParts) >= 3 && dirParts[1] == "buckets" {
+			if err := s3bucket.VerifyS3BucketName(dirParts[2]); err != nil {
+				return fmt.Errorf("invalid bucket name %s: %v", dirParts[2], err)
+			}
+		}
 
 		// ensure parent directory
 		if err = f.ensureParentDirectoryEntry(ctx, entry, dirParts, level-1, isFromOtherCluster); err != nil {
@@ -277,11 +295,11 @@ func (f *Filer) ensureParentDirectoryEntry(ctx context.Context, entry *Entry, di
 			},
 		}
 
-		glog.V(2).Infof("create directory: %s %v", dirPath, dirEntry.Mode)
+		glog.V(2).InfofCtx(ctx, "create directory: %s %v", dirPath, dirEntry.Mode)
 		mkdirErr := f.Store.InsertEntry(ctx, dirEntry)
 		if mkdirErr != nil {
-			if _, err := f.FindEntry(ctx, util.FullPath(dirPath)); err == filer_pb.ErrNotFound {
-				glog.V(3).Infof("mkdir %s: %v", dirPath, mkdirErr)
+			if fEntry, err := f.FindEntry(ctx, util.FullPath(dirPath)); err == filer_pb.ErrNotFound || fEntry == nil {
+				glog.V(3).InfofCtx(ctx, "mkdir %s: %v", dirPath, mkdirErr)
 				return fmt.Errorf("mkdir %s: %v", dirPath, mkdirErr)
 			}
 		} else {
@@ -291,7 +309,7 @@ func (f *Filer) ensureParentDirectoryEntry(ctx context.Context, entry *Entry, di
 		}
 
 	} else if !dirEntry.IsDirectory() {
-		glog.Errorf("CreateEntry %s: %s should be a directory", entry.FullPath, dirPath)
+		glog.ErrorfCtx(ctx, "CreateEntry %s: %s should be a directory", entry.FullPath, dirPath)
 		return fmt.Errorf("%s is a file", dirPath)
 	}
 
@@ -302,11 +320,11 @@ func (f *Filer) UpdateEntry(ctx context.Context, oldEntry, entry *Entry) (err er
 	if oldEntry != nil {
 		entry.Attr.Crtime = oldEntry.Attr.Crtime
 		if oldEntry.IsDirectory() && !entry.IsDirectory() {
-			glog.Errorf("existing %s is a directory", oldEntry.FullPath)
+			glog.ErrorfCtx(ctx, "existing %s is a directory", oldEntry.FullPath)
 			return fmt.Errorf("existing %s is a directory", oldEntry.FullPath)
 		}
 		if !oldEntry.IsDirectory() && entry.IsDirectory() {
-			glog.Errorf("existing %s is a file", oldEntry.FullPath)
+			glog.ErrorfCtx(ctx, "existing %s is a file", oldEntry.FullPath)
 			return fmt.Errorf("existing %s is a file", oldEntry.FullPath)
 		}
 	}
@@ -365,6 +383,7 @@ func (f *Filer) doListDirectoryEntries(ctx context.Context, p util.FullPath, sta
 }
 
 func (f *Filer) Shutdown() {
+	close(f.deletionQuit)
 	f.LocalMetaLogBuffer.ShutdownLogBuffer()
 	f.Store.Shutdown()
 }

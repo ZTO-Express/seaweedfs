@@ -3,6 +3,7 @@ package weed_server
 import (
 	"context"
 	"fmt"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 
 	"github.com/hashicorp/raft"
@@ -92,8 +93,8 @@ func (ms *MasterServer) RaftRemoveServer(ctx context.Context, req *master_pb.Raf
 		return nil, err
 	}
 	// 将废弃连接关闭
-	ms.Topo.HashicorpRaftTransportManager.CloseConn(raft.ServerID(req.Id))
-	glog.V(0).Infoln("HashicorpRaft RemoveServer success %s", req.Id)
+	//ms.Topo.HashicorpRaftTransportManager.CloseConn(raft.ServerID(req.Id))
+	//glog.V(0).Infoln("HashicorpRaft RemoveServer success %s", req.Id)
 
 	return resp, nil
 }

@@ -3,18 +3,19 @@ package command
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/gorilla/mux"
+	"google.golang.org/grpc/reflection"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	weed_server "github.com/seaweedfs/seaweedfs/weed/server"
 	"github.com/seaweedfs/seaweedfs/weed/util"
-	"google.golang.org/grpc/reflection"
+	"github.com/seaweedfs/seaweedfs/weed/util/version"
 )
 
 var (
@@ -26,7 +27,8 @@ func init() {
 	mf.port = cmdMasterFollower.Flag.Int("port", 9334, "http listen port")
 	mf.portGrpc = cmdMasterFollower.Flag.Int("port.grpc", 0, "grpc listen port")
 	mf.ipBind = cmdMasterFollower.Flag.String("ip.bind", "", "ip address to bind to. Default to localhost.")
-	mf.peers = cmdMasterFollower.Flag.String("masters", "localhost:9333", "all master nodes in comma separated ip:port list, example: 127.0.0.1:9093,127.0.0.1:9094,127.0.0.1:9095")
+	mf.peers = cmdMasterFollower.Flag.String("master", "localhost:9333", "all master nodes in comma separated ip:port list, example: 127.0.0.1:9093,127.0.0.1:9094,127.0.0.1:9095")
+	mf.mastersDeprecated = cmdMasterFollower.Flag.String("masters", "", "all master nodes in comma separated ip:port list (deprecated, use -master instead)")
 
 	mf.ip = aws.String(util.DetectedHostAddress())
 	mf.metaFolder = aws.String("")
@@ -42,7 +44,7 @@ func init() {
 }
 
 var cmdMasterFollower = &Command{
-	UsageLine: "master.follower -port=9333 -masters=<master1Host>:<master1Port>",
+	UsageLine: "master.follower -port=9333 -master=<master1Host>:<master1Port>",
 	Short:     "start a master follower",
 	Long: `start a master follower to provide volume=>location mapping service
 
@@ -68,8 +70,13 @@ var cmdMasterFollower = &Command{
 
 func runMasterFollower(cmd *Command, args []string) bool {
 
-	util.LoadConfiguration("security", false)
+	util.LoadSecurityConfiguration()
 	util.LoadConfiguration("master", false)
+
+	// Backward compatibility: if -masters is provided, use it
+	if *mf.mastersDeprecated != "" {
+		*mf.peers = *mf.mastersDeprecated
+	}
 
 	if *mf.portGrpc == 0 {
 		*mf.portGrpc = 10000 + *mf.port
@@ -91,7 +98,7 @@ func startMasterFollower(masterOptions MasterOptions) {
 		err = pb.WithOneOfGrpcMasterClients(false, masters, grpcDialOption, func(client master_pb.SeaweedClient) error {
 			resp, err := client.GetMasterConfiguration(context.Background(), &master_pb.GetMasterConfigurationRequest{})
 			if err != nil {
-				return fmt.Errorf("get master grpc address %v configuration: %v", masters, err)
+				return fmt.Errorf("get master grpc address %v configuration: %w", masters, err)
 			}
 			masterOptions.defaultReplication = &resp.DefaultReplication
 			masterOptions.volumeSizeLimitMB = aws.Uint(uint(resp.VolumeSizeLimitMB))
@@ -119,7 +126,7 @@ func startMasterFollower(masterOptions MasterOptions) {
 	r := mux.NewRouter()
 	ms := weed_server.NewMasterServer(r, option, masters)
 	listeningAddress := util.JoinHostPort(*masterOptions.ipBind, *masterOptions.port)
-	glog.V(0).Infof("Start Seaweed Master %s at %s", util.Version(), listeningAddress)
+	glog.V(0).Infof("Start Seaweed Master %s at %s", version.Version(), listeningAddress)
 	masterListener, masterLocalListener, e := util.NewIpAndLocalListeners(*masterOptions.ipBind, *masterOptions.port, 0)
 	if e != nil {
 		glog.Fatalf("Master startup error: %v", e)
@@ -134,7 +141,7 @@ func startMasterFollower(masterOptions MasterOptions) {
 	grpcS := pb.NewGrpcServer(security.LoadServerTLS(util.GetViper(), "grpc.master"))
 	master_pb.RegisterSeaweedServer(grpcS, ms)
 	reflection.Register(grpcS)
-	glog.V(0).Infof("Start Seaweed Master %s grpc server at %s:%d", util.Version(), *masterOptions.ip, grpcPort)
+	glog.V(0).Infof("Start Seaweed Master %s grpc server at %s:%d", version.Version(), *masterOptions.ip, grpcPort)
 	if grpcLocalL != nil {
 		go grpcS.Serve(grpcLocalL)
 	}
@@ -143,11 +150,10 @@ func startMasterFollower(masterOptions MasterOptions) {
 	go ms.MasterClient.KeepConnectedToMaster(context.Background())
 
 	// start http server
-	httpS := &http.Server{Handler: r}
 	if masterLocalListener != nil {
-		go httpS.Serve(masterLocalListener)
+		go newHttpServer(r, nil).Serve(masterLocalListener)
 	}
-	go httpS.Serve(masterListener)
+	go newHttpServer(r, nil).Serve(masterListener)
 
 	select {}
 }

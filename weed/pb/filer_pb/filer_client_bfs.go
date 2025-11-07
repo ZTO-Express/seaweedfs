@@ -52,7 +52,7 @@ func TraverseBfs(filerClient FilerClient, parentPath util.FullPath, fn func(pare
 
 func processOneDirectory(filerClient FilerClient, parentPath util.FullPath, queue *util.Queue[util.FullPath], jobQueueWg *sync.WaitGroup, fn func(parentPath util.FullPath, entry *Entry)) (err error) {
 
-	return ReadDirAllEntries(filerClient, parentPath, "", func(entry *Entry, isLast bool) error {
+	return ReadDirAllEntries(context.Background(), filerClient, parentPath, "", func(entry *Entry, isLast bool) error {
 
 		fn(parentPath, entry)
 
@@ -69,7 +69,7 @@ func processOneDirectory(filerClient FilerClient, parentPath util.FullPath, queu
 
 }
 
-func StreamBfs(client SeaweedFilerClient, dir util.FullPath, olderThanTsNs int64, fn func(parentPath util.FullPath, entry *Entry)error) (err error) {
+func StreamBfs(client SeaweedFilerClient, dir util.FullPath, olderThanTsNs int64, fn func(parentPath util.FullPath, entry *Entry) error) (err error) {
 	glog.V(0).Infof("TraverseBfsMetadata %v if before %v", dir, time.Unix(0, olderThanTsNs))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -77,7 +77,7 @@ func StreamBfs(client SeaweedFilerClient, dir util.FullPath, olderThanTsNs int64
 		Directory: string(dir),
 	})
 	if err != nil {
-		return fmt.Errorf("traverse bfs metadata: %v", err)
+		return fmt.Errorf("traverse bfs metadata: %w", err)
 	}
 	for {
 		resp, err := stream.Recv()
@@ -85,9 +85,9 @@ func StreamBfs(client SeaweedFilerClient, dir util.FullPath, olderThanTsNs int64
 			if err == io.EOF {
 				break
 			}
-			return fmt.Errorf("traverse bfs metadata: %v", err)
+			return fmt.Errorf("traverse bfs metadata: %w", err)
 		}
-		if err := fn(util.FullPath(resp.Directory),  resp.Entry); err != nil {
+		if err := fn(util.FullPath(resp.Directory), resp.Entry); err != nil {
 			return err
 		}
 	}

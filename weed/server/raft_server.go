@@ -2,12 +2,13 @@ package weed_server
 
 import (
 	"encoding/json"
-	transport "github.com/Jille/raft-grpc-transport"
 	"io"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path"
 	"time"
+
+	transport "github.com/Jille/raft-grpc-transport"
 
 	"google.golang.org/grpc"
 
@@ -129,7 +130,7 @@ func NewRaftServer(option *RaftServerOption) (*RaftServer, error) {
 	}
 
 	stateMachine := StateMachine{topo: option.Topo}
-	s.raftServer, err = raft.NewServer(string(s.serverAddr), s.dataDir, transporter, stateMachine, option.Topo, "")
+	s.raftServer, err = raft.NewServer(string(s.serverAddr), s.dataDir, transporter, stateMachine, option.Topo, s.serverAddr.ToGrpcAddress())
 	if err != nil {
 		glog.V(0).Infoln(err)
 		return nil, err

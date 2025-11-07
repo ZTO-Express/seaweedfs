@@ -75,7 +75,7 @@ var cmdUpload = &Command{
 
 func runUpload(cmd *Command, args []string) bool {
 
-	util.LoadConfiguration("security", false)
+	util.LoadSecurityConfiguration()
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 
 	defaultReplication, leader, err := readMasterConfiguration(grpcDialOption, pb.ServerAddress(*upload.master))
@@ -106,10 +106,14 @@ func runUpload(cmd *Command, args []string) bool {
 					if e != nil {
 						return e
 					}
-					fmt.Println("upload ", *upload.collection, *upload.diskType, *upload.maxMB)
-					results, e := operation.SubmitFiles(func(_ context.Context) pb.ServerAddress { return pb.ServerAddress(*upload.master) },
-						grpcDialOption, parts, *upload.replication, *upload.collection, *upload.dataCenter, *upload.ttl,
-						*upload.diskType, *upload.maxMB, *upload.usePublicUrl, *upload.Username, *upload.Password, *upload.ChunkConcurrent)
+					results, e := operation.SubmitFiles(func(_ context.Context) pb.ServerAddress { return pb.ServerAddress(*upload.master) }, grpcDialOption, parts, operation.StoragePreference{
+						Replication: *upload.replication,
+						Collection:  *upload.collection,
+						DataCenter:  *upload.dataCenter,
+						Ttl:         *upload.ttl,
+						DiskType:    *upload.diskType,
+						MaxMB:       *upload.maxMB,
+					}, *upload.usePublicUrl, *upload.Username, *upload.Password)
 					bytes, _ := json.Marshal(results)
 					fmt.Println(string(bytes))
 					if e != nil {
@@ -131,9 +135,14 @@ func runUpload(cmd *Command, args []string) bool {
 			fmt.Println(e.Error())
 			return false
 		}
-		results, err := operation.SubmitFiles(func(_ context.Context) pb.ServerAddress { return pb.ServerAddress(*upload.master) },
-			grpcDialOption, parts, *upload.replication, *upload.collection, *upload.dataCenter, *upload.ttl,
-			*upload.diskType, *upload.maxMB, *upload.usePublicUrl, *upload.Username, *upload.Password, *upload.ChunkConcurrent)
+		results, err := operation.SubmitFiles(func(_ context.Context) pb.ServerAddress { return pb.ServerAddress(*upload.master) }, grpcDialOption, parts, operation.StoragePreference{
+			Replication: *upload.replication,
+			Collection:  *upload.collection,
+			DataCenter:  *upload.dataCenter,
+			Ttl:         *upload.ttl,
+			DiskType:    *upload.diskType,
+			MaxMB:       *upload.maxMB,
+		}, *upload.usePublicUrl, *upload.Username, *upload.Password)
 		if err != nil {
 			fmt.Println(err.Error())
 			return false

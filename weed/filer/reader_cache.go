@@ -1,13 +1,15 @@
 package filer
 
 import (
+	"context"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/util"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util/chunk_cache"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 	"github.com/seaweedfs/seaweedfs/weed/util/mem"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
 )
@@ -61,6 +63,10 @@ func (rc *ReaderCache) MaybeCache(chunkViews *Interval[*ChunkView]) {
 		if _, found := rc.downloaders[chunkView.FileId]; found {
 			continue
 		}
+		if rc.chunkCache.IsInCache(chunkView.FileId, true) {
+			glog.V(4).Infof("%s is in cache", chunkView.FileId)
+			continue
+		}
 
 		if len(rc.downloaders) >= rc.limit {
 			// abort when slots are filled
@@ -69,7 +75,8 @@ func (rc *ReaderCache) MaybeCache(chunkViews *Interval[*ChunkView]) {
 
 		// glog.V(4).Infof("prefetch %s offset %d", chunkView.FileId, chunkView.ViewOffset)
 		// cache this chunk if not yet
-		cacher := newSingleChunkCacher(rc, chunkView.FileId, chunkView.CipherKey, chunkView.IsGzipped, int(chunkView.ChunkSize), false)
+		shouldCache := (uint64(chunkView.ViewOffset) + chunkView.ChunkSize) <= rc.chunkCache.GetMaxFilePartSizeInCache()
+		cacher := newSingleChunkCacher(rc, chunkView.FileId, chunkView.CipherKey, chunkView.IsGzipped, int(chunkView.ChunkSize), shouldCache)
 		go cacher.startCaching()
 		<-cacher.cacheStartedCh
 		rc.downloaders[chunkView.FileId] = cacher
@@ -163,7 +170,7 @@ func (s *SingleChunkCacher) startCaching() {
 
 	s.cacheStartedCh <- struct{}{} // means this has been started
 
-	urlStrings, err := s.parent.lookupFileIdFn(s.chunkFileId)
+	urlStrings, err := s.parent.lookupFileIdFn(context.Background(), s.chunkFileId)
 	if err != nil {
 		s.err = fmt.Errorf("operation LookupFileId %s failed, err: %v", s.chunkFileId, err)
 		return
@@ -171,7 +178,7 @@ func (s *SingleChunkCacher) startCaching() {
 
 	s.data = mem.Allocate(s.chunkSize)
 
-	_, s.err = util.RetriedFetchChunkData(s.data, urlStrings, s.cipherKey, s.isGzipped, true, 0)
+	_, s.err = util_http.RetriedFetchChunkData(context.Background(), s.data, urlStrings, s.cipherKey, s.isGzipped, true, 0, s.chunkFileId)
 	if s.err != nil {
 		mem.Free(s.data)
 		s.data = nil

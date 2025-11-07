@@ -27,6 +27,10 @@ func (c *commandS3BucketList) Help() string {
 `
 }
 
+func (c *commandS3BucketList) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandS3BucketList) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
 
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
@@ -50,10 +54,10 @@ func (c *commandS3BucketList) Do(args []string, commandEnv *CommandEnv, writer i
 	var filerBucketsPath string
 	filerBucketsPath, err = readFilerBucketsPath(commandEnv)
 	if err != nil {
-		return fmt.Errorf("read buckets: %v", err)
+		return fmt.Errorf("read buckets: %w", err)
 	}
 
-	err = filer_pb.List(commandEnv, filerBucketsPath, "", func(entry *filer_pb.Entry, isLast bool) error {
+	err = filer_pb.List(context.Background(), commandEnv, filerBucketsPath, "", func(entry *filer_pb.Entry, isLast bool) error {
 		if !entry.IsDirectory {
 			return nil
 		}
@@ -71,7 +75,7 @@ func (c *commandS3BucketList) Do(args []string, commandEnv *CommandEnv, writer i
 		return nil
 	}, "", false, math.MaxUint32)
 	if err != nil {
-		return fmt.Errorf("list buckets under %v: %v", filerBucketsPath, err)
+		return fmt.Errorf("list buckets under %v: %w", filerBucketsPath, err)
 	}
 
 	return err
@@ -83,7 +87,7 @@ func readFilerBucketsPath(filerClient filer_pb.FilerClient) (filerBucketsPath st
 
 		resp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
 		if err != nil {
-			return fmt.Errorf("get filer configuration: %v", err)
+			return fmt.Errorf("get filer configuration: %w", err)
 		}
 		filerBucketsPath = resp.DirBuckets
 

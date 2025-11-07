@@ -28,6 +28,10 @@ func (c *commandS3BucketDelete) Help() string {
 `
 }
 
+func (c *commandS3BucketDelete) HasTag(CommandTag) bool {
+	return false
+}
+
 func (c *commandS3BucketDelete) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
 
 	bucketCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
@@ -48,7 +52,7 @@ func (c *commandS3BucketDelete) Do(args []string, commandEnv *CommandEnv, writer
 	var filerBucketsPath string
 	filerBucketsPath, err = readFilerBucketsPath(commandEnv)
 	if err != nil {
-		return fmt.Errorf("read buckets: %v", err)
+		return fmt.Errorf("read buckets: %w", err)
 	}
 
 	// delete the collection directly first
@@ -62,6 +66,6 @@ func (c *commandS3BucketDelete) Do(args []string, commandEnv *CommandEnv, writer
 		return
 	}
 
-	return filer_pb.Remove(commandEnv, filerBucketsPath, *bucketName, false, true, true, false, nil)
+	return filer_pb.Remove(context.Background(), commandEnv, filerBucketsPath, *bucketName, false, true, true, false, nil)
 
 }

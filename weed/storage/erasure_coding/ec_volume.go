@@ -3,14 +3,13 @@ package erasure_coding
 import (
 	"errors"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"math"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
-	"golang.org/x/exp/slices"
-
+	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/volume_server_pb"
@@ -45,6 +44,8 @@ type EcVolume struct {
 	lastReadAt                time.Time
 	expireTime                int64
 	DestroyTime               uint64 //ec volume删除时间
+	datFileSize               int64
+	ECContext                 *ECContext // EC encoding parameters
 }
 
 func NewEcVolume(diskType types.DiskType, dir string, dirIdx string, collection string, vid needle.VolumeId, ecVolumeExpireClose int64) (ev *EcVolume, err error) {
@@ -75,9 +76,33 @@ func NewEcVolume(diskType types.DiskType, dir string, dirIdx string, collection 
 	if volumeInfo, _, found, _ := volume_info.MaybeLoadVolumeInfo(dataBaseFileName + ".vif"); found {
 		ev.Version = needle.Version(volumeInfo.Version)
 		ev.DestroyTime = volumeInfo.DestroyTime
+		ev.datFileSize = volumeInfo.DatFileSize
+
+		// Initialize EC context from .vif if present; fallback to defaults
+		if volumeInfo.EcShardConfig != nil {
+			ds := int(volumeInfo.EcShardConfig.DataShards)
+			ps := int(volumeInfo.EcShardConfig.ParityShards)
+
+			// Validate shard counts to prevent zero or invalid values
+			if ds <= 0 || ps <= 0 || ds+ps > MaxShardCount {
+				glog.Warningf("Invalid EC config in VolumeInfo for volume %d (data=%d, parity=%d), using defaults", vid, ds, ps)
+				ev.ECContext = NewDefaultECContext(collection, vid)
+			} else {
+				ev.ECContext = &ECContext{
+					Collection:   collection,
+					VolumeId:     vid,
+					DataShards:   ds,
+					ParityShards: ps,
+				}
+				glog.V(1).Infof("Loaded EC config from VolumeInfo for volume %d: %s", vid, ev.ECContext.String())
+			}
+		} else {
+			ev.ECContext = NewDefaultECContext(collection, vid)
+		}
 	} else {
 		glog.Warningf("vif file not found,volumeId:%d, filename:%s", vid, dataBaseFileName)
 		volume_info.SaveVolumeInfo(dataBaseFileName+".vif", &volume_server_pb.VolumeInfo{Version: uint32(ev.Version)})
+		ev.ECContext = NewDefaultECContext(collection, vid)
 	}
 
 	ev.ShardLocations = make(map[ShardId][]pb.ServerAddress)
@@ -116,7 +141,7 @@ func (ev *EcVolume) DeleteEcVolumeShard(shardId ShardId) (ecVolumeShard *EcVolum
 	}
 
 	ecVolumeShard = ev.Shards[foundPosition]
-
+	ecVolumeShard.Unmount()
 	ev.Shards = append(ev.Shards[:foundPosition], ev.Shards[foundPosition+1:]...)
 	ev.lastReadAt = time.Now()
 	return ecVolumeShard, true
@@ -226,9 +251,11 @@ func (ev *EcVolume) ShardSize() uint64 {
 	return 0
 }
 
-func (ev *EcVolume) Size() (size int64) {
+func (ev *EcVolume) Size() (size uint64) {
 	for _, shard := range ev.Shards {
-		size += shard.Size()
+		if shardSize := shard.Size(); shardSize > 0 {
+			size += uint64(shardSize)
+		}
 	}
 	return
 }
@@ -244,7 +271,25 @@ func (ev *EcVolume) ShardIdList() (shardIds []ShardId) {
 	return
 }
 
-func (ev *EcVolume) ToVolumeEcShardInformationMessage() (messages []*master_pb.VolumeEcShardInformationMessage) {
+type ShardInfo struct {
+	ShardId ShardId
+	Size    uint64
+}
+
+func (ev *EcVolume) ShardDetails() (shards []ShardInfo) {
+	for _, s := range ev.Shards {
+		shardSize := s.Size()
+		if shardSize >= 0 {
+			shards = append(shards, ShardInfo{
+				ShardId: s.ShardId,
+				Size:    uint64(shardSize),
+			})
+		}
+	}
+	return
+}
+
+func (ev *EcVolume) ToVolumeEcShardInformationMessage(diskId uint32) (messages []*master_pb.VolumeEcShardInformationMessage) {
 	prevVolumeId := needle.VolumeId(math.MaxUint32)
 	var m *master_pb.VolumeEcShardInformationMessage
 	for _, s := range ev.Shards {
@@ -255,11 +300,15 @@ func (ev *EcVolume) ToVolumeEcShardInformationMessage() (messages []*master_pb.V
 				DiskType:    string(ev.diskType),
 				DestroyTime: ev.DestroyTime,
 				Dir:         ev.dir,
+				DiskId:      diskId,
 			}
 			messages = append(messages, m)
 		}
 		prevVolumeId = s.VolumeId
 		m.EcIndexBits = uint32(ShardBits(m.EcIndexBits).AddShardId(s.ShardId))
+
+		// Add shard size information using the optimized format
+		SetShardSize(m, s.ShardId, s.Size())
 	}
 	return
 }
@@ -269,7 +318,7 @@ func (ev *EcVolume) LocateEcShardNeedle(needleId types.NeedleId, version needle.
 	// find the needle from ecx file
 	offset, size, err = ev.FindNeedleFromEcx(needleId)
 	if err != nil {
-		return types.Offset{}, 0, nil, fmt.Errorf("FindNeedleFromEcx: %v", err)
+		return types.Offset{}, 0, nil, fmt.Errorf("FindNeedleFromEcx: %w", err)
 	}
 
 	intervals = ev.LocateEcShardNeedleInterval(version, offset.ToActualOffset(), types.Size(needle.GetActualSize(size, version)))
@@ -279,8 +328,17 @@ func (ev *EcVolume) LocateEcShardNeedle(needleId types.NeedleId, version needle.
 
 func (ev *EcVolume) LocateEcShardNeedleInterval(version needle.Version, offset int64, size types.Size) (intervals []Interval) {
 	shard := ev.Shards[0]
+	// Usually shard will be padded to round of ErasureCodingSmallBlockSize.
+	// So in most cases, if shardSize equals to n * ErasureCodingLargeBlockSize,
+	// the data would be in small blocks.
+	shardSize := shard.ecdFileSize - 1
+	if ev.datFileSize > 0 {
+		// To get the correct LargeBlockRowsCount
+		// use datFileSize to calculate the shardSize to match the EC encoding logic.
+		shardSize = ev.datFileSize / int64(ev.ECContext.DataShards)
+	}
 	// calculate the locations in the ec shards
-	intervals = LocateData(ErasureCodingLargeBlockSize, ErasureCodingSmallBlockSize, DataShardsCount*shard.ecdFileSize, offset, types.Size(needle.GetActualSize(size, version)))
+	intervals = LocateData(ErasureCodingLargeBlockSize, ErasureCodingSmallBlockSize, shardSize, offset, types.Size(needle.GetActualSize(size, version)))
 
 	return
 }
@@ -324,13 +382,15 @@ func SearchNeedleFromSortedIndex(ecxFile *os.File, ecxFileSize int64, needleId t
 	l, h := int64(0), ecxFileSize/types.NeedleMapEntrySize
 	for l < h {
 		m := (l + h) / 2
-		if _, err := ecxFile.ReadAt(buf, m*types.NeedleMapEntrySize); err != nil {
-			return types.Offset{}, types.TombstoneFileSize, fmt.Errorf("ecx file %d read at %d: %v", ecxFileSize, m*types.NeedleMapEntrySize, err)
+		if n, err := ecxFile.ReadAt(buf, m*types.NeedleMapEntrySize); err != nil {
+			if n != types.NeedleMapEntrySize {
+				return types.Offset{}, types.TombstoneFileSize, fmt.Errorf("ecx file %d read at %d: %v", ecxFileSize, m*types.NeedleMapEntrySize, err)
+			}
 		}
 		key, offset, size = idx.IdxFileEntry(buf)
 		if key == needleId {
 			if processNeedleFn != nil {
-				err = processNeedleFn(ecxFile, m*types.NeedleHeaderSize)
+				err = processNeedleFn(ecxFile, m*types.NeedleMapEntrySize)
 			}
 			return
 		}

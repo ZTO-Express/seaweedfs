@@ -48,20 +48,22 @@ type Volume struct {
 	isCompacting       bool
 	isCommitCompacting bool
 
-	volumeInfo *volume_server_pb.VolumeInfo
-	location   *DiskLocation
+	volumeInfoRWLock sync.RWMutex
+	volumeInfo       *volume_server_pb.VolumeInfo
+	location         *DiskLocation
+	diskId           uint32 // ID of this volume's disk in Store.Locations array
 
 	lastIoError error
 }
 
-func NewVolume(dirname string, dirIdx string, collection string, id needle.VolumeId, needleMapKind NeedleMapKind, replicaPlacement *super_block.ReplicaPlacement, ttl *needle.TTL, preallocate int64, memoryMapMaxSizeMb uint32, ldbTimeout int64) (v *Volume, e error) {
+func NewVolume(dirname string, dirIdx string, collection string, id needle.VolumeId, needleMapKind NeedleMapKind, replicaPlacement *super_block.ReplicaPlacement, ttl *needle.TTL, preallocate int64, ver needle.Version, memoryMapMaxSizeMb uint32, ldbTimeout int64) (v *Volume, e error) {
 	// if replicaPlacement is nil, the superblock will be loaded from disk
 	v = &Volume{dir: dirname, dirIdx: dirIdx, Collection: collection, Id: id, MemoryMapMaxSizeMb: memoryMapMaxSizeMb,
 		asyncRequestsChan: make(chan *needle.AsyncRequest, 128)}
 	v.SuperBlock = super_block.SuperBlock{ReplicaPlacement: replicaPlacement, Ttl: ttl}
 	v.needleMapKind = needleMapKind
 	v.ldbTimeout = ldbTimeout
-	e = v.load(true, true, needleMapKind, preallocate)
+	e = v.load(true, true, needleMapKind, preallocate, ver)
 	v.startWorker()
 	return
 }
@@ -336,7 +338,7 @@ func (v *Volume) ToVolumeInformationMessage() (types.NeedleId, *master_pb.Volume
 		CompactRevision:  uint32(v.SuperBlock.CompactionRevision),
 		ModifiedAtSecond: modTime.Unix(),
 		DiskType:         string(v.location.DiskType),
-		Dir:              v.dir,
+		DiskId:           v.diskId,
 	}
 
 	volumeInfo.RemoteStorageName, volumeInfo.RemoteStorageKey = v.RemoteStorageNameKey()
@@ -358,4 +360,11 @@ func (v *Volume) IsReadOnly() bool {
 	v.noWriteLock.RLock()
 	defer v.noWriteLock.RUnlock()
 	return v.noWriteOrDelete || v.noWriteCanDelete || v.location.isDiskSpaceLow
+}
+
+func (v *Volume) PersistReadOnly(readOnly bool) {
+	v.volumeInfoRWLock.RLock()
+	defer v.volumeInfoRWLock.RUnlock()
+	v.volumeInfo.ReadOnly = readOnly
+	v.SaveVolumeInfo()
 }

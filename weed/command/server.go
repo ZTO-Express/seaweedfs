@@ -1,16 +1,16 @@
 package command
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
-	stats_collect "github.com/seaweedfs/seaweedfs/weed/stats"
-
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
+	stats_collect "github.com/seaweedfs/seaweedfs/weed/stats"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/util/grace"
 )
@@ -24,13 +24,15 @@ type ServerOptions struct {
 }
 
 var (
-	serverOptions   ServerOptions
-	masterOptions   MasterOptions
-	filerOptions    FilerOptions
-	s3Options       S3Options
-	iamOptions      IamOptions
-	webdavOptions   WebDavOption
-	mqBrokerOptions MessageQueueBrokerOptions
+	serverOptions        ServerOptions
+	masterOptions        MasterOptions
+	filerOptions         FilerOptions
+	s3Options            S3Options
+	sftpOptions          SftpOptions
+	iamOptions           IamOptions
+	webdavOptions        WebDavOption
+	mqBrokerOptions      MessageQueueBrokerOptions
+	mqAgentServerOptions MessageQueueAgentOptions
 )
 
 func init() {
@@ -61,6 +63,7 @@ var (
 	serverRack                = cmdServer.Flag.String("rack", "", "current volume server's rack name")
 	serverWhiteListOption     = cmdServer.Flag.String("whiteList", "", "comma separated Ip addresses having write permission. No limit if empty.")
 	serverDisableHttp         = cmdServer.Flag.Bool("disableHttp", false, "disable http requests, only gRPC operations are allowed.")
+	serverIamConfig           = cmdServer.Flag.String("iam.config", "", "path to the advanced IAM config file for S3. An alias for -s3.iam.config, but with lower priority.")
 	volumeDataFolders         = cmdServer.Flag.String("dir", os.TempDir(), "directories to store data files. dir[,dir]...")
 	volumeMaxDataVolumeCounts = cmdServer.Flag.String("volume.max", "8", "maximum numbers of volumes, count[,count]... If set to zero, the limit will be auto configured as free disk space divided by volume size.")
 	volumeMinFreeSpacePercent = cmdServer.Flag.String("volume.minFreeSpacePercent", "1", "minimum free disk space (default to 1%). Low disk space will mark all volumes as ReadOnly (deprecated, use minFreeSpace instead).")
@@ -73,9 +76,11 @@ var (
 	isStartingVolumeServer = cmdServer.Flag.Bool("volume", true, "whether to start volume server")
 	isStartingFiler        = cmdServer.Flag.Bool("filer", false, "whether to start filer")
 	isStartingS3           = cmdServer.Flag.Bool("s3", false, "whether to start S3 gateway")
+	isStartingSftp         = cmdServer.Flag.Bool("sftp", false, "whether to start Sftp server")
 	isStartingIam          = cmdServer.Flag.Bool("iam", false, "whether to start IAM service")
 	isStartingWebDav       = cmdServer.Flag.Bool("webdav", false, "whether to start WebDAV gateway")
 	isStartingMqBroker     = cmdServer.Flag.Bool("mq.broker", false, "whether to start message queue broker")
+	isStartingMqAgent      = cmdServer.Flag.Bool("mq.agent", false, "whether to start message queue agent")
 
 	False = false
 )
@@ -92,6 +97,7 @@ func init() {
 	masterOptions.peers = cmdServer.Flag.String("master.peers", "", "all master nodes in comma separated ip:masterPort list")
 	masterOptions.volumeSizeLimitMB = cmdServer.Flag.Uint("master.volumeSizeLimitMB", 30*1000, "Master stops directing writes to oversized volumes.")
 	masterOptions.volumePreallocate = cmdServer.Flag.Bool("master.volumePreallocate", false, "Preallocate disk space for volumes.")
+	masterOptions.maxParallelVacuumPerServer = cmdServer.Flag.Int("master.maxParallelVacuumPerServer", 1, "maximum number of volumes to vacuum in parallel on one volume server")
 	masterOptions.defaultReplication = cmdServer.Flag.String("master.defaultReplication", "", "Default replication type if not specified.")
 	masterOptions.garbageThreshold = cmdServer.Flag.Float64("master.garbageThreshold", 0.3, "threshold to vacuum and reclaim spaces")
 	masterOptions.metricsAddress = cmdServer.Flag.String("master.metrics.address", "", "Prometheus gateway address")
@@ -101,6 +107,8 @@ func init() {
 	masterOptions.raftBootstrap = cmdServer.Flag.Bool("master.raftBootstrap", false, "Whether to bootstrap the Raft cluster")
 	masterOptions.heartbeatInterval = cmdServer.Flag.Duration("master.heartbeatInterval", 300*time.Millisecond, "heartbeat interval of master servers, and will be randomly multiplied by [1, 1.25)")
 	masterOptions.electionTimeout = cmdServer.Flag.Duration("master.electionTimeout", 10*time.Second, "election timeout of master servers")
+	masterOptions.telemetryUrl = cmdServer.Flag.String("master.telemetry.url", "https://telemetry.seaweedfs.com/api/collect", "telemetry server URL to send usage statistics")
+	masterOptions.telemetryEnabled = cmdServer.Flag.Bool("master.telemetry", false, "enable telemetry reporting")
 
 	filerOptions.filerGroup = cmdServer.Flag.String("filer.filerGroup", "", "share metadata with other filers in the same filerGroup")
 	filerOptions.collection = cmdServer.Flag.String("filer.collection", "", "all data will be stored in this collection")
@@ -138,6 +146,8 @@ func init() {
 	serverOptions.v.pprof = cmdServer.Flag.Bool("volume.pprof", false, "enable pprof http handlers. precludes --memprofile and --cpuprofile")
 	serverOptions.v.idxFolder = cmdServer.Flag.String("volume.dir.idx", "", "directory to store .idx files")
 	serverOptions.v.inflightUploadDataTimeout = cmdServer.Flag.Duration("volume.inflightUploadDataTimeout", 60*time.Second, "inflight upload data wait timeout of volume servers")
+	serverOptions.v.inflightDownloadDataTimeout = cmdServer.Flag.Duration("volume.inflightDownloadDataTimeout", 60*time.Second, "inflight download data wait timeout of volume servers")
+
 	serverOptions.v.hasSlowRead = cmdServer.Flag.Bool("volume.hasSlowRead", true, "<experimental> if true, this prevents slow reads from blocking other requests, but large file read P99 latency will increase.")
 	serverOptions.v.readBufferSizeMB = cmdServer.Flag.Int("volume.readBufferSizeMB", 4, "<experimental> larger values can optimize query performance but will increase some memory usage,Use with hasSlowRead normally")
 
@@ -151,11 +161,25 @@ func init() {
 	s3Options.tlsCACertificate = cmdServer.Flag.String("s3.cacert.file", "", "path to the TLS CA certificate file")
 	s3Options.tlsVerifyClientCert = cmdServer.Flag.Bool("s3.tlsVerifyClientCert", false, "whether to verify the client's certificate")
 	s3Options.config = cmdServer.Flag.String("s3.config", "", "path to the config file")
+	s3Options.iamConfig = cmdServer.Flag.String("s3.iam.config", "", "path to the advanced IAM config file for S3. Overrides -iam.config if both are provided.")
 	s3Options.auditLogConfig = cmdServer.Flag.String("s3.auditLogConfig", "", "path to the audit log config file")
 	s3Options.allowEmptyFolder = cmdServer.Flag.Bool("s3.allowEmptyFolder", true, "allow empty folders")
 	s3Options.allowDeleteBucketNotEmpty = cmdServer.Flag.Bool("s3.allowDeleteBucketNotEmpty", true, "allow recursive deleting all entries along with bucket")
 	s3Options.localSocket = cmdServer.Flag.String("s3.localSocket", "", "default to /tmp/seaweedfs-s3-<port>.sock")
+	s3Options.bindIp = cmdServer.Flag.String("s3.ip.bind", "", "ip address to bind to. If empty, default to same as -ip.bind option.")
+	s3Options.idleTimeout = cmdServer.Flag.Int("s3.idleTimeout", 10, "connection idle seconds")
 
+	sftpOptions.port = cmdServer.Flag.Int("sftp.port", 2022, "SFTP server listen port")
+	sftpOptions.sshPrivateKey = cmdServer.Flag.String("sftp.sshPrivateKey", "", "path to the SSH private key file for host authentication")
+	sftpOptions.hostKeysFolder = cmdServer.Flag.String("sftp.hostKeysFolder", "", "path to folder containing SSH private key files for host authentication")
+	sftpOptions.authMethods = cmdServer.Flag.String("sftp.authMethods", "password,publickey", "comma-separated list of allowed auth methods: password, publickey, keyboard-interactive")
+	sftpOptions.maxAuthTries = cmdServer.Flag.Int("sftp.maxAuthTries", 6, "maximum number of authentication attempts per connection")
+	sftpOptions.bannerMessage = cmdServer.Flag.String("sftp.bannerMessage", "SeaweedFS SFTP Server - Unauthorized access is prohibited", "message displayed before authentication")
+	sftpOptions.loginGraceTime = cmdServer.Flag.Duration("sftp.loginGraceTime", 2*time.Minute, "timeout for authentication")
+	sftpOptions.clientAliveInterval = cmdServer.Flag.Duration("sftp.clientAliveInterval", 5*time.Second, "interval for sending keep-alive messages")
+	sftpOptions.clientAliveCountMax = cmdServer.Flag.Int("sftp.clientAliveCountMax", 3, "maximum number of missed keep-alive messages before disconnecting")
+	sftpOptions.userStoreFile = cmdServer.Flag.String("sftp.userStoreFile", "", "path to JSON file containing user credentials and permissions")
+	sftpOptions.localSocket = cmdServer.Flag.String("sftp.localSocket", "", "default to /tmp/seaweedfs-sftp-<port>.sock")
 	iamOptions.port = cmdServer.Flag.Int("iam.port", 8111, "iam server http listen port")
 
 	webdavOptions.port = cmdServer.Flag.Int("webdav.port", 7333, "webdav server http listen port")
@@ -170,6 +194,10 @@ func init() {
 	webdavOptions.filerRootPath = cmdServer.Flag.String("webdav.filer.path", "/", "use this remote path from filer server")
 
 	mqBrokerOptions.port = cmdServer.Flag.Int("mq.broker.port", 17777, "message queue broker gRPC listen port")
+	mqBrokerOptions.logFlushInterval = cmdServer.Flag.Int("mq.broker.logFlushInterval", 5, "log buffer flush interval in seconds")
+
+	mqAgentServerOptions.brokersString = cmdServer.Flag.String("mq.agent.brokers", "localhost:17777", "comma-separated message queue brokers")
+	mqAgentServerOptions.port = cmdServer.Flag.Int("mq.agent.port", 16777, "message queue agent gRPC listen port")
 
 }
 
@@ -179,12 +207,15 @@ func runServer(cmd *Command, args []string) bool {
 		go http.ListenAndServe(fmt.Sprintf(":%d", *serverOptions.debugPort), nil)
 	}
 
-	util.LoadConfiguration("security", false)
+	util.LoadSecurityConfiguration()
 	util.LoadConfiguration("master", false)
 
 	grace.SetupProfiling(*serverOptions.cpuprofile, *serverOptions.memprofile)
 
 	if *isStartingS3 {
+		*isStartingFiler = true
+	}
+	if *isStartingSftp {
 		*isStartingFiler = true
 	}
 	if *isStartingIam {
@@ -196,11 +227,22 @@ func runServer(cmd *Command, args []string) bool {
 	if *isStartingMqBroker {
 		*isStartingFiler = true
 	}
+	if *isStartingMqAgent {
+		*isStartingMqBroker = true
+		*isStartingFiler = true
+	}
 
+	var actualPeersForComponents string
 	if *isStartingMasterServer {
+		// If we are starting a master, validate and complete the peer list
 		_, peerList := checkPeers(*serverIp, *masterOptions.port, *masterOptions.portGrpc, *masterOptions.peers)
-		peers := strings.Join(pb.ToAddressStrings(peerList), ",")
-		masterOptions.peers = &peers
+		actualPeersForComponents = strings.Join(pb.ToAddressStrings(peerList), ",")
+	} else if *masterOptions.peers != "" {
+		if isSingleMasterMode(*masterOptions.peers) {
+			glog.Fatalf("'-master.peers=none' is only valid when starting a master server, but master is not starting.")
+		}
+		// If not starting a master, just use the provided peers
+		actualPeersForComponents = *masterOptions.peers
 	}
 
 	if *serverBindIp == "" {
@@ -214,21 +256,30 @@ func runServer(cmd *Command, args []string) bool {
 	// ip address
 	masterOptions.ip = serverIp
 	masterOptions.ipBind = serverBindIp
-	filerOptions.masters = pb.ServerAddresses(*masterOptions.peers).ToServiceDiscovery()
+	// Use actualPeersForComponents for volume/filer, not masterOptions.peers which might be "none"
+	filerOptions.masters = pb.ServerAddresses(actualPeersForComponents).ToServiceDiscovery()
 	filerOptions.ip = serverIp
 	filerOptions.bindIp = serverBindIp
-	s3Options.bindIp = serverBindIp
+	if *s3Options.bindIp == "" {
+		s3Options.bindIp = serverBindIp
+	}
+	if sftpOptions.bindIp == nil || *sftpOptions.bindIp == "" {
+		sftpOptions.bindIp = serverBindIp
+	}
 	iamOptions.ip = serverBindIp
-	iamOptions.masters = masterOptions.peers
+	iamOptions.masters = &actualPeersForComponents
+	webdavOptions.ipBind = serverBindIp
 	serverOptions.v.ip = serverIp
 	serverOptions.v.bindIp = serverBindIp
-	serverOptions.v.masters = pb.ServerAddresses(*masterOptions.peers).ToAddresses()
+	serverOptions.v.masters = pb.ServerAddresses(actualPeersForComponents).ToAddresses()
 	serverOptions.v.idleConnectionTimeout = serverTimeout
 	serverOptions.v.dataCenter = serverDataCenter
 	serverOptions.v.rack = serverRack
 	mqBrokerOptions.ip = serverIp
 	mqBrokerOptions.masters = filerOptions.masters.GetInstancesAsMap()
 	mqBrokerOptions.filerGroup = filerOptions.filerGroup
+	mqAgentServerOptions.ip = serverIp
+	mqAgentServerOptions.brokers = pb.ServerAddresses(*mqAgentServerOptions.brokersString).ToAddresses()
 
 	// serverOptions.v.pulseSeconds = pulseSeconds
 	// masterOptions.pulseSeconds = pulseSeconds
@@ -240,11 +291,13 @@ func runServer(cmd *Command, args []string) bool {
 	mqBrokerOptions.dataCenter = serverDataCenter
 	mqBrokerOptions.rack = serverRack
 	s3Options.dataCenter = serverDataCenter
+	sftpOptions.dataCenter = serverDataCenter
 	filerOptions.disableHttp = serverDisableHttp
 	masterOptions.disableHttp = serverDisableHttp
 
 	filerAddress := string(pb.NewServerAddress(*serverIp, *filerOptions.port, *filerOptions.portGrpc))
 	s3Options.filer = &filerAddress
+	sftpOptions.filer = &filerAddress
 	iamOptions.filer = &filerAddress
 	webdavOptions.filer = &filerAddress
 	mqBrokerOptions.filerGroup = filerOptions.filerGroup
@@ -278,10 +331,24 @@ func runServer(cmd *Command, args []string) bool {
 	}
 
 	if *isStartingS3 {
+		// Handle IAM config: -s3.iam.config takes precedence over -iam.config
+		if *s3Options.iamConfig == "" {
+			*s3Options.iamConfig = *serverIamConfig
+		} else if *serverIamConfig != "" && *s3Options.iamConfig != *serverIamConfig {
+			glog.V(0).Infof("both -s3.iam.config(%s) and -iam.config(%s) provided; using -s3.iam.config", *s3Options.iamConfig, *serverIamConfig)
+		}
 		go func() {
 			time.Sleep(2 * time.Second)
 			s3Options.localFilerSocket = filerOptions.localSocket
 			s3Options.startS3Server()
+		}()
+	}
+
+	if *isStartingSftp {
+		go func() {
+			time.Sleep(2 * time.Second)
+			sftpOptions.localSocket = filerOptions.localSocket
+			sftpOptions.startSftpServer()
 		}()
 	}
 
@@ -307,6 +374,13 @@ func runServer(cmd *Command, args []string) bool {
 		}()
 	}
 
+	if *isStartingMqAgent {
+		go func() {
+			time.Sleep(2 * time.Second)
+			mqAgentServerOptions.startQueueAgent()
+		}()
+	}
+
 	// start volume server
 	if *isStartingVolumeServer {
 		minFreeSpaces := util.MustParseMinFreeSpace(*volumeMinFreeSpace, *volumeMinFreeSpacePercent)
@@ -318,4 +392,14 @@ func runServer(cmd *Command, args []string) bool {
 	}
 
 	select {}
+}
+
+func newHttpServer(h http.Handler, tlsConfig *tls.Config) *http.Server {
+	s := &http.Server{
+		Handler: h,
+	}
+	if tlsConfig != nil {
+		s.TLSConfig = tlsConfig.Clone()
+	}
+	return s
 }

@@ -33,9 +33,13 @@ func (c *commandRemoteMountBuckets) Help() string {
 	remote.mount.buckets -remote=cloud1
 
 	# after mount, start a separate process to write updates to remote storage
-	weed filer.remote.sync -filer=<filerHost>:<filerPort> -createBucketAt=cloud1
+	weed filer.remote.gateway -filer=<filerHost>:<filerPort> -createBucketAt=cloud1
 
 `
+}
+
+func (c *commandRemoteMountBuckets) HasTag(CommandTag) bool {
+	return false
 }
 
 func (c *commandRemoteMountBuckets) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
@@ -75,7 +79,7 @@ func (c *commandRemoteMountBuckets) Do(args []string, commandEnv *CommandEnv, wr
 
 	fillerBucketsPath, err := readFilerBucketsPath(commandEnv)
 	if err != nil {
-		return fmt.Errorf("read filer buckets path: %v", err)
+		return fmt.Errorf("read filer buckets path: %w", err)
 	}
 
 	hasSuffixPattern, _ := regexp.Compile(".+-[0-9][0-9][0-9][0-9]")

@@ -9,6 +9,7 @@ import (
 )
 
 var Commands = []*Command{
+	cmdAdmin,
 	cmdAutocomplete,
 	cmdUnautocomplete,
 	cmdBackup,
@@ -32,16 +33,22 @@ var Commands = []*Command{
 	cmdMaster,
 	cmdMasterFollower,
 	cmdMount,
+	cmdMqAgent,
 	cmdMqBroker,
+	cmdMqKafkaGateway,
+	cmdDB,
 	cmdS3,
 	cmdScaffold,
 	cmdServer,
 	cmdShell,
+	cmdSql,
 	cmdUpdate,
 	cmdUpload,
 	cmdVersion,
 	cmdVolume,
 	cmdWebDav,
+	cmdSftp,
+	cmdWorker,
 }
 
 type Command struct {

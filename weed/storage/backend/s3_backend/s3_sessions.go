@@ -2,12 +2,12 @@ package s3_backend
 
 import (
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/seaweedfs/seaweedfs/weed/util"
+	"github.com/seaweedfs/seaweedfs/weed/util/version"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
@@ -26,19 +26,20 @@ func getSession(region string) (s3iface.S3API, bool) {
 	return sess, found
 }
 
-func createSession(awsAccessKeyId, awsSecretAccessKey, region, endpoint string) (s3iface.S3API, error) {
+func createSession(awsAccessKeyId, awsSecretAccessKey, region, endpoint string, forcePathStyle bool) (s3iface.S3API, error) {
 
 	sessionsLock.Lock()
 	defer sessionsLock.Unlock()
 
-	if t, found := s3Sessions[region]; found {
+	cacheKey := fmt.Sprintf("%s|%s", region, endpoint)
+	if t, found := s3Sessions[cacheKey]; found {
 		return t, nil
 	}
 
 	config := &aws.Config{
 		Region:                        aws.String(region),
 		Endpoint:                      aws.String(endpoint),
-		S3ForcePathStyle:              aws.Bool(true),
+		S3ForcePathStyle:              aws.Bool(forcePathStyle),
 		S3DisableContentMD5Validation: aws.Bool(true),
 	}
 	if awsAccessKeyId != "" && awsSecretAccessKey != "" {
@@ -50,7 +51,7 @@ func createSession(awsAccessKeyId, awsSecretAccessKey, region, endpoint string) 
 		return nil, fmt.Errorf("create aws session in region %s: %v", region, err)
 	}
 	sess.Handlers.Build.PushBack(func(r *request.Request) {
-		r.HTTPRequest.Header.Set("User-Agent", "SeaweedFS/"+util.VERSION_NUMBER)
+		r.HTTPRequest.Header.Set("User-Agent", "SeaweedFS/"+version.VERSION_NUMBER)
 	})
 
 	t := s3.New(sess)

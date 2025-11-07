@@ -40,7 +40,8 @@ Referenced:
 https://github.com/pkieltyka/jwtauth/blob/master/jwtauth.go
 */
 type Guard struct {
-	whiteList           []string
+	whiteListIp         map[string]struct{}
+	whiteListCIDR       map[string]*net.IPNet
 	SigningKey          SigningKey
 	ExpiresAfterSec     int
 	ReadSigningKey      SigningKey
@@ -48,13 +49,13 @@ type Guard struct {
 	username            string
 	password            string
 
-	isBasicAuth   bool
-	isWriteActive bool
+	isBasicAuth      bool
+	isWriteActive    bool
+	isEmptyWhiteList bool
 }
 
-func NewGuard(whiteList []string, signingKey string, expiresAfterSec int, readSigningKey string, readExpiresAfterSec int, username string, password string) *Guard {
+func NewGuard(whiteList []string, signingKey string, expiresAfterSec int, readSigningKey string, readExpiresAfterSec int, username, password string) *Guard {
 	g := &Guard{
-		whiteList:           whiteList,
 		SigningKey:          SigningKey(signingKey),
 		ExpiresAfterSec:     expiresAfterSec,
 		ReadSigningKey:      SigningKey(readSigningKey),
@@ -62,7 +63,7 @@ func NewGuard(whiteList []string, signingKey string, expiresAfterSec int, readSi
 		username:            username,
 		password:            password,
 	}
-	g.isWriteActive = len(g.whiteList) != 0 || len(g.SigningKey) != 0
+	g.UpdateWhiteList(whiteList)
 	g.isBasicAuth = g.username != "" && g.password != ""
 	return g
 }
@@ -100,52 +101,71 @@ func (g *Guard) BasicAuth(f http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func GetActualRemoteHost(r *http.Request) (host string, err error) {
-	host = r.Header.Get("HTTP_X_FORWARDED_FOR")
-	if host == "" {
-		host = r.Header.Get("X-FORWARDED-FOR")
+func GetActualRemoteHost(r *http.Request) string {
+	// For security reasons, only use RemoteAddr to determine the client's IP address.
+	// Do not trust headers like X-Forwarded-For, as they can be easily spoofed by clients.
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
 	}
-	if strings.Contains(host, ",") {
-		host = host[0:strings.Index(host, ",")]
+
+	// If SplitHostPort fails, it may be because of a missing port.
+	// We try to parse RemoteAddr as a raw host (IP or hostname).
+	host = strings.TrimSpace(r.RemoteAddr)
+	// It might be an IPv6 address without a port, but with brackets.
+	// e.g. "[::1]"
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
 	}
-	if host == "" {
-		host, _, err = net.SplitHostPort(r.RemoteAddr)
-	}
-	return
+
+	// Return the host (can be IP or hostname, just like headers)
+	return host
 }
 
 func (g *Guard) checkWhiteList(w http.ResponseWriter, r *http.Request) error {
-	if len(g.whiteList) == 0 {
+	if g.isEmptyWhiteList {
 		return nil
 	}
 
-	host, err := GetActualRemoteHost(r)
-	if err == nil {
-		for _, ip := range g.whiteList {
+	host := GetActualRemoteHost(r)
 
+	// Check exact match first (works for both IPs and hostnames)
+	if _, ok := g.whiteListIp[host]; ok {
+		return nil
+	}
+
+	// Check CIDR ranges (only for valid IP addresses)
+	remote := net.ParseIP(host)
+	if remote != nil {
+		for _, cidrnet := range g.whiteListCIDR {
 			// If the whitelist entry contains a "/" it
 			// is a CIDR range, and we should check the
-			// remote host is within it
-			if strings.Contains(ip, "/") {
-				_, cidrnet, err := net.ParseCIDR(ip)
-				if err != nil {
-					panic(err)
-				}
-				remote := net.ParseIP(host)
-				if cidrnet.Contains(remote) {
-					return nil
-				}
-			}
-
-			//
-			// Otherwise we're looking for a literal match.
-			//
-			if ip == host {
+			if cidrnet.Contains(remote) {
 				return nil
 			}
 		}
 	}
 
-	glog.V(0).Infof("Not in whitelist: %s", r.RemoteAddr)
-	return fmt.Errorf("Not in whitelist: %s", r.RemoteAddr)
+	glog.V(0).Infof("Not in whitelist: %s (original RemoteAddr: %s)", host, r.RemoteAddr)
+	return fmt.Errorf("Not in whitelist: %s", host)
+}
+
+func (g *Guard) UpdateWhiteList(whiteList []string) {
+	whiteListIp := make(map[string]struct{})
+	whiteListCIDR := make(map[string]*net.IPNet)
+	for _, ip := range whiteList {
+		if strings.Contains(ip, "/") {
+			_, cidrnet, err := net.ParseCIDR(ip)
+			if err != nil {
+				glog.Errorf("Parse CIDR %s in whitelist failed: %v", ip, err)
+			}
+			whiteListCIDR[ip] = cidrnet
+		} else {
+			whiteListIp[ip] = struct{}{}
+		}
+	}
+	g.isEmptyWhiteList = len(whiteListIp) == 0 && len(whiteListCIDR) == 0
+	g.isWriteActive = !g.isEmptyWhiteList || len(g.SigningKey) != 0
+	g.whiteListIp = whiteListIp
+	g.whiteListCIDR = whiteListCIDR
 }

@@ -4,11 +4,11 @@ import (
 	"fmt"
 )
 
-const HttpStatusCancelled = 499
+//const HttpStatusCancelled = 499
 
 var (
 	VERSION_NUMBER = fmt.Sprintf("%.02f", 3.69)
-	VERSION        = sizeLimit + " " + VERSION_NUMBER
+	VERSION        = VERSION_NUMBER
 	COMMIT         = ""
 )
 

@@ -2,14 +2,14 @@ package broker
 
 import (
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/filer"
+	"io"
+	"time"
+
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/mq/topic"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util/buffered_queue"
 	"github.com/seaweedfs/seaweedfs/weed/util/log_buffer"
-	"io"
-	"time"
 )
 
 type memBuffer struct {
@@ -93,9 +93,7 @@ func (b *MessageQueueBroker) PublishFollowMe(stream mq_pb.SeaweedMessaging_Publi
 		time.Sleep(113 * time.Millisecond)
 	}
 
-	topicDir := fmt.Sprintf("%s/%s/%s", filer.TopicsDir, t.Namespace, t.Name)
-	partitionGeneration := time.Unix(0, p.UnixTimeNs).UTC().Format(topic.TIME_FORMAT)
-	partitionDir := fmt.Sprintf("%s/%s/%04d-%04d", topicDir, partitionGeneration, p.RangeStart, p.RangeStop)
+	partitionDir := topic.PartitionDir(t, p)
 
 	// flush the remaining messages
 	inMemoryBuffers.CloseInput()
@@ -134,7 +132,7 @@ func (b *MessageQueueBroker) PublishFollowMe(stream mq_pb.SeaweedMessaging_Publi
 
 func (b *MessageQueueBroker) buildFollowerLogBuffer(inMemoryBuffers *buffered_queue.BufferedQueue[memBuffer]) *log_buffer.LogBuffer {
 	lb := log_buffer.NewLogBuffer("follower",
-		2*time.Minute, func(logBuffer *log_buffer.LogBuffer, startTime, stopTime time.Time, buf []byte) {
+		5*time.Second, func(logBuffer *log_buffer.LogBuffer, startTime, stopTime time.Time, buf []byte, minOffset, maxOffset int64) {
 			if len(buf) == 0 {
 				return
 			}

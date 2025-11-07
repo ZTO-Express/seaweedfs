@@ -53,6 +53,11 @@ func isRequestSignStreamingV4(r *http.Request) bool {
 		r.Method == http.MethodPut
 }
 
+func isRequestUnsignedStreaming(r *http.Request) bool {
+	return r.Header.Get("x-amz-content-sha256") == streamingUnsignedPayload &&
+		r.Method == http.MethodPut
+}
+
 // Authorization type.
 type authType int
 
@@ -64,6 +69,7 @@ const (
 	authTypePresignedV2
 	authTypePostPolicy
 	authTypeStreamingSigned
+	authTypeStreamingUnsigned
 	authTypeSigned
 	authTypeSignedV2
 	authTypeJWT
@@ -71,22 +77,29 @@ const (
 
 // Get request authentication type.
 func getRequestAuthType(r *http.Request) authType {
+	var authType authType
+
 	if isRequestSignatureV2(r) {
-		return authTypeSignedV2
+		authType = authTypeSignedV2
 	} else if isRequestPresignedSignatureV2(r) {
-		return authTypePresignedV2
+		authType = authTypePresignedV2
 	} else if isRequestSignStreamingV4(r) {
-		return authTypeStreamingSigned
+		authType = authTypeStreamingSigned
+	} else if isRequestUnsignedStreaming(r) {
+		authType = authTypeStreamingUnsigned
 	} else if isRequestSignatureV4(r) {
-		return authTypeSigned
+		authType = authTypeSigned
 	} else if isRequestPresignedSignatureV4(r) {
-		return authTypePresigned
+		authType = authTypePresigned
 	} else if isRequestJWT(r) {
-		return authTypeJWT
+		authType = authTypeJWT
 	} else if isRequestPostPolicySignatureV4(r) {
-		return authTypePostPolicy
+		authType = authTypePostPolicy
 	} else if _, ok := r.Header["Authorization"]; !ok {
-		return authTypeAnonymous
+		authType = authTypeAnonymous
+	} else {
+		authType = authTypeUnknown
 	}
-	return authTypeUnknown
+
+	return authType
 }

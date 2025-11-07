@@ -9,11 +9,13 @@ import (
 	"strconv"
 	"time"
 
+	"slices"
+
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle_map"
 	"github.com/seaweedfs/seaweedfs/weed/storage/types"
-	"golang.org/x/exp/slices"
+	"github.com/seaweedfs/seaweedfs/weed/util"
 	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs/weed/operation"
@@ -28,6 +30,7 @@ func init() {
 
 type commandVolumeFixReplication struct {
 	collectionPattern *string
+	// TODO: move parameter flags here so we don't shuffle them around via function calls.
 }
 
 func (c *commandVolumeFixReplication) Name() string {
@@ -42,8 +45,8 @@ func (c *commandVolumeFixReplication) Help() string {
 	This command also finds all under-replicated volumes, and finds volume servers with free slots.
 	If the free slots satisfy the replication requirement, the volume content is copied over and mounted.
 
-	volume.fix.replication -n                             # do not take action
-	volume.fix.replication                                # actually deleting or copying the volume files and mount the volume
+	volume.fix.replication                                # do not take action
+	volume.fix.replication -force                         # actually deleting or copying the volume files and mount the volume
 	volume.fix.replication -collectionPattern=important*  # fix any collections with prefix "important"
 
 	Note:
@@ -55,26 +58,33 @@ func (c *commandVolumeFixReplication) Help() string {
 `
 }
 
+func (c *commandVolumeFixReplication) HasTag(tag CommandTag) bool {
+	return false && tag == ResourceHeavy // resource intensive only when deleting and checking with replicas.
+}
+
 func (c *commandVolumeFixReplication) Do(args []string, commandEnv *CommandEnv, writer io.Writer) (err error) {
 
 	volFixReplicationCommand := flag.NewFlagSet(c.Name(), flag.ContinueOnError)
 	c.collectionPattern = volFixReplicationCommand.String("collectionPattern", "", "match with wildcard characters '*' and '?'")
-	skipChange := volFixReplicationCommand.Bool("n", false, "skip the changes")
+	applyChanges := volFixReplicationCommand.Bool("force", false, "apply the fix")
 	doDelete := volFixReplicationCommand.Bool("doDelete", true, "Also delete over-replicated volumes besides fixing under-replication")
 	doCheck := volFixReplicationCommand.Bool("doCheck", true, "Also check synchronization before deleting")
+	maxParallelization := volFixReplicationCommand.Int("maxParallelization", DefaultMaxParallelization, "run up to X tasks in parallel, whenever possible")
 	retryCount := volFixReplicationCommand.Int("retry", 5, "how many times to retry")
 	volumesPerStep := volFixReplicationCommand.Int("volumesPerStep", 0, "how many volumes to fix in one cycle")
 
 	if err = volFixReplicationCommand.Parse(args); err != nil {
 		return nil
 	}
+	infoAboutSimulationMode(writer, *applyChanges, "-force")
 
-	if err = commandEnv.confirmIsLocked(args); err != nil {
+	commandEnv.noLock = !*applyChanges
+
+	if err = commandEnv.confirmIsLocked(args); *applyChanges && err != nil {
 		return
 	}
 
-	takeAction := !*skipChange
-
+	ewg := NewErrorWaitGroup(*maxParallelization)
 	underReplicatedVolumeIdsCount := 1
 	for underReplicatedVolumeIdsCount > 0 {
 		fixedVolumeReplicas := map[string]int{}
@@ -99,8 +109,9 @@ func (c *commandVolumeFixReplication) Do(args []string, commandEnv *CommandEnv, 
 			replica := replicas[0]
 			replicaPlacement, _ := super_block.NewReplicaPlacementFromByte(byte(replica.info.ReplicaPlacement))
 			switch {
-			case replicaPlacement.GetCopyCount() > len(replicas):
+			case replicaPlacement.GetCopyCount() > len(replicas) || !satisfyReplicaCurrentLocation(replicaPlacement, replicas):
 				underReplicatedVolumeIds = append(underReplicatedVolumeIds, vid)
+				fmt.Fprintf(writer, "volume %d replication %s, but under replicated %+d\n", replica.info.Id, replicaPlacement, len(replicas))
 			case isMisplaced(replicas, replicaPlacement):
 				misplacedVolumeIds = append(misplacedVolumeIds, vid)
 				fmt.Fprintf(writer, "volume %d replication %s is not well placed %s\n", replica.info.Id, replicaPlacement, replica.location.dataNode.Id)
@@ -109,33 +120,31 @@ func (c *commandVolumeFixReplication) Do(args []string, commandEnv *CommandEnv, 
 				fmt.Fprintf(writer, "volume %d replication %s, but over replicated %+d\n", replica.info.Id, replicaPlacement, len(replicas))
 			}
 		}
+		underReplicatedVolumeIdsCount = len(underReplicatedVolumeIds)
 
 		if !commandEnv.isLocked() {
 			return fmt.Errorf("lock is lost")
 		}
 
-		if len(overReplicatedVolumeIds) > 0 && *doDelete {
-			if err := c.deleteOneVolume(commandEnv, writer, takeAction, *doCheck, overReplicatedVolumeIds, volumeReplicas, allLocations, pickOneReplicaToDelete); err != nil {
-				return err
-			}
+		ewg.Reset()
+		ewg.Add(func() error {
+			// find the most underpopulated data nodes
+			fixedVolumeReplicas, err = c.fixUnderReplicatedVolumes(commandEnv, writer, *applyChanges, underReplicatedVolumeIds, volumeReplicas, allLocations, *retryCount, *volumesPerStep)
+			return err
+		})
+		if *doDelete {
+			ewg.Add(func() error {
+				return c.deleteOneVolume(commandEnv, writer, *applyChanges, *doCheck, overReplicatedVolumeIds, volumeReplicas, allLocations, pickOneReplicaToDelete)
+			})
+			ewg.Add(func() error {
+				return c.deleteOneVolume(commandEnv, writer, *applyChanges, *doCheck, misplacedVolumeIds, volumeReplicas, allLocations, pickOneMisplacedVolume)
+			})
+		}
+		if err := ewg.Wait(); err != nil {
+			return nil
 		}
 
-		if len(misplacedVolumeIds) > 0 && *doDelete {
-			if err := c.deleteOneVolume(commandEnv, writer, takeAction, *doCheck, misplacedVolumeIds, volumeReplicas, allLocations, pickOneMisplacedVolume); err != nil {
-				return err
-			}
-		}
-
-		underReplicatedVolumeIdsCount = len(underReplicatedVolumeIds)
-		if underReplicatedVolumeIdsCount > 0 {
-			// find the most under populated data nodes
-			fixedVolumeReplicas, err = c.fixUnderReplicatedVolumes(commandEnv, writer, takeAction, underReplicatedVolumeIds, volumeReplicas, allLocations, *retryCount, *volumesPerStep)
-			if err != nil {
-				return err
-			}
-		}
-
-		if *skipChange {
+		if !*applyChanges {
 			break
 		}
 
@@ -175,8 +184,8 @@ func (c *commandVolumeFixReplication) Do(args []string, commandEnv *CommandEnv, 
 func collectVolumeReplicaLocations(topologyInfo *master_pb.TopologyInfo) (map[uint32][]*VolumeReplica, []location) {
 	volumeReplicas := make(map[uint32][]*VolumeReplica)
 	var allLocations []location
-	eachDataNode(topologyInfo, func(dc string, rack RackId, dn *master_pb.DataNodeInfo) {
-		loc := newLocation(dc, string(rack), dn)
+	eachDataNode(topologyInfo, func(dc DataCenterId, rack RackId, dn *master_pb.DataNodeInfo) {
+		loc := newLocation(string(dc), string(rack), dn)
 		for _, diskInfo := range dn.DiskInfos {
 			for _, v := range diskInfo.VolumeInfos {
 				volumeReplicas[v.Id] = append(volumeReplicas[v.Id], &VolumeReplica{
@@ -213,8 +222,13 @@ func checkOneVolume(a *VolumeReplica, b *VolumeReplica, writer io.Writer, grpcDi
 	return
 }
 
-func (c *commandVolumeFixReplication) deleteOneVolume(commandEnv *CommandEnv, writer io.Writer, takeAction bool, doCheck bool, overReplicatedVolumeIds []uint32, volumeReplicas map[uint32][]*VolumeReplica, allLocations []location, selectOneVolumeFn SelectOneVolumeFunc) error {
-	for _, vid := range overReplicatedVolumeIds {
+func (c *commandVolumeFixReplication) deleteOneVolume(commandEnv *CommandEnv, writer io.Writer, applyChanges bool, doCheck bool, volumeIds []uint32, volumeReplicas map[uint32][]*VolumeReplica, allLocations []location, selectOneVolumeFn SelectOneVolumeFunc) error {
+	if len(volumeIds) == 0 {
+		// nothing to do
+		return nil
+	}
+
+	for _, vid := range volumeIds {
 		replicas := volumeReplicas[vid]
 		replicaPlacement, _ := super_block.NewReplicaPlacementFromByte(byte(replicas[0].info.ReplicaPlacement))
 
@@ -227,7 +241,7 @@ func (c *commandVolumeFixReplication) deleteOneVolume(commandEnv *CommandEnv, wr
 				return fmt.Errorf("match pattern %s with collection %s: %v", *c.collectionPattern, replica.info.Collection, err)
 			}
 			if !matched {
-				break
+				continue
 			}
 		}
 
@@ -244,39 +258,49 @@ func (c *commandVolumeFixReplication) deleteOneVolume(commandEnv *CommandEnv, wr
 
 		fmt.Fprintf(writer, "deleting volume %d from %s ...\n", replica.info.Id, replica.location.dataNode.Id)
 
-		if !takeAction {
+		if !applyChanges {
 			break
 		}
 
 		if doCheck {
+			var checkErr error
 			for _, replicaB := range replicas {
 				if replicaB.location.dataNode == replica.location.dataNode {
 					continue
 				}
-				if err := checkOneVolume(replica, replicaB, writer, commandEnv.option.GrpcDialOption); err != nil {
-					return fmt.Errorf("sync volume %d on %s and %s: %v\n", replica.info.Id, replica.location.dataNode.Id, replicaB.location.dataNode.Id, err)
+				if checkErr = checkOneVolume(replica, replicaB, writer, commandEnv.option.GrpcDialOption); checkErr != nil {
+					fmt.Fprintf(writer, "sync volume %d on %s and %s: %v\n", replica.info.Id, replica.location.dataNode.Id, replicaB.location.dataNode.Id, checkErr)
+					break
 				}
+			}
+			if checkErr != nil {
+				continue
 			}
 		}
 
 		if err := deleteVolume(commandEnv.option.GrpcDialOption, needle.VolumeId(replica.info.Id),
 			pb.NewServerAddressFromDataNode(replica.location.dataNode), false); err != nil {
-			return fmt.Errorf("deleting volume %d from %s : %v", replica.info.Id, replica.location.dataNode.Id, err)
+			fmt.Fprintf(writer, "deleting volume %d from %s : %v", replica.info.Id, replica.location.dataNode.Id, err)
 		}
 
 	}
 	return nil
 }
 
-func (c *commandVolumeFixReplication) fixUnderReplicatedVolumes(commandEnv *CommandEnv, writer io.Writer, takeAction bool, underReplicatedVolumeIds []uint32, volumeReplicas map[uint32][]*VolumeReplica, allLocations []location, retryCount int, volumesPerStep int) (fixedVolumes map[string]int, err error) {
+func (c *commandVolumeFixReplication) fixUnderReplicatedVolumes(commandEnv *CommandEnv, writer io.Writer, applyChanges bool, volumeIds []uint32, volumeReplicas map[uint32][]*VolumeReplica, allLocations []location, retryCount int, volumesPerStep int) (fixedVolumes map[string]int, err error) {
 	fixedVolumes = map[string]int{}
-	if len(underReplicatedVolumeIds) > volumesPerStep && volumesPerStep > 0 {
-		underReplicatedVolumeIds = underReplicatedVolumeIds[0:volumesPerStep]
+
+	if len(volumeIds) == 0 {
+		return fixedVolumes, nil
 	}
-	for _, vid := range underReplicatedVolumeIds {
+
+	if len(volumeIds) > volumesPerStep && volumesPerStep > 0 {
+		volumeIds = volumeIds[0:volumesPerStep]
+	}
+	for _, vid := range volumeIds {
 		for i := 0; i < retryCount+1; i++ {
-			if err = c.fixOneUnderReplicatedVolume(commandEnv, writer, takeAction, volumeReplicas, vid, allLocations); err == nil {
-				if takeAction {
+			if err = c.fixOneUnderReplicatedVolume(commandEnv, writer, applyChanges, volumeReplicas, vid, allLocations); err == nil {
+				if applyChanges {
 					fixedVolumes[strconv.FormatUint(uint64(vid), 10)] = len(volumeReplicas[vid])
 				}
 				break
@@ -288,7 +312,7 @@ func (c *commandVolumeFixReplication) fixUnderReplicatedVolumes(commandEnv *Comm
 	return fixedVolumes, nil
 }
 
-func (c *commandVolumeFixReplication) fixOneUnderReplicatedVolume(commandEnv *CommandEnv, writer io.Writer, takeAction bool, volumeReplicas map[uint32][]*VolumeReplica, vid uint32, allLocations []location) error {
+func (c *commandVolumeFixReplication) fixOneUnderReplicatedVolume(commandEnv *CommandEnv, writer io.Writer, applyChanges bool, volumeReplicas map[uint32][]*VolumeReplica, vid uint32, allLocations []location) error {
 	replicas := volumeReplicas[vid]
 	replica := pickOneReplicaToCopyFrom(replicas)
 	replicaPlacement, _ := super_block.NewReplicaPlacementFromByte(byte(replica.info.ReplicaPlacement))
@@ -315,7 +339,7 @@ func (c *commandVolumeFixReplication) fixOneUnderReplicatedVolume(commandEnv *Co
 			foundNewLocation = true
 			fmt.Fprintf(writer, "replicating volume %d %s from %s to dataNode %s ...\n", replica.info.Id, replicaPlacement, replica.location.dataNode.Id, dst.dataNode.Id)
 
-			if !takeAction {
+			if !applyChanges {
 				// adjust volume count
 				addVolumeCount(dst.dataNode.DiskInfos[replica.info.DiskType], 1)
 				break
@@ -339,7 +363,7 @@ func (c *commandVolumeFixReplication) fixOneUnderReplicatedVolume(commandEnv *Co
 						}
 					}
 					if resp.ProcessedBytes > 0 {
-						fmt.Fprintf(writer, "volume %d processed %d bytes\n", replica.info.Id, resp.ProcessedBytes)
+						fmt.Fprintf(writer, "volume %d processed %s bytes\n", replica.info.Id, util.BytesToHumanReadable(uint64(resp.ProcessedBytes)))
 					}
 				}
 
@@ -375,6 +399,27 @@ func keepDataNodesSorted(dataNodes []location, diskType types.DiskType) {
 	slices.SortFunc(dataNodes, func(a, b location) int {
 		return int(fn(b.dataNode) - fn(a.dataNode))
 	})
+}
+
+func satisfyReplicaCurrentLocation(replicaPlacement *super_block.ReplicaPlacement, replicas []*VolumeReplica) bool {
+	existingDataCenters, existingRacks, _ := countReplicas(replicas)
+
+	if replicaPlacement.DiffDataCenterCount+1 > len(existingDataCenters) {
+		return false
+	}
+	if replicaPlacement.DiffRackCount+1 > len(existingRacks) {
+		return false
+	}
+	if replicaPlacement.SameRackCount > 0 {
+		foundSatisfyRack := false
+		for _, rackCount := range existingRacks {
+			if rackCount >= replicaPlacement.SameRackCount+1 {
+				foundSatisfyRack = true
+			}
+		}
+		return foundSatisfyRack
+	}
+	return true
 }
 
 /*

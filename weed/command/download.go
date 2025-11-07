@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/util"
+	util_http "github.com/seaweedfs/seaweedfs/weed/util/http"
 )
 
 var (
@@ -22,20 +24,22 @@ var (
 )
 
 type DownloadOptions struct {
-	server *string
+	master *string
+	server *string // deprecated, for backward compatibility
 	dir    *string
 }
 
 func init() {
 	cmdDownload.Run = runDownload // break init cycle
-	d.server = cmdDownload.Flag.String("server", "localhost:9333", "SeaweedFS master location")
+	d.master = cmdDownload.Flag.String("master", "localhost:9333", "SeaweedFS master location")
+	d.server = cmdDownload.Flag.String("server", "", "SeaweedFS master location (deprecated, use -master instead)")
 	d.dir = cmdDownload.Flag.String("dir", ".", "Download the whole folder recursively if specified.")
 	upload.Username = cmdDownload.Flag.String("username", "", "user auth")
 	upload.Password = cmdDownload.Flag.String("password", "", "user auth")
 }
 
 var cmdDownload = &Command{
-	UsageLine: "download -server=localhost:9333 -dir=one_directory fid1 [fid2 fid3 ...]",
+	UsageLine: "download -master=localhost:9333 -dir=one_directory fid1 [fid2 fid3 ...]",
 	Short:     "download files by file id",
 	Long: `download files by file id.
 
@@ -49,11 +53,17 @@ var cmdDownload = &Command{
 }
 
 func runDownload(cmd *Command, args []string) bool {
-	util.LoadConfiguration("security", false)
+	util.LoadSecurityConfiguration()
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 
+	// Backward compatibility: if -server is provided, use it
+	masterServer := *d.master
+	if *d.server != "" {
+		masterServer = *d.server
+	}
+
 	for _, fid := range args {
-		if e := downloadToFile(func(_ context.Context) pb.ServerAddress { return pb.ServerAddress(*d.server) }, grpcDialOption, fid, util.ResolvePath(*d.dir)); e != nil {
+		if e := downloadToFile(func(_ context.Context) pb.ServerAddress { return pb.ServerAddress(masterServer) }, grpcDialOption, fid, util.ResolvePath(*d.dir)); e != nil {
 			fmt.Println("Download Error: ", fid, e)
 		}
 	}
@@ -65,11 +75,16 @@ func downloadToFile(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOpti
 	if lookupError != nil {
 		return lookupError
 	}
-	filename, _, rc, err := util.DownloadFile(fileUrl, jwt, *upload.Username, *upload.Password)
+	var authHeader string
+	if *b.username != "" {
+		auth := *b.username + ":" + *b.password
+		authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+	}
+	filename, _, rc, err := util_http.DownloadFile(fileUrl, jwt, authHeader)
 	if err != nil {
 		return err
 	}
-	defer util.CloseResponse(rc)
+	defer util_http.CloseResponse(rc)
 	if filename == "" {
 		filename = fileId
 	}
@@ -118,10 +133,15 @@ func fetchContent(masterFn operation.GetMasterFn, grpcDialOption grpc.DialOption
 		return "", nil, lookupError
 	}
 	var rc *http.Response
-	if filename, _, rc, e = util.DownloadFile(fileUrl, jwt, *upload.Username, *upload.Password); e != nil {
+	var authHeader string
+	if *b.username != "" {
+		auth := *b.username + ":" + *b.password
+		authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+	}
+	if filename, _, rc, e = util_http.DownloadFile(fileUrl, jwt, authHeader); e != nil {
 		return "", nil, e
 	}
-	defer util.CloseResponse(rc)
+	defer util_http.CloseResponse(rc)
 	content, e = io.ReadAll(rc.Body)
 	return
 }

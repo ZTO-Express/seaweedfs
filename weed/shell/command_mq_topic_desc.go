@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/mq_pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/schema_pb"
 	"io"
 )
 
@@ -22,6 +23,10 @@ func (c *commandMqTopicDescribe) Name() string {
 
 func (c *commandMqTopicDescribe) Help() string {
 	return `describe a topic`
+}
+
+func (c *commandMqTopicDescribe) HasTag(CommandTag) bool {
+	return false
 }
 
 func (c *commandMqTopicDescribe) Do(args []string, commandEnv *CommandEnv, writer io.Writer) error {
@@ -42,7 +47,7 @@ func (c *commandMqTopicDescribe) Do(args []string, commandEnv *CommandEnv, write
 
 	return pb.WithBrokerGrpcClient(false, brokerBalancer, commandEnv.option.GrpcDialOption, func(client mq_pb.SeaweedMessagingClient) error {
 		resp, err := client.LookupTopicBrokers(context.Background(), &mq_pb.LookupTopicBrokersRequest{
-			Topic: &mq_pb.Topic{
+			Topic: &schema_pb.Topic{
 				Namespace: *namespace,
 				Name:      *topicName,
 			},

@@ -66,7 +66,7 @@ func (d *DiskUsages) ToDiskInfo() map[string]*master_pb.DiskInfo {
 		m := &master_pb.DiskInfo{
 			VolumeCount:       diskUsageCounts.volumeCount,
 			MaxVolumeCount:    diskUsageCounts.maxVolumeCount,
-			FreeVolumeCount:   diskUsageCounts.maxVolumeCount - diskUsageCounts.volumeCount,
+			FreeVolumeCount:   diskUsageCounts.maxVolumeCount - (diskUsageCounts.volumeCount - diskUsageCounts.remoteVolumeCount) - (diskUsageCounts.ecShardCount+1)/erasure_coding.DataShardsCount,
 			ActiveVolumeCount: diskUsageCounts.activeVolumeCount,
 			RemoteVolumeCount: diskUsageCounts.remoteVolumeCount,
 		}
@@ -152,8 +152,7 @@ func (d *Disk) AddOrUpdateVolume(v storage.VolumeInfo) (isNew, isChanged bool) {
 }
 
 func (d *Disk) doAddOrUpdateVolume(v storage.VolumeInfo) (isNew, isChanged bool) {
-	deltaDiskUsages := newDiskUsages()
-	deltaDiskUsage := deltaDiskUsages.getOrCreateDisk(types.ToDiskType(v.DiskType))
+	deltaDiskUsage := &DiskUsageCounts{}
 	if oldV, ok := d.volumes[v.Id]; !ok {
 		d.volumes[v.Id] = v
 		deltaDiskUsage.volumeCount = 1
@@ -164,7 +163,7 @@ func (d *Disk) doAddOrUpdateVolume(v storage.VolumeInfo) (isNew, isChanged bool)
 			deltaDiskUsage.activeVolumeCount = 1
 		}
 		d.UpAdjustMaxVolumeId(v.Id)
-		d.UpAdjustDiskUsageDelta(deltaDiskUsages)
+		d.UpAdjustDiskUsageDelta(types.ToDiskType(v.DiskType), deltaDiskUsage)
 		isNew = true
 	} else {
 		if oldV.IsRemote() != v.IsRemote() {
@@ -174,9 +173,22 @@ func (d *Disk) doAddOrUpdateVolume(v storage.VolumeInfo) (isNew, isChanged bool)
 			if oldV.IsRemote() {
 				deltaDiskUsage.remoteVolumeCount = -1
 			}
-			d.UpAdjustDiskUsageDelta(deltaDiskUsages)
+			d.UpAdjustDiskUsageDelta(types.ToDiskType(v.DiskType), deltaDiskUsage)
 		}
 		isChanged = d.volumes[v.Id].ReadOnly != v.ReadOnly
+		if isChanged {
+			// Adjust active volume count when ReadOnly status changes
+			// Use a separate delta object to avoid affecting other metric adjustments
+			readOnlyDelta := &DiskUsageCounts{}
+			if v.ReadOnly {
+				// Changed from writable to read-only
+				readOnlyDelta.activeVolumeCount = -1
+			} else {
+				// Changed from read-only to writable
+				readOnlyDelta.activeVolumeCount = 1
+			}
+			d.UpAdjustDiskUsageDelta(types.ToDiskType(v.DiskType), readOnlyDelta)
+		}
 		d.volumes[v.Id] = v
 	}
 	return
@@ -247,18 +259,30 @@ func (d *Disk) FreeSpace() int64 {
 
 func (d *Disk) ToDiskInfo() *master_pb.DiskInfo {
 	diskUsage := d.diskUsages.getOrCreateDisk(types.ToDiskType(string(d.Id())))
+
+	// Get disk ID from first volume or EC shard
+	var diskId uint32
+	volumes := d.GetVolumes()
+	ecShards := d.GetEcShards()
+	if len(volumes) > 0 {
+		diskId = volumes[0].DiskId
+	} else if len(ecShards) > 0 {
+		diskId = ecShards[0].DiskId
+	}
+
 	m := &master_pb.DiskInfo{
 		Type:              string(d.Id()),
 		VolumeCount:       diskUsage.volumeCount,
 		MaxVolumeCount:    diskUsage.maxVolumeCount,
-		FreeVolumeCount:   diskUsage.maxVolumeCount - diskUsage.volumeCount,
+		FreeVolumeCount:   diskUsage.maxVolumeCount - (diskUsage.volumeCount - diskUsage.remoteVolumeCount) - (diskUsage.ecShardCount+1)/erasure_coding.DataShardsCount,
 		ActiveVolumeCount: diskUsage.activeVolumeCount,
 		RemoteVolumeCount: diskUsage.remoteVolumeCount,
+		DiskId:            diskId,
 	}
-	for _, v := range d.GetVolumes() {
+	for _, v := range volumes {
 		m.VolumeInfos = append(m.VolumeInfos, v.ToVolumeInformationMessage())
 	}
-	for _, ecv := range d.GetEcShards() {
+	for _, ecv := range ecShards {
 		m.EcShardInfos = append(m.EcShardInfos, ecv.ToVolumeEcShardInformationMessage())
 	}
 	return m
