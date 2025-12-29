@@ -54,7 +54,7 @@ func NewGrpcServer(opts ...grpc.ServerOption) *grpc.Server {
 			// MaxConnectionAge: 10 * time.Hour,
 		}),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             60 * time.Second, // min time a client should wait before sending a ping
+			MinTime:             20 * time.Second, // min time a client should wait before sending a ping
 			PermitWithoutStream: true,
 		}),
 		grpc.MaxRecvMsgSize(Max_Message_Size),
