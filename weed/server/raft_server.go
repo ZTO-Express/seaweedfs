@@ -21,15 +21,16 @@ import (
 )
 
 type RaftServerOption struct {
-	GrpcDialOption    grpc.DialOption
-	Peers             map[string]pb.ServerAddress
-	ServerAddr        pb.ServerAddress
-	DataDir           string
-	Topo              *topology.Topology
-	RaftResumeState   bool
-	HeartbeatInterval time.Duration
-	ElectionTimeout   time.Duration
-	RaftBootstrap     bool
+	GrpcDialOption     grpc.DialOption
+	Peers              map[string]pb.ServerAddress
+	ServerAddr         pb.ServerAddress
+	DataDir            string
+	Topo               *topology.Topology
+	RaftResumeState    bool
+	HeartbeatInterval  time.Duration
+	ElectionTimeout    time.Duration
+	LeaderLeaseTimeout time.Duration
+	RaftBootstrap      bool
 }
 
 type RaftServer struct {

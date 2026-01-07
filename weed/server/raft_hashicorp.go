@@ -108,6 +108,8 @@ func NewHashicorpRaftServer(option *RaftServerOption) (*RaftServer, error) {
 	c.LocalID = raft.ServerID(s.serverAddr) // TODO maybee the IP:port address will change
 	c.HeartbeatTimeout = time.Duration(float64(option.HeartbeatInterval) * (rand.Float64()*0.25 + 1))
 	c.ElectionTimeout = option.ElectionTimeout
+
+	c.LeaderLeaseTimeout = option.LeaderLeaseTimeout
 	if c.LeaderLeaseTimeout > c.HeartbeatTimeout {
 		c.LeaderLeaseTimeout = c.HeartbeatTimeout
 	}
