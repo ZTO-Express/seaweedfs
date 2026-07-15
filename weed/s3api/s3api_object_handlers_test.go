@@ -103,6 +103,21 @@ func TestGetObjectHandlerStaticWebsiteDisabled(t *testing.T) {
 	assert.False(t, filerCalled)
 }
 
+func TestGetObjectHandlerStaticWebsiteDisabledDoesNotRequestDirectoryDetection(t *testing.T) {
+	s3a := newStaticWebsiteTestServer(t, false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.Header.Get(s3_constants.SeaweedFSDetectDirectory))
+		_, _ = io.WriteString(w, "content")
+	}))
+
+	request := newObjectRequest(t, http.MethodGet, "/bucket/object", "/object")
+	request.Header.Set(s3_constants.SeaweedFSDetectDirectory, "true")
+	recorder := httptest.NewRecorder()
+	s3a.GetObjectHandler(recorder, request)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "content", recorder.Body.String())
+}
+
 func TestGetObjectHandlerStaticWebsiteIndexDocument(t *testing.T) {
 	s3a := newStaticWebsiteTestServer(t, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/buckets/bucket/docs/index.html", r.URL.Path)
@@ -161,6 +176,7 @@ func TestGetObjectHandlerStaticWebsiteRedirectsDirectory(t *testing.T) {
 func TestGetObjectHandlerStaticWebsiteRedirectsDirectoryWhenListingDisabled(t *testing.T) {
 	s3a := newStaticWebsiteTestServer(t, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/buckets/bucket/docs", r.URL.Path)
+		assert.Equal(t, "true", r.Header.Get(s3_constants.SeaweedFSDetectDirectory))
 		w.Header().Set(s3_constants.SeaweedFSIsDirectoryKey, "true")
 		w.WriteHeader(http.StatusForbidden)
 	}))

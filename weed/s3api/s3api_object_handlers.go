@@ -149,19 +149,21 @@ func (s3a *S3ApiServer) HeadObjectHandler(w http.ResponseWriter, r *http.Request
 
 func (s3a *S3ApiServer) proxyGetOrHeadObject(w http.ResponseWriter, r *http.Request, bucket, object string) {
 	responseFn := passThroughResponse
+	detectDirectory := false
 	if s3a.option.EnableStaticWebsite {
 		if strings.HasSuffix(object, "/") {
 			object += "index.html"
 		} else {
 			responseFn = staticWebsiteResponse(r)
+			detectDirectory = true
 		}
 	}
 
 	destUrl := s3a.toFilerUrl(bucket, object)
-	s3a.proxyToFiler(w, r, destUrl, false, responseFn)
+	s3a.proxyToFiler(w, r, destUrl, false, detectDirectory, responseFn)
 }
 
-func (s3a *S3ApiServer) proxyToFiler(w http.ResponseWriter, r *http.Request, destUrl string, isWrite bool, responseFn func(proxyResponse *http.Response, w http.ResponseWriter) (statusCode int)) {
+func (s3a *S3ApiServer) proxyToFiler(w http.ResponseWriter, r *http.Request, destUrl string, isWrite, detectDirectory bool, responseFn func(proxyResponse *http.Response, w http.ResponseWriter) (statusCode int)) {
 
 	glog.V(3).Infof("s3 proxying %s to %s", r.Method, destUrl)
 	start := time.Now()
@@ -185,6 +187,11 @@ func (s3a *S3ApiServer) proxyToFiler(w http.ResponseWriter, r *http.Request, des
 	}
 	for header, values := range r.Header {
 		proxyReq.Header[header] = values
+	}
+	// This is an internal gateway signal. Never trust a client-provided value.
+	proxyReq.Header.Del(s3_constants.SeaweedFSDetectDirectory)
+	if detectDirectory {
+		proxyReq.Header.Set(s3_constants.SeaweedFSDetectDirectory, "true")
 	}
 
 	// ensure that the Authorization header is overriding any previous

@@ -38,9 +38,10 @@ const (
 	AmzObjectTaggingDirective = "X-Amz-Tagging-Directive"
 	AmzTagCount               = "x-amz-tagging-count"
 
-	SeaweedFSIsDirectoryKey = "X-Seaweedfs-Is-Directory-Key"
-	SeaweedFSPartNumber     = "X-Seaweedfs-Part-Number"
-	SeaweedFSUploadId       = "X-Seaweedfs-Upload-Id"
+	SeaweedFSIsDirectoryKey  = "X-Seaweedfs-Is-Directory-Key"
+	SeaweedFSDetectDirectory = "X-Seaweedfs-Detect-Directory"
+	SeaweedFSPartNumber      = "X-Seaweedfs-Part-Number"
+	SeaweedFSUploadId        = "X-Seaweedfs-Upload-Id"
 
 	// S3 ACL headers
 	AmzCannedAcl      = "X-Amz-Acl"
