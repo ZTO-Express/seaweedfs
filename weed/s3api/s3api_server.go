@@ -32,6 +32,7 @@ type S3ApiServerOption struct {
 	GrpcDialOption            grpc.DialOption
 	AllowEmptyFolder          bool
 	AllowDeleteBucketNotEmpty bool
+	EnableStaticWebsite       bool
 	LocalFilerSocket          string
 	DataCenter                string
 	FilerGroup                string

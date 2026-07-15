@@ -115,14 +115,28 @@ func (s3a *S3ApiServer) GetObjectHandler(w http.ResponseWriter, r *http.Request)
 	bucket, object := s3_constants.GetBucketAndObject(r)
 	glog.V(3).Infof("GetObjectHandler %s %s", bucket, object)
 
-	if strings.HasSuffix(r.URL.Path, "/") {
+	if strings.HasSuffix(object, "/") && !s3a.option.EnableStaticWebsite {
 		s3err.WriteErrorResponse(w, r, s3err.ErrNotImplemented)
 		return
 	}
 
-	destUrl := s3a.toFilerUrl(bucket, object)
+	s3a.proxyGetOrHeadObject(w, r, bucket, object)
+}
 
-	s3a.proxyToFiler(w, r, destUrl, false, passThroughResponse)
+func staticWebsiteResponse(r *http.Request) func(proxyResponse *http.Response, w http.ResponseWriter) int {
+	return func(proxyResponse *http.Response, w http.ResponseWriter) int {
+		if proxyResponse.Header.Get(s3_constants.SeaweedFSIsDirectoryKey) != "true" {
+			return passThroughResponse(proxyResponse, w)
+		}
+
+		redirectUrl := *r.URL
+		redirectUrl.Path += "/"
+		if redirectUrl.RawPath != "" {
+			redirectUrl.RawPath += "/"
+		}
+		http.Redirect(w, r, redirectUrl.String(), http.StatusMovedPermanently)
+		return http.StatusMovedPermanently
+	}
 }
 
 func (s3a *S3ApiServer) HeadObjectHandler(w http.ResponseWriter, r *http.Request) {
@@ -130,9 +144,21 @@ func (s3a *S3ApiServer) HeadObjectHandler(w http.ResponseWriter, r *http.Request
 	bucket, object := s3_constants.GetBucketAndObject(r)
 	glog.V(3).Infof("HeadObjectHandler %s %s", bucket, object)
 
-	destUrl := s3a.toFilerUrl(bucket, object)
+	s3a.proxyGetOrHeadObject(w, r, bucket, object)
+}
 
-	s3a.proxyToFiler(w, r, destUrl, false, passThroughResponse)
+func (s3a *S3ApiServer) proxyGetOrHeadObject(w http.ResponseWriter, r *http.Request, bucket, object string) {
+	responseFn := passThroughResponse
+	if s3a.option.EnableStaticWebsite {
+		if strings.HasSuffix(object, "/") {
+			object += "index.html"
+		} else {
+			responseFn = staticWebsiteResponse(r)
+		}
+	}
+
+	destUrl := s3a.toFilerUrl(bucket, object)
+	s3a.proxyToFiler(w, r, destUrl, false, responseFn)
 }
 
 func (s3a *S3ApiServer) proxyToFiler(w http.ResponseWriter, r *http.Request, destUrl string, isWrite bool, responseFn func(proxyResponse *http.Response, w http.ResponseWriter) (statusCode int)) {
