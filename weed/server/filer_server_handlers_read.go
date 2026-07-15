@@ -117,6 +117,11 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 	query := r.URL.Query()
 
 	if entry.IsDirectory() {
+		// Let the S3 gateway canonicalize directory URLs even when directory
+		// listing is disabled. The gateway uses this header instead of the body.
+		if entry.Attr.Mime == s3_constants.FolderMimeType && r.Header.Get(s3_constants.AmzIdentityId) != "" {
+			w.Header().Set(s3_constants.SeaweedFSIsDirectoryKey, "true")
+		}
 		if fs.option.DisableDirListing {
 			w.WriteHeader(http.StatusForbidden)
 			return

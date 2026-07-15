@@ -158,6 +158,20 @@ func TestGetObjectHandlerStaticWebsiteRedirectsDirectory(t *testing.T) {
 	assert.Equal(t, "/bucket/docs/?download=1", recorder.Header().Get("Location"))
 }
 
+func TestGetObjectHandlerStaticWebsiteRedirectsDirectoryWhenListingDisabled(t *testing.T) {
+	s3a := newStaticWebsiteTestServer(t, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/buckets/bucket/docs", r.URL.Path)
+		w.Header().Set(s3_constants.SeaweedFSIsDirectoryKey, "true")
+		w.WriteHeader(http.StatusForbidden)
+	}))
+
+	recorder := httptest.NewRecorder()
+	s3a.GetObjectHandler(recorder, newObjectRequest(t, http.MethodGet, "/bucket/docs", "/docs"))
+
+	assert.Equal(t, http.StatusMovedPermanently, recorder.Code)
+	assert.Equal(t, "/bucket/docs/", recorder.Header().Get("Location"))
+}
+
 func TestHeadObjectHandlerStaticWebsiteDisabled(t *testing.T) {
 	s3a := newStaticWebsiteTestServer(t, false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodHead, r.Method)
