@@ -8,7 +8,7 @@ The S3 gateway currently returns `NotImplemented` for object paths ending in `/`
 
 - Add an S3 static website hosting option, disabled by default.
 - When enabled, serve `index.html` for a `GET` or `HEAD` request whose object path ends in `/`.
-- When enabled and a `GET` or `HEAD` request without a trailing slash resolves to a directory, redirect to the equivalent trailing-slash URL so relative links in the index document resolve correctly.
+- When enabled and a `GET` or `HEAD` request without a trailing slash resolves to a directory, serve that directory's `index.html` internally without redirecting the client.
 - Keep `GET` and `HEAD` website routing consistent while preserving the standard S3 object semantics when static website mode is disabled.
 - Return the existing S3 `NoSuchKey` response when the resolved `index.html` does not exist.
 - Expose the option consistently from the standalone S3 command and the embedded S3 gateways in `weed filer` and `weed server`.

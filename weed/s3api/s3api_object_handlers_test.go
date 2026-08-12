@@ -160,32 +160,83 @@ func TestGetObjectHandlerStaticWebsiteRegularObject(t *testing.T) {
 	assert.Equal(t, "main()", recorder.Body.String())
 }
 
-func TestGetObjectHandlerStaticWebsiteRedirectsDirectory(t *testing.T) {
+func TestGetObjectHandlerStaticWebsiteServesDirectoryWithoutTrailingSlash(t *testing.T) {
+	requestCount := 0
 	s3a := newStaticWebsiteTestServer(t, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/buckets/bucket/docs", r.URL.Path)
-		w.Header().Set(s3_constants.SeaweedFSIsDirectoryKey, "true")
+		requestCount++
+		switch requestCount {
+		case 1:
+			assert.Equal(t, "/buckets/bucket/docs", r.URL.Path)
+			assert.Equal(t, "true", r.Header.Get(s3_constants.SeaweedFSDetectDirectory))
+			w.Header().Set(s3_constants.SeaweedFSIsDirectoryKey, "true")
+		case 2:
+			assert.Equal(t, "/buckets/bucket/docs/index.html", r.URL.Path)
+			assert.Empty(t, r.Header.Get(s3_constants.SeaweedFSDetectDirectory))
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = io.WriteString(w, "<h1>docs</h1>")
+		default:
+			t.Fatalf("unexpected filer request %d", requestCount)
+		}
 	}))
 
 	recorder := httptest.NewRecorder()
 	s3a.GetObjectHandler(recorder, newObjectRequest(t, http.MethodGet, "/bucket/docs?download=1", "/docs"))
 
-	assert.Equal(t, http.StatusMovedPermanently, recorder.Code)
-	assert.Equal(t, "/bucket/docs/?download=1", recorder.Header().Get("Location"))
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "text/html", recorder.Header().Get("Content-Type"))
+	assert.Equal(t, "<h1>docs</h1>", recorder.Body.String())
+	assert.Empty(t, recorder.Header().Get("Location"))
+	assert.Equal(t, 2, requestCount)
 }
 
-func TestGetObjectHandlerStaticWebsiteRedirectsDirectoryWhenListingDisabled(t *testing.T) {
+func TestGetObjectHandlerStaticWebsiteServesDirectoryWhenListingDisabled(t *testing.T) {
+	requestCount := 0
 	s3a := newStaticWebsiteTestServer(t, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/buckets/bucket/docs", r.URL.Path)
-		assert.Equal(t, "true", r.Header.Get(s3_constants.SeaweedFSDetectDirectory))
-		w.Header().Set(s3_constants.SeaweedFSIsDirectoryKey, "true")
-		w.WriteHeader(http.StatusForbidden)
+		requestCount++
+		switch requestCount {
+		case 1:
+			assert.Equal(t, "/buckets/bucket/docs", r.URL.Path)
+			assert.Equal(t, "true", r.Header.Get(s3_constants.SeaweedFSDetectDirectory))
+			w.Header().Set(s3_constants.SeaweedFSIsDirectoryKey, "true")
+			w.WriteHeader(http.StatusForbidden)
+		case 2:
+			assert.Equal(t, "/buckets/bucket/docs/index.html", r.URL.Path)
+			assert.Empty(t, r.Header.Get(s3_constants.SeaweedFSDetectDirectory))
+			_, _ = io.WriteString(w, "index")
+		default:
+			t.Fatalf("unexpected filer request %d", requestCount)
+		}
 	}))
 
 	recorder := httptest.NewRecorder()
 	s3a.GetObjectHandler(recorder, newObjectRequest(t, http.MethodGet, "/bucket/docs", "/docs"))
 
-	assert.Equal(t, http.StatusMovedPermanently, recorder.Code)
-	assert.Equal(t, "/bucket/docs/", recorder.Header().Get("Location"))
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "index", recorder.Body.String())
+	assert.Empty(t, recorder.Header().Get("Location"))
+	assert.Equal(t, 2, requestCount)
+}
+
+func TestGetObjectHandlerStaticWebsiteMissingIndexWithoutTrailingSlash(t *testing.T) {
+	requestCount := 0
+	s3a := newStaticWebsiteTestServer(t, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			assert.Equal(t, "/buckets/bucket/docs", r.URL.Path)
+			w.Header().Set(s3_constants.SeaweedFSIsDirectoryKey, "true")
+			return
+		}
+		assert.Equal(t, "/buckets/bucket/docs/index.html", r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	recorder := httptest.NewRecorder()
+	s3a.GetObjectHandler(recorder, newObjectRequest(t, http.MethodGet, "/bucket/docs", "/docs"))
+
+	assert.Equal(t, http.StatusNotFound, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "<Code>NoSuchKey</Code>")
+	assert.Contains(t, recorder.Body.String(), "<Resource>/bucket/docs</Resource>")
+	assert.Equal(t, 2, requestCount)
 }
 
 func TestHeadObjectHandlerStaticWebsiteDisabled(t *testing.T) {
@@ -235,19 +286,58 @@ func TestHeadObjectHandlerStaticWebsiteMissingIndexDocument(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), "<Code>NoSuchKey</Code>")
 }
 
-func TestHeadObjectHandlerStaticWebsiteRedirectsDirectory(t *testing.T) {
+func TestHeadObjectHandlerStaticWebsiteServesDirectoryWithoutTrailingSlash(t *testing.T) {
+	requestCount := 0
 	s3a := newStaticWebsiteTestServer(t, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
 		assert.Equal(t, http.MethodHead, r.Method)
-		assert.Equal(t, "/buckets/bucket/docs", r.URL.Path)
-		w.Header().Set(s3_constants.SeaweedFSIsDirectoryKey, "true")
+		switch requestCount {
+		case 1:
+			assert.Equal(t, "/buckets/bucket/docs", r.URL.Path)
+			assert.Equal(t, "true", r.Header.Get(s3_constants.SeaweedFSDetectDirectory))
+			w.Header().Set(s3_constants.SeaweedFSIsDirectoryKey, "true")
+		case 2:
+			assert.Equal(t, "/buckets/bucket/docs/index.html", r.URL.Path)
+			assert.Empty(t, r.Header.Get(s3_constants.SeaweedFSDetectDirectory))
+			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("Content-Length", "13")
+			w.Header().Set("ETag", `"index"`)
+		default:
+			t.Fatalf("unexpected filer request %d", requestCount)
+		}
 	}))
 
 	recorder := httptest.NewRecorder()
 	s3a.HeadObjectHandler(recorder, newObjectRequest(t, http.MethodHead, "/bucket/docs?download=1", "/docs"))
 
-	assert.Equal(t, http.StatusMovedPermanently, recorder.Code)
-	assert.Equal(t, "/bucket/docs/?download=1", recorder.Header().Get("Location"))
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "text/html", recorder.Header().Get("Content-Type"))
+	assert.Equal(t, `"index"`, recorder.Header().Get("ETag"))
+	assert.Empty(t, recorder.Header().Get("Location"))
 	assert.Empty(t, recorder.Body.String())
+	assert.Equal(t, 2, requestCount)
+}
+
+func TestHeadObjectHandlerStaticWebsiteMissingIndexWithoutTrailingSlash(t *testing.T) {
+	requestCount := 0
+	s3a := newStaticWebsiteTestServer(t, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		assert.Equal(t, http.MethodHead, r.Method)
+		if requestCount == 1 {
+			assert.Equal(t, "/buckets/bucket/docs", r.URL.Path)
+			w.Header().Set(s3_constants.SeaweedFSIsDirectoryKey, "true")
+			return
+		}
+		assert.Equal(t, "/buckets/bucket/docs/index.html", r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	recorder := httptest.NewRecorder()
+	s3a.HeadObjectHandler(recorder, newObjectRequest(t, http.MethodHead, "/bucket/docs", "/docs"))
+
+	assert.Equal(t, http.StatusNotFound, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "<Code>NoSuchKey</Code>")
+	assert.Equal(t, 2, requestCount)
 }
 
 func newStaticWebsiteTestServer(t *testing.T, enabled bool, filerHandler http.Handler) *S3ApiServer {

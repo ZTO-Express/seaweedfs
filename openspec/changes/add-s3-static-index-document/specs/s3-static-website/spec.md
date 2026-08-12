@@ -36,13 +36,21 @@ When static website mode is enabled, the S3 gateway SHALL use `index.html` as th
 - **WHEN** a client sends `GET` or `HEAD` for a regular object
 - **THEN** the gateway SHALL return that object using the existing GetObject or HeadObject behavior for the request method
 
-### Requirement: Canonical Directory URL
+### Requirement: Directory URL Without Trailing Slash
 
-When static website mode is enabled, the S3 gateway SHALL canonicalize a directory URL without a trailing slash before serving its index document.
+When static website mode is enabled, the S3 gateway SHALL resolve a directory URL without a trailing slash to its index document without redirecting the client.
 
 #### Scenario: Directory URL omits trailing slash
 
 - **WHEN** a client sends `GET` or `HEAD` for an object path without a trailing slash
 - **AND** the filer identifies that path as a directory
-- **THEN** the gateway SHALL redirect the client permanently to the same path with a trailing slash
-- **AND** the gateway SHALL preserve the request query string in the redirect target
+- **AND** `index.html` exists in that directory
+- **THEN** the gateway SHALL internally request the directory's `index.html` using the original HTTP method
+- **AND** the gateway SHALL return the index document response without redirecting the client
+
+#### Scenario: Directory URL without trailing slash has no index document
+
+- **WHEN** a client sends `GET` or `HEAD` for an object path without a trailing slash
+- **AND** the filer identifies that path as a directory
+- **AND** `index.html` does not exist in that directory
+- **THEN** the gateway SHALL return the S3 `NoSuchKey` error for the original directory request

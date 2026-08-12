@@ -12,15 +12,16 @@
 - Decision: add a boolean `EnableStaticWebsite` server option and matching command flags. The default is `false` to avoid changing S3 API semantics for existing installations.
 - Decision: use the fixed index document name `index.html`, matching the requested scope and avoiding configuration combinations that imply broader AWS website API compatibility.
 - Decision: a `GET` or `HEAD` request already ending in `/` is internally proxied to `<directory>/index.html`; the client URL does not change.
-- Decision: a `GET` or `HEAD` request without `/` that the filer identifies as a directory returns a permanent redirect to the same URL with `/`. Browsers then resolve relative CSS, JavaScript, image, and link URLs from the correct directory base.
+- Decision: a `GET` or `HEAD` request without `/` first probes the requested object. When the filer identifies it as a directory, the gateway internally requests `<directory>/index.html` with the same HTTP method and returns that response without redirecting the client.
 - Decision: reuse the existing filer proxy behavior for the index request so range requests, conditional headers, response overrides, filer JWT authorization, errors, logging, and response streaming remain consistent.
-- Decision: static website mode has website semantics for both `GET` and `HEAD`. `HEAD` resolves and redirects exactly like `GET`, returning the selected index object's status and headers without a response body. When the mode is disabled, `HeadObject` retains exact-key S3 semantics.
+- Decision: static website mode has website semantics for both `GET` and `HEAD`. `HEAD` resolves exactly like `GET`, returning the selected index object's status and headers without a response body. When the mode is disabled, `HeadObject` retains exact-key S3 semantics.
 
 ## Risks / Trade-offs
 
 - A gateway-wide option affects every bucket served by that gateway. This is intentionally smaller than implementing per-bucket website configuration; deployments requiring isolation can use a dedicated gateway instance.
 - Internally changing the filer target means the S3 error resource remains the originally requested directory URL. This is desirable for clients and avoids leaking the internal index lookup path.
-- Redirecting directory URLs without `/` adds one browser round trip, but prevents broken relative asset paths.
+- Resolving a directory URL without `/` requires two filer requests: one to identify the directory and one to read its index document. The client avoids an additional network round trip and its requested URL remains unchanged.
+- Because the client URL remains without `/`, relative references in `index.html` follow browser URL resolution rules. Sites using relative assets SHOULD use root-relative URLs or an explicit HTML base URL when serving directory URLs without a trailing slash.
 
 ## Migration Plan
 
